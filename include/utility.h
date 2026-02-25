@@ -37,8 +37,8 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/transform_broadcaster.h>
-#include <tf2_eigen/tf2_eigen.h>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <tf2_eigen/tf2_eigen.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
  
 #include <vector>
 #include <cmath>
@@ -66,6 +66,26 @@ typedef pcl::PointXYZI PointType;
 std::shared_ptr<CommonLib::common_lib> common_lib_;
 
 enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN};
+
+enum class TranslationPredictionSource
+{
+    CONSTANT_VELOCITY,
+    IMU
+};
+
+// enum TranslationPredictionSource to string
+inline std::string TranslationPredictionSourceToString(TranslationPredictionSource v)
+{
+    switch (v)
+    {
+    case TranslationPredictionSource::CONSTANT_VELOCITY:
+        return "CONSTANT_VELOCITY";
+    case TranslationPredictionSource::IMU:
+        return "IMU";
+    default:
+        return "UNKNOWN";
+    }
+}
 
 class ParamServer : public rclcpp::Node
 {
@@ -99,6 +119,8 @@ public:
 
     // Lidar Sensor Configuration
     SensorType sensor;
+    TranslationPredictionSource translationPredictionSource;
+
     int N_SCAN;
     int Horizon_SCAN;
     int downsampleRate;
@@ -221,6 +243,31 @@ public:
                 "Invalid sensor type (must be either 'velodyne' or 'ouster' or 'livox' or 'robosense' or 'mulran'): " << sensorStr);
             rclcpp::shutdown();
         }
+
+        std::string translationPredictionSourceStrInput = declare_parameter<string>("translationPredictionSource", "");
+
+        // 2. Logic remains largely the same
+        if (translationPredictionSourceStrInput == "constant_velocity")
+        {
+            translationPredictionSource = TranslationPredictionSource::CONSTANT_VELOCITY;
+        }
+        else if (translationPredictionSourceStrInput == "imu")
+        {
+            translationPredictionSource = TranslationPredictionSource::IMU;
+        }
+        else
+        {
+            // Set to default(imu) and print error
+            translationPredictionSource = TranslationPredictionSource::IMU;
+            
+            // ROS 2 Error Log
+            RCLCPP_ERROR_STREAM(this->get_logger(),
+                "Invalid translation prediction source (must be either 'constant_velocity' or 'imu'): " << translationPredictionSourceStrInput);
+        }
+
+        // 3. LOG result
+        std::string translationPredictionSourceStr = TranslationPredictionSourceToString(translationPredictionSource);
+        RCLCPP_INFO_STREAM(this->get_logger(), "Translation Prediction Source: " << translationPredictionSourceStr);
 
         declare_parameter<int>("N_SCAN", 16);
         get_parameter("N_SCAN", N_SCAN);

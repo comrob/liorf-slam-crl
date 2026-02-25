@@ -1,8 +1,9 @@
 /**:
   ros__parameters:
+    translationPredictionSource: constant_velocity
     # Topics
-    pointCloudTopic: "points_raw"               # Point cloud data
-    imuTopic: "imu_raw"                         # IMU data
+    pointCloudTopic: "/os1/points"               # Point cloud data
+    imuTopic: "/os1/imu"                         # IMU data
     odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
     gpsTopic: "odometry/gpsz"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
@@ -26,10 +27,10 @@
     sensor: ouster                            # lidar sensor type, 'velodyne' or 'ouster' or 'livox' or 'robosense'
     N_SCAN: 128                                  # number of lidar channel (i.e., Velodyne/Ouster: 16, 32, 64, 128, Livox Horizon: 6)
     Horizon_SCAN: 1024                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048, Livox Horizon: 4000)
-    downsampleRate: 2                           # default: 1. Downsample your data if too many points(line). i.e., 16 = 64 / 4, 16 = 16 / 1
+    downsampleRate: 1                           # default: 1. Downsample your data if too many points(line). i.e., 16 = 64 / 4, 16 = 16 / 1
     point_filter_num: 5                         # default: 3. Downsample your data if too many points(point). e.g., 16: 1, 32: 5, 64: 8
     lidarMinRange: 1.0                          # default: 1.0, minimum lidar range to be used
-    lidarMaxRange: 1000.0                       # default: 1000.0, maximum lidar range to be used
+    lidarMaxRange: 100.0                       # default: 1000.0, maximum lidar range to be used
 
     # IMU Settings
     imuType: 0                                  # 0: 6-axis  1: 9-axis
@@ -44,8 +45,8 @@
     # Extrinsics: T_lb (lidar -> imu)
     extrinsicTrans: [0.0, 0.0, 0.0]
     extrinsicRot: [-1.0, 0.0, 0.0,
-                    0.0, 1.0, 0.0,
-                    0.0, 0.0, -1.0]
+                    0.0, -1.0, 0.0,
+                    0.0, 0.0, 1.0]
 
     # This parameter is set only when the 9-axis IMU is used, but it must be a high-precision IMU. e.g. MTI-680
     extrinsicRPY: [1.0, 0.0, 0.0,
@@ -53,14 +54,14 @@
                     0.0, 0.0, 1.0]
 
     # voxel filter paprams
-    mappingSurfLeafSize: 0.4                      # default: 0.4 - outdoor, 0.2 - indoor
+    mappingSurfLeafSize: 0.2                      # default: 0.4 - outdoor, 0.2 - indoor
 
     # robot motion constraint (in case you are using a 2D robot)
     z_tollerance: 1000.0                            # meters
     rotation_tollerance: 1000.0                     # radians
 
     # CPU Params
-    numberOfCores: 4                              # number of cores for mapping optimization
+    numberOfCores: 16                              # number of cores for mapping optimization
     mappingProcessInterval: 0.0                  # seconds, regulate mapping frequency
 
     # Surrounding map

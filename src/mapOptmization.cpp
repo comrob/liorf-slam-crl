@@ -20,6 +20,8 @@
 
 #include <GeographicLib/Geocentric.hpp>
 #include <GeographicLib/LocalCartesian.hpp>
+#include <pcl/filters/statistical_outlier_removal.h>
+
 
 #include "Scancontext.h"
 
@@ -126,7 +128,10 @@ public:
     pcl::VoxelGrid<PointType> downSizeFilterSurroundingKeyPoses; // for surrounding key poses of scan-to-map optimization
     
     rclcpp::Time timeLaserInfoStamp;
-    double timeLaserInfoCur;
+    double timeLastProcessing{-1};
+    double timeLaserInfoCur{0};
+    double lastTimeDiff{0};
+    double curTimeDiff{0};
 
     float transformTobeMapped[6];
 
@@ -152,6 +157,7 @@ public:
     Eigen::Affine3f transPointAssociateToMap;
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
+    Eigen::Affine3f lastLidarOdometryIncrement;
 
     GeographicLib::LocalCartesian gps_trans_;
 
@@ -253,8 +259,8 @@ public:
 
         std::lock_guard<std::mutex> lock(mtx);
 
-        static double timeLastProcessing = -1;
-        if (timeLaserInfoCur - timeLastProcessing >= mappingProcessInterval)
+        curTimeDiff = timeLaserInfoCur - timeLastProcessing;
+        if (curTimeDiff >= mappingProcessInterval)
         {
             timeLastProcessing = timeLaserInfoCur;
 
@@ -273,6 +279,9 @@ public:
             publishOdometry();
 
             publishFrames();
+
+            timeLastProcessing = timeLaserInfoCur;
+            lastTimeDiff = curTimeDiff;
         }
     }
 
@@ -936,6 +945,18 @@ public:
                 lastImuPreTransAvailable = true;
             } else {
                 Eigen::Affine3f transIncre = lastImuPreTransformation.inverse() * transBack;
+
+                if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
+                {
+                    transIncre.translation() = lastLidarOdometryIncrement.translation() * curTimeDiff / lastTimeDiff;
+
+                    RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 10000, 
+                        "Using constant velocity for translation prediction:" << std::endl
+                        << transIncre.translation() << std::endl
+                        << "curTimeDiff: " << curTimeDiff << std::endl
+                        << "lastTimeDiff: " << lastTimeDiff << std::endl);
+                }
+
                 Eigen::Affine3f transTobe = trans2Affine3f(transformTobeMapped);
                 Eigen::Affine3f transFinal = transTobe * transIncre;
                 pcl::getTranslationAndEulerAngles(transFinal, transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5], 
@@ -953,6 +974,17 @@ public:
         {
             Eigen::Affine3f transBack = pcl::getTransformation(0, 0, 0, cloudInfo.imurollinit, cloudInfo.imupitchinit, cloudInfo.imuyawinit);
             Eigen::Affine3f transIncre = lastImuTransformation.inverse() * transBack;
+
+            if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
+                {
+                    transIncre.translation() = lastLidarOdometryIncrement.translation() * curTimeDiff / lastTimeDiff;
+
+                    RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 10000, 
+                        "Using constant velocity for translation prediction:" << std::endl
+                        << transIncre.translation() << std::endl
+                        << "curTimeDiff: " << curTimeDiff << std::endl
+                        << "lastTimeDiff: " << lastTimeDiff << std::endl);
+                }
 
             Eigen::Affine3f transTobe = trans2Affine3f(transformTobeMapped);
             Eigen::Affine3f transFinal = transTobe * transIncre;
@@ -1070,6 +1102,16 @@ public:
         laserCloudSurfLastDS->clear();
         downSizeFilterSurf.setInputCloud(laserCloudSurfLast);
         downSizeFilterSurf.filter(*laserCloudSurfLastDS);
+
+        if (!laserCloudSurfLastDS->empty())
+        {
+            pcl::StatisticalOutlierRemoval<PointType> sor;
+            sor.setInputCloud(laserCloudSurfLastDS);
+            sor.setMeanK(5);            // Number of neighbors to analyze
+            sor.setStddevMulThresh(1.0); // Standard deviation multiplier (1 sigma)
+            sor.filter(*laserCloudSurfLastDS);
+        }
+
         laserCloudSurfLastDSNum = laserCloudSurfLastDS->size();
     }
 
@@ -1394,11 +1436,11 @@ public:
     {
         if (cloudKeyPoses3D->points.empty())
         {
-            noiseModel::Diagonal::shared_ptr priorNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
+            noiseModel::Diagonal::shared_ptr priorNoise = noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
             gtSAMgraph.add(PriorFactor<Pose3>(0, trans2gtsamPose(transformTobeMapped), priorNoise));
             initialEstimate.insert(0, trans2gtsamPose(transformTobeMapped));
         }else{
-            noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
+            noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
             gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloudKeyPoses6D->points.back());
             gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped);
             gtSAMgraph.add(BetweenFactor<Pose3>(cloudKeyPoses3D->size()-1, cloudKeyPoses3D->size(), poseFrom.between(poseTo), odometryNoise));
@@ -1705,8 +1747,8 @@ public:
             laserOdomIncremental = laserOdometryROS;
             increOdomAffine = trans2Affine3f(transformTobeMapped);
         } else {
-            Eigen::Affine3f affineIncre = incrementalOdometryAffineFront.inverse() * incrementalOdometryAffineBack;
-            increOdomAffine = increOdomAffine * affineIncre;
+            lastLidarOdometryIncrement = incrementalOdometryAffineFront.inverse() * incrementalOdometryAffineBack;
+            increOdomAffine = increOdomAffine * lastLidarOdometryIncrement;
             float x, y, z, roll, pitch, yaw;
             pcl::getTranslationAndEulerAngles (increOdomAffine, x, y, z, roll, pitch, yaw);
             if (cloudInfo.imuavailable == true && imuType)
