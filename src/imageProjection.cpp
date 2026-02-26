@@ -111,14 +111,20 @@ public:
     ImageProjection(const rclcpp::NodeOptions & options) :
             ParamServer("liorf_imageProjection", options), deskewFlag(0)
     {
-        subImu = create_subscription<sensor_msgs::msg::Imu>(imuTopic, QosPolicy(history_policy, reliability_policy), 
-                    std::bind(&ImageProjection::imuHandler, this, std::placeholders::_1));
+        subImu = create_subscription<sensor_msgs::msg::Imu>(
+            imuTopic, 
+            rclcpp::SensorDataQoS(), 
+            std::bind(&ImageProjection::imuHandler, this, std::placeholders::_1)
+        );
 
         subOdom = create_subscription<nav_msgs::msg::Odometry>(odomTopic+"_incremental", QosPolicy(history_policy, reliability_policy),
                     std::bind(&ImageProjection::odometryHandler, this, std::placeholders::_1));
 
-        subLaserCloud = create_subscription<sensor_msgs::msg::PointCloud2>(pointCloudTopic, QosPolicy(history_policy, reliability_policy), 
-                    std::bind(&ImageProjection::cloudHandler, this, std::placeholders::_1));
+        subLaserCloud = create_subscription<sensor_msgs::msg::PointCloud2>(
+            pointCloudTopic, 
+            rclcpp::SensorDataQoS(), 
+            std::bind(&ImageProjection::cloudHandler, this, std::placeholders::_1)
+        );
 
         pubExtractedCloud = create_publisher<sensor_msgs::msg::PointCloud2>( "liorf/deskew/cloud_deskewed", QosPolicy(history_policy, reliability_policy));
 

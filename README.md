@@ -1,3 +1,40 @@
+# Install on Ubunutu 24.04
+- Install dependencies:
+```
+sudo apt-get install -y \
+    software-properties-common \
+    libpcl-dev \
+    libopencv-dev \
+    libyaml-cpp-dev \
+    libgeographiclib-dev \
+    libtbb-dev \
+    libboost-all-dev \
+    python3-pip \
+    nano \
+    git \
+    wget \
+    x11-apps \
+    ccache \
+    mold
+```
+
+- Install gtsam:
+```
+mkdir -p ~/repos
+cd ~/repos
+git clone https://github.com/borglab/gtsam.git
+cd gtsam && git checkout 4.2.0
+sed -i 's/add_subdirectory(examples)/# add_subdirectory(examples)/g' CMakeLists.txt
+sed -i 's/add_subdirectory(tests)/# add_subdirectory(tests)/g' CMakeLists.txt
+mkdir -p build && cd build
+cmake .. -DGTSAM_WITH_TBB=OFF -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF \
+       -DGTSAM_USE_SYSTEM_EIGEN=ON -DGTSAM_BUILD_UNSTABLE=ON -DCMAKE_BUILD_TYPE=Release \
+make -j$(nproc)
+sudo make install
+sudo ldconfig
+```
+Install the package following the standard procedure.
+
 # New Feature
 ------------------- Update Date: 2022-11-20 -------------------
 - This version has removed the feature extraction module, making it easier to adapt to different lidars;
