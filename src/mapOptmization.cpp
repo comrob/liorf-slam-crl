@@ -24,6 +24,9 @@
 
 
 #include "Scancontext.h"
+#include <fstream>
+#include <iomanip>
+
 
 using namespace gtsam;
 
@@ -90,6 +93,14 @@ public:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubLoopConstraintEdge;
     rclcpp::Publisher<liorf::msg::CloudInfo>::SharedPtr pubSLAMInfo;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubGpsOdom;
+
+    // Add the new publisher, timer, and state variables here
+    rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr pubGpsOrigin;
+    rclcpp::TimerBase::SharedPtr origin_publish_timer;
+    
+    std::mutex origin_mutex;
+    sensor_msgs::msg::NavSatFix stored_origin_gps_msg;
+    bool first_gps = true;
 
     rclcpp::Service<liorf::srv::SaveMap>::SharedPtr srvSaveMap;
 
@@ -194,6 +205,9 @@ public:
         pubSLAMInfo = create_publisher<liorf::msg::CloudInfo>("liorf/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
         pubGpsOdom = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/gps_odom", QosPolicy(history_policy, reliability_policy));
 
+        pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
+        origin_publish_timer = this->create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::timerCallbackPublishOrigin, this));
+
         srvSaveMap = create_service<liorf::srv::SaveMap>("liorf/save_map", 
                         std::bind(&mapOptimization::saveMapService, this, std::placeholders::_1, std::placeholders::_2 ));
 
@@ -285,16 +299,30 @@ public:
         }
     }
 
+    void timerCallbackPublishOrigin()
+    {
+        std::lock_guard<std::mutex> lock(origin_mutex);
+        if (!first_gps)
+        {
+            stored_origin_gps_msg.header.stamp = this->now();
+            pubGpsOrigin->publish(stored_origin_gps_msg);
+        }
+    }
+
     void gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gpsMsg)
     {
         if (gpsMsg->status.status != 0)
             return;
 
         Eigen::Vector3d trans_local_;
-        static bool first_gps = false;
-        if (!first_gps) {
-            first_gps = true;
+        
+        if (first_gps) {
+            std::lock_guard<std::mutex> lock(origin_mutex);
+            stored_origin_gps_msg = *gpsMsg;
+            first_gps = false;
+            
             gps_trans_.Reset(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude);
+            RCLCPP_INFO(get_logger(), "GPS origin captured. Publishing will now begin.");
         }
 
         gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
@@ -404,6 +432,33 @@ public:
       // create directory and remove old files;
       int unused = system((std::string("exec rm -r ") + saveMapDirectory).c_str());
       unused = system((std::string("mkdir -p ") + saveMapDirectory).c_str());
+
+      { // Use a scope for the lock_guard to release the mutex automatically
+          std::lock_guard<std::mutex> lock(origin_mutex);
+          if (!first_gps)
+          {
+              std::string gps_origin_file_path = saveMapDirectory + "/map_origin.txt";
+              std::ofstream ofs(gps_origin_file_path);
+              if (ofs.is_open())
+              {
+                  ofs << std::fixed << std::setprecision(12); // Use high precision for GPS data
+                  ofs << "latitude: " << stored_origin_gps_msg.latitude << std::endl;
+                  ofs << "longitude: " << stored_origin_gps_msg.longitude << std::endl;
+                  ofs << "altitude: " << stored_origin_gps_msg.altitude << std::endl;
+                  ofs.close();
+                  cout << "GPS origin successfully saved to: " << gps_origin_file_path << endl;
+              }
+              else
+              {
+                  cout << "[ERROR] Could not open file to save GPS origin: " << gps_origin_file_path << endl;
+              }
+          }
+          else
+          {
+              cout << "[WARNING] No GPS data was fused. GPS origin file will not be saved." << endl;
+          }
+      }
+
       // save key frame transformations
       pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory.pcd", *cloudKeyPoses3D);
       pcl::io::savePCDFileBinary(saveMapDirectory + "/transformations.pcd", *cloudKeyPoses6D);
