@@ -232,8 +232,11 @@ public:
     IMUPreintegration(const rclcpp::NodeOptions & options) :
             ParamServer("liorf_imu_preintegration", options)
     {
-        subImu = create_subscription<sensor_msgs::msg::Imu>(imuTopic, QosPolicy(history_policy, reliability_policy), 
-                    std::bind(&IMUPreintegration::imuHandler, this, std::placeholders::_1));
+        subImu = create_subscription<sensor_msgs::msg::Imu>(
+            imuTopic, 
+            rclcpp::SensorDataQoS(), 
+            std::bind(&IMUPreintegration::imuHandler, this, std::placeholders::_1)
+        );
 
         subOdometry = create_subscription<nav_msgs::msg::Odometry>("liorf/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy),
                     std::bind(&IMUPreintegration::odometryHandler, this, std::placeholders::_1));

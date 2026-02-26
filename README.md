@@ -1,4 +1,10 @@
 # Install on Ubunutu 24.04
+
+## Configure the environment for high throughput
+https://autowarefoundation.github.io/autoware-documentation/main/installation/additional-settings-for-developers/network-configuration/dds-settings/#tune-system-wide-network-settings
+
+## Install liorf
+
 - Install dependencies:
 ```
 sudo apt-get install -y \
