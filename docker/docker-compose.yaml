@@ -1,0 +1,98 @@
+# --- Shared Configuration Template (Root Level) ---
+x-dev-config: &common-config
+  network_mode: host
+  ipc: host
+  pid: host
+  user: "${USER_UID:-1000}:${USER_GID:-1000}"
+  environment:
+    - DISPLAY=${DISPLAY}
+    - ROS_DOMAIN_ID=0
+    - NVIDIA_VISIBLE_DEVICES=all
+    - NVIDIA_DRIVER_CAPABILITIES=all
+    - QT_X11_NO_MITSHM=1
+    - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+    - CYCLONEDDS_URI=file:///home/dev/cyclonedds.xml
+
+services:
+  # --- 1. VS Code Background Service ---
+  liorf_vscode:
+    <<: *common-config
+    image: liorf_jazzy_dev
+    container_name: liorf_vscode
+    build: 
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: deps  # <--- USES DEPS STAGE (No Source Code inside)
+      args:
+        USER_UID: ${USER_UID:-1000} 
+        USER_GID: ${USER_GID:-1000}
+    volumes:
+      - ..:/home/dev/ros2_ws/src/liorf
+      - ${HOST_MAPS_PATH}:/home/dev/Downloads/LOAM
+      - ${HOST_BAGS_PATH:-../bags}:/home/dev/bags
+      - ./cache/build:/home/dev/ros2_ws/build
+      - ./cache/install:/home/dev/ros2_ws/install
+      - ./cache/log:/home/dev/ros2_ws/log
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./cyclonedds.xml:/home/dev/cyclonedds.xml:ro
+    command: sleep infinity
+
+  # --- 2. Active Terminal Runner (Dev) ---
+  liorf_dev:
+    <<: *common-config
+    image: liorf_jazzy_dev
+    container_name: liorf_dev
+    build: 
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: deps  # <--- USES DEPS STAGE
+      args:
+        USER_UID: ${USER_UID:-1000} 
+        USER_GID: ${USER_GID:-1000}
+    volumes:
+      - ..:/home/dev/ros2_ws/src/liorf
+      - ${HOST_MAPS_PATH}:/home/dev/Downloads/LOAM
+      - ${HOST_BAGS_PATH:-../bags}:/home/dev/bags
+      - ./cache/build:/home/dev/ros2_ws/build
+      - ./cache/install:/home/dev/ros2_ws/install
+      - ./cache/log:/home/dev/ros2_ws/log
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./cyclonedds.xml:/home/dev/cyclonedds.xml:ro
+    command: sleep infinity
+
+  # --- 3. Production Runner (Pre-Built) ---
+  liorf_run:
+    <<: *common-config
+    image: liorf_jazzy_prod
+    container_name: liorf_run
+    build: 
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: prod  # <--- USES PROD STAGE (Compiled Code inside)
+      args:
+        USER_UID: ${USER_UID:-1000} 
+        USER_GID: ${USER_GID:-1000}
+    volumes:
+      - ${HOST_MAPS_PATH}:/home/dev/Downloads/LOAM
+      - ${HOST_BAGS_PATH:-../bags}:/home/dev/bags
+      - ../config:/home/dev/ros2_ws/install/liorf/share/liorf/config
+      - ../launch:/home/dev/ros2_ws/install/liorf/share/liorf/launch
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./cyclonedds.xml:/home/dev/cyclonedds.xml:ro
+    command: sleep infinity
+  # --- 4. Bag Player ---
+  bag_player:
+    <<: *common-config
+    image: liorf_jazzy_dev
+    user: "dev:dev"
+    container_name: bag_player
+    environment:
+      - ROS_DOMAIN_ID=0
+      - HOME=/home/dev
+      - BAG_FILENAME=${BAG_FILENAME:-$DEFAULT_BAG_FILENAME}
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///home/dev/cyclonedds.xml
+    volumes:
+      - ${HOST_BAGS_PATH}:/bag_data
+      - ./cyclonedds.xml:/home/dev/cyclonedds.xml:ro
+    command: sleep infinity

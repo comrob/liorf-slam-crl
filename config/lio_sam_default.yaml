@@ -4,8 +4,8 @@
     reliability_policy: "reliability_reliable"
 
     # Topics
-    pointCloudTopic: "points_raw"               # Point cloud data
-    imuTopic: "imu_raw"                         # IMU data
+    pointCloudTopic: "/os1/points"               # Point cloud data
+    imuTopic: "/os1/imu"                         # IMU data
     odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
     gpsTopic: "gps/fixz"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
