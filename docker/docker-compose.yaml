@@ -34,7 +34,7 @@ services:
       - ./cache/install:/home/dev/ros2_ws/install
       - ./cache/log:/home/dev/ros2_ws/log
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./cyclonedds.xml:/home/dev/cyclonedds.xml:ro
+      - ${HOST_DDS_CONFIG:-./cyclonedds.xml}:/home/dev/cyclonedds.xml:ro
     command: sleep infinity
 
   # --- 2. Active Terminal Runner (Dev) ---
@@ -57,7 +57,7 @@ services:
       - ./cache/install:/home/dev/ros2_ws/install
       - ./cache/log:/home/dev/ros2_ws/log
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./cyclonedds.xml:/home/dev/cyclonedds.xml:ro
+      - ${HOST_DDS_CONFIG:-./cyclonedds.xml}:/home/dev/cyclonedds.xml:ro
     command: sleep infinity
 
   # --- 3. Production Runner (Pre-Built) ---
@@ -78,7 +78,7 @@ services:
       - ../config:/home/dev/ros2_ws/install/liorf/share/liorf/config
       - ../launch:/home/dev/ros2_ws/install/liorf/share/liorf/launch
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./cyclonedds.xml:/home/dev/cyclonedds.xml:ro
+      - ${HOST_DDS_CONFIG:-./cyclonedds.xml}:/home/dev/cyclonedds.xml:ro
     command: sleep infinity
   # --- 4. Bag Player ---
   bag_player:
@@ -94,5 +94,5 @@ services:
       - CYCLONEDDS_URI=file:///home/dev/cyclonedds.xml
     volumes:
       - ${HOST_BAGS_PATH}:/bag_data
-      - ./cyclonedds.xml:/home/dev/cyclonedds.xml:ro
+      - ${HOST_DDS_CONFIG:-./cyclonedds.xml}:/home/dev/cyclonedds.xml:ro
     command: sleep infinity
