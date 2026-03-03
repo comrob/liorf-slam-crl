@@ -71,24 +71,51 @@ RUN mkdir -p /home/$USERNAME/ros2_ws/src/liorf
 
 WORKDIR /home/$USERNAME/ros2_ws/src/liorf
 
-# 5. PRE-BUILD APPLICATION (The "Golden Image" step)
+# Layer 1: Copy C++ source and build metadata
+# Changes here trigger full C++ rebuild
 COPY package.xml CMakeLists.txt ./
 COPY src/ ./src
 COPY include/ ./include
-COPY config/ ./config
-COPY launch/ ./launch
-COPY rviz/ ./rviz
 COPY msg/ ./msg
 COPY srv/ ./srv
 COPY lib/ ./lib
 COPY cmake/ ./cmake
 
+# Layer 1b: Copy placeholder files for config/launch/rviz
+# These are empty placeholders to preserve Docker cache layer
+COPY config/.empty config/
+COPY launch/.empty launch/
+COPY rviz/.empty rviz/
+
 WORKDIR /home/$USERNAME/ros2_ws
 
-# Build it inside the image
-RUN echo "rebuilding"
+# Build C++ code with placeholders
+# This layer is cached and reused unless C++ source changes
+RUN echo "Building C++ code"
 RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
     cd /home/$USERNAME/ros2_ws && \
     colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
 
-CMD ["sleep", "infinity"]
+WORKDIR /home/$USERNAME/ros2_ws/src/liorf
+
+# Layer 2: Copy actual configuration and launch files
+# Changes here DO NOT trigger C++ rebuild - just file copy
+COPY config/ ./config
+COPY launch/ ./launch
+COPY rviz/ ./rviz
+
+WORKDIR /home/$USERNAME/ros2_ws
+
+# Reinstall only the changed files (colcon incremental build)
+# This is fast - only processes new/changed files
+RUN echo "Updating config/launch/rviz files"
+RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
+    cd /home/$USERNAME/ros2_ws && \
+    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release"
+
+# Add entrypoint for benchmark compatibility
+COPY --chown=$USERNAME:$USERNAME docker/entrypoint.sh /home/$USERNAME/ros2_ws/entrypoint.sh
+RUN chmod +x /home/$USERNAME/ros2_ws/entrypoint.sh
+
+ENTRYPOINT ["/home/dev/ros2_ws/entrypoint.sh"]
+CMD ["ros2", "launch", "liorf", "run_lio_sam_bench.py"]

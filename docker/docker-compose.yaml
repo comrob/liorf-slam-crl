@@ -96,3 +96,26 @@ services:
       - ${HOST_BAGS_PATH}:/bag_data
       - ${HOST_DDS_CONFIG:-./cyclonedds.xml}:/home/dev/cyclonedds.xml:ro
     command: sleep infinity
+
+  # --- 5. Run SLAM (Benchmark Testing - Optional Profile) ---
+  # Activate with: docker compose --profile run_slam up run_slam
+  # This profile is for LOCAL testing only to validate framework compatibility
+  # External evaluation frameworks use their own orchestration
+  run_slam:
+    profiles: ["run_slam"]
+    <<: *common-config
+    image: liorf_jazzy_prod
+    user: "dev:dev"
+    container_name: liorf_run_slam
+    environment:
+      - DISPLAY=${DISPLAY}
+      - ROS_DOMAIN_ID=0
+      - ROS_LOCALHOST_ONLY=1
+      - HOME=/home/dev
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - CYCLONEDDS_URI=file:///config/dds/cyclonedds.xml
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./cyclonedds.xml:/config/dds/cyclonedds.xml:ro
+      - ../config/override.yaml:/config/override.yaml:ro
+    command: ros2 launch liorf run_lio_sam_bench.py

@@ -565,6 +565,9 @@ ls -lh /bag_data/
 | **liorf_dev** | `liorf_jazzy_dev` | Live development | Source mounted from host |
 | **liorf_run** | `liorf_jazzy_prod` | Pre-built production | Code baked in image |
 | **bag_player** | `liorf_jazzy_dev` | Bagfile playback | Data mounted from host |
+| **run_slam** | `liorf_jazzy_prod` | Benchmark testing (opt-in) | Profile for framework compatibility validation |
+
+**Note on run_slam service:** This optional service (activated with `--profile run_slam`) is designed for **local testing only** to validate compatibility with external SLAM evaluation frameworks. Production benchmarks use their own docker-compose orchestration and only consume the built `liorf_jazzy_prod` image. The run_slam profile mounts framework-compatible paths (`/config/dds/cyclonedds.xml`, `/config/override.yaml`) and sets required environment variables (`ROS_LOCALHOST_ONLY=1`) for compatibility validation.
 
 ### Networking & IPC
 

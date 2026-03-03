@@ -1,0 +1,3 @@
+# Empty override configuration for SLAM evaluation framework compatibility
+# External evaluation frameworks can mount custom parameter overrides to this path
+# This file must exist as a tracked file (not tolerated as missing)
