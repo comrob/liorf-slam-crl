@@ -20,7 +20,7 @@ RUN apt-get update && apt-get install -y \
     x11-apps \
     ccache \
     mold \
-    ros-jazzy-rmw-cyclonedds-cpp \
+    ros-jazzy-rmw-zenoh-cpp \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /tmp

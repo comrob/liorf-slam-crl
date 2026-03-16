@@ -1,0 +1,18 @@
+{
+  // Default Zenoh session config for ROS 2 Jazzy + rmw_zenoh_cpp.
+  // This profile is conservative and works for local host-network Docker use.
+  mode: "peer",
+  connect: {
+    endpoints: []
+  },
+  listen: {
+    endpoints: [
+      "tcp/0.0.0.0:7447"
+    ]
+  },
+  scouting: {
+    multicast: {
+      enabled: true
+    }
+  }
+}

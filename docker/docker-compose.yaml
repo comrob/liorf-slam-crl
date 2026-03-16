@@ -10,15 +10,34 @@ x-dev-config: &common-config
     - NVIDIA_VISIBLE_DEVICES=all
     - NVIDIA_DRIVER_CAPABILITIES=all
     - QT_X11_NO_MITSHM=1
-    - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-    - CYCLONEDDS_URI=file:///home/dev/cyclonedds.xml
+    - RMW_IMPLEMENTATION=rmw_zenoh_cpp
+    - ZENOH_CONFIG_URI=file:///home/dev/zenoh.json5
 
 services:
+  # --- 0. Zenoh Router (Coordinator) ---
+  zenoh_router:
+    <<: *common-config
+    image: liorf_jazzy_dev
+    container_name: zenoh_router
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: deps
+      args:
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    environment:
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_zenoh_cpp
+    command: bash -lc "source /opt/ros/jazzy/setup.bash && ros2 run rmw_zenoh_cpp rmw_zenohd"
+
   # --- 1. VS Code Background Service ---
   liorf_vscode:
     <<: *common-config
     image: liorf_jazzy_dev
     container_name: liorf_vscode
+    depends_on:
+      - zenoh_router
     build: 
       context: ..
       dockerfile: docker/Dockerfile
@@ -34,7 +53,7 @@ services:
       - ./cache/install:/home/dev/ros2_ws/install
       - ./cache/log:/home/dev/ros2_ws/log
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ${HOST_DDS_CONFIG:-./cyclonedds.xml}:/home/dev/cyclonedds.xml:ro
+      - ${HOST_ZENOH_CONFIG:-./zenoh.json5}:/home/dev/zenoh.json5:ro
     command: sleep infinity
 
   # --- 2. Active Terminal Runner (Dev) ---
@@ -42,6 +61,8 @@ services:
     <<: *common-config
     image: liorf_jazzy_dev
     container_name: liorf_dev
+    depends_on:
+      - zenoh_router
     build: 
       context: ..
       dockerfile: docker/Dockerfile
@@ -57,7 +78,7 @@ services:
       - ./cache/install:/home/dev/ros2_ws/install
       - ./cache/log:/home/dev/ros2_ws/log
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ${HOST_DDS_CONFIG:-./cyclonedds.xml}:/home/dev/cyclonedds.xml:ro
+      - ${HOST_ZENOH_CONFIG:-./zenoh.json5}:/home/dev/zenoh.json5:ro
     command: sleep infinity
 
   # --- 3. Production Runner (Pre-Built) ---
@@ -65,6 +86,8 @@ services:
     <<: *common-config
     image: liorf_jazzy_prod
     container_name: liorf_run
+    depends_on:
+      - zenoh_router
     build: 
       context: ..
       dockerfile: docker/Dockerfile
@@ -78,7 +101,7 @@ services:
       - ../config:/home/dev/ros2_ws/install/liorf/share/liorf/config
       - ../launch:/home/dev/ros2_ws/install/liorf/share/liorf/launch
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ${HOST_DDS_CONFIG:-./cyclonedds.xml}:/home/dev/cyclonedds.xml:ro
+      - ${HOST_ZENOH_CONFIG:-./zenoh.json5}:/home/dev/zenoh.json5:ro
     command: sleep infinity
   # --- 4. Bag Player ---
   bag_player:
@@ -86,15 +109,17 @@ services:
     image: liorf_jazzy_dev
     user: "dev:dev"
     container_name: bag_player
+    depends_on:
+      - zenoh_router
     environment:
       - ROS_DOMAIN_ID=0
       - HOME=/home/dev
       - BAG_FILENAME=${BAG_FILENAME:-$DEFAULT_BAG_FILENAME}
-      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-      - CYCLONEDDS_URI=file:///home/dev/cyclonedds.xml
+      - RMW_IMPLEMENTATION=rmw_zenoh_cpp
+      - ZENOH_CONFIG_URI=file:///home/dev/zenoh.json5
     volumes:
       - ${HOST_BAGS_PATH}:/bag_data
-      - ${HOST_DDS_CONFIG:-./cyclonedds.xml}:/home/dev/cyclonedds.xml:ro
+      - ${HOST_ZENOH_CONFIG:-./zenoh.json5}:/home/dev/zenoh.json5:ro
     command: sleep infinity
 
   # --- 5. Run SLAM (Benchmark Testing - Optional Profile) ---
@@ -107,15 +132,17 @@ services:
     image: liorf_jazzy_prod
     user: "dev:dev"
     container_name: liorf_run_slam
+    depends_on:
+      - zenoh_router
     environment:
       - DISPLAY=${DISPLAY}
       - ROS_DOMAIN_ID=0
       - ROS_LOCALHOST_ONLY=1
       - HOME=/home/dev
-      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-      - CYCLONEDDS_URI=file:///config/dds/cyclonedds.xml
+      - RMW_IMPLEMENTATION=rmw_zenoh_cpp
+      - ZENOH_CONFIG_URI=file:///config/dds/zenoh.json5
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./cyclonedds.xml:/config/dds/cyclonedds.xml:ro
+      - ./zenoh.json5:/config/dds/zenoh.json5:ro
       - ../config/override.yaml:/config/override.yaml:ro
     command: ros2 launch liorf run_lio_sam_bench.py

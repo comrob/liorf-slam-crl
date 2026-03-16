@@ -9,9 +9,9 @@ if [ -f /home/dev/ros2_ws/install/setup.bash ]; then
     source /home/dev/ros2_ws/install/setup.bash
 fi
 
-# Set default CYCLONEDDS_URI if not already set
+# Set default ZENOH_CONFIG_URI if not already set
 # Framework can override this via environment variables
-export CYCLONEDDS_URI=${CYCLONEDDS_URI:-file:///config/dds/cyclonedds.xml}
+export ZENOH_CONFIG_URI=${ZENOH_CONFIG_URI:-file:///config/dds/zenoh.json5}
 
 # Execute the command passed to the container
 exec "$@"

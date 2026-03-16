@@ -33,6 +33,7 @@ slam: up
 prod: up
 	@echo "Launching Production SLAM..."
 	$(Q)xhost +local:docker > /dev/null 2>&1 || true
+	$(Q)$(COMPOSE) up -d liorf_run
 	$(Q)$(COMPOSE) exec liorf_run bash -c \
 		"source ~/ros2_ws/install/setup.bash && \
 		ros2 launch liorf run_lio_sam_ouster.launch.py"
