@@ -40,8 +40,8 @@ def generate_launch_description():
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
+            name="statictf_map2odom",
             arguments='0.0 0.0 0.0 0.0 0.0 0.0 map odom'.split(' '),
-            parameters=[params_file],
             output='screen'
         ),
         Node(

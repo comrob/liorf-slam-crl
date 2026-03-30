@@ -35,36 +35,11 @@ public:
     Eigen::Affine3f imuOdomAffineFront;
     Eigen::Affine3f imuOdomAffineBack;
 
-    std::shared_ptr<tf2_ros::Buffer> tfBuffer;
-    std::shared_ptr<tf2_ros::TransformListener> tfListener;
-    std::shared_ptr<tf2_ros::TransformBroadcaster> tfMap2Odom;
-    std::shared_ptr<tf2_ros::TransformBroadcaster> tfOdom2BaseLink;
-    tf2::Stamped<tf2::Transform> lidar2Baselink;
-
     double lidarOdomTime = -1;
     deque<nav_msgs::msg::Odometry> imuOdomQueue;
 
     TransformFusion(const rclcpp::NodeOptions & options) : ParamServer("liorf_transformFusion", options)
     {
-        tfBuffer = std::make_shared<tf2_ros::Buffer>(get_clock());
-        tfListener = std::make_shared<tf2_ros::TransformListener>(*tfBuffer);
-
-        tfMap2Odom = std::make_unique<tf2_ros::TransformBroadcaster>(this);
-        tfOdom2BaseLink = std::make_unique<tf2_ros::TransformBroadcaster>(this);
-
-        if(lidarFrame != baselinkFrame)
-        {
-            try
-            {
-                tf2::fromMsg(tfBuffer->lookupTransform(
-                    lidarFrame, baselinkFrame, rclcpp::Time(0)), lidar2Baselink);
-            }
-            catch (tf2::TransformException ex)
-            {
-                RCLCPP_ERROR(get_logger(), "%s", ex.what());
-            }
-        }
-
         subLaserOdometry = create_subscription<nav_msgs::msg::Odometry>("liorf/mapping/odometry", QosPolicy(history_policy, reliability_policy), 
                     std::bind(&TransformFusion::lidarOdometryHandler, this, std::placeholders::_1));
 
@@ -97,18 +72,6 @@ public:
 
     void imuOdometryHandler(const nav_msgs::msg::Odometry::SharedPtr odomMsg)
     {
-        // static tf
-        tf2::Quaternion quat_tf;
-        // quat_tf.setRPY(0, 0, 0);
-        // tf2::Transform map_to_odom = tf2::Transform(quat_tf, tf2::Vector3(0, 0, 0));
-        rclcpp::Time t(static_cast<uint32_t>(lidarOdomTime * 1e9));
-        tf2::TimePoint time_point = tf2_ros::fromRclcpp(t);
-        // tf2::Stamped<tf2::Transform> temp_map_to_odom(map_to_odom, time_point, mapFrame);
-        // geometry_msgs::msg::TransformStamped trans_map_to_odom;
-        // tf2::convert(temp_map_to_odom, trans_map_to_odom);
-        // trans_map_to_odom.child_frame_id = odometryFrame;
-        // tfMap2Odom->sendTransform(trans_map_to_odom);
-
         std::lock_guard<std::mutex> lock(mtx);
 
         imuOdomQueue.push_back(*odomMsg);
@@ -116,6 +79,7 @@ public:
         // get latest odometry (at current IMU stamp)
         if (lidarOdomTime == -1)
             return;
+
         while (!imuOdomQueue.empty())
         {
             if (ROS_TIME(imuOdomQueue.front().header.stamp) <= lidarOdomTime)
@@ -123,6 +87,10 @@ public:
             else
                 break;
         }
+
+        if (imuOdomQueue.empty())
+            return;
+
         Eigen::Affine3f imuOdomAffineFront = odom2affine(imuOdomQueue.front());
         Eigen::Affine3f imuOdomAffineBack = odom2affine(imuOdomQueue.back());
         Eigen::Affine3f imuOdomAffineIncre = imuOdomAffineFront.inverse() * imuOdomAffineBack;
@@ -135,23 +103,15 @@ public:
         laserOdometry.pose.pose.position.x = x;
         laserOdometry.pose.pose.position.y = y;
         laserOdometry.pose.pose.position.z = z;
+
+        tf2::Quaternion quat_tf;
         quat_tf.setRPY(roll, pitch, yaw);
         geometry_msgs::msg::Quaternion quat_msg;
         tf2::convert(quat_tf, quat_msg);
         laserOdometry.pose.pose.orientation = quat_msg;
         pubImuOdometry->publish(laserOdometry);
 
-        // publish tf
-        tf2::Transform tCur(tf2::Quaternion(laserOdometry.pose.pose.orientation.x, laserOdometry.pose.pose.orientation.y, laserOdometry.pose.pose.orientation.z, laserOdometry.pose.pose.orientation.w), 
-                                tf2::Vector3(laserOdometry.pose.pose.position.x, laserOdometry.pose.pose.position.y, laserOdometry.pose.pose.position.z));
-        if(lidarFrame != baselinkFrame)
-            tCur *= lidar2Baselink;
-
-        tf2::Stamped<tf2::Transform> temp_odom_to_base(tCur, time_point, odometryFrame);
-        geometry_msgs::msg::TransformStamped trans_odom_to_base_link;
-        tf2::convert(temp_odom_to_base, trans_odom_to_base_link);
-        trans_odom_to_base_link.child_frame_id = baselinkFrame;
-        tfOdom2BaseLink->sendTransform(trans_odom_to_base_link);
+        // TF publication moved to mapOptimization (LiDAR-rate and single TF owner).
 
         // publish IMU path
         static nav_msgs::msg::Path imuPath;
