@@ -2,16 +2,17 @@
   ros__parameters:
     translationPredictionSource: constant_velocity
     # Topics
-    pointCloudTopic: "/os1/points"               # Point cloud data
-    imuTopic: "/os1/imu"                         # IMU data
+    pointCloudTopic: "/ouster/points"               # Point cloud data
+    imuTopic: "/ouster/imu"                         # IMU data
     odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
     gpsTopic: "/gnss/septentrio/fix"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
     # Frames
-    lidarFrame: "base_link"
-    baselinkFrame: "base_link"
+    lidarFrame: "os_lidar"
+    baselinkFrame: "os_sensor"
     odometryFrame: "odom"
     mapFrame: "map"
+    debugTFs: true
 
     # GPS Settings
     useImuHeadingInitialization: true           # if using GPS data, set to "true"

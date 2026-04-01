@@ -107,6 +107,9 @@ public:
     string odometryFrame;
     string mapFrame;
 
+    // Debug Flags
+    bool debugTFs;
+
     // GPS Settings
     bool useImuHeadingInitialization;
     bool useGpsElevation;
@@ -201,6 +204,9 @@ public:
         get_parameter("odometryFrame", odometryFrame);
         declare_parameter<string>("mapFrame", "map");
         get_parameter("mapFrame", mapFrame);
+
+        declare_parameter<bool>("debugTFs", false);
+        get_parameter("debugTFs", debugTFs);
 
         declare_parameter<bool>("useImuHeadingInitialization", false);
         get_parameter("useImuHeadingInitialization", useImuHeadingInitialization);

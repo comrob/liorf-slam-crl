@@ -26,6 +26,7 @@
 #include "Scancontext.h"
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 
 
 using namespace gtsam;
@@ -230,8 +231,27 @@ public:
         identity.setIdentity();
         lidar2Baselink.setData(identity);
 
-        if (lidarFrame != baselinkFrame)
+        // Initialize lidar<->baselink transform relationship
+        if (lidarFrame == baselinkFrame)
+        {
+            // Frames are identical: lidar2baselink is identity by definition
+            hasLidar2Baselink = true;
+            RCLCPP_INFO_STREAM(
+                get_logger(),
+                "[TF_INIT] lidarFrame == baselinkFrame ('" << lidarFrame << "'): "
+                << "lidar2baselink is identity by definition, hasLidar2Baselink=true"
+            );
+        }
+        else
+        {
+            // Frames differ: need to lookup the actual transform
+            RCLCPP_INFO_STREAM(
+                get_logger(),
+                "[TF_INIT] lidarFrame != baselinkFrame ('" << lidarFrame << "' vs '" << baselinkFrame << "'): "
+                << "attempting initial lookup"
+            );
             tryLookupLidarToBaselinkTf("ctor");
+        }
 
         allocateMemory();
     }
@@ -245,14 +265,31 @@ public:
 
             tf2::fromMsg(lidar_to_base_msg, lidar2Baselink);
             hasLidar2Baselink = true;
+
+            const auto &tr = lidar_to_base_msg.transform.translation;
+            const auto &qr = lidar_to_base_msg.transform.rotation;
+            double roll, pitch, yaw;
+            tf2::Quaternion q(qr.x, qr.y, qr.z, qr.w);
+            tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+
+            RCLCPP_INFO_STREAM(
+                get_logger(),
+                "[TF_LOOKUP_OK] (" << context << ") lookupTransform success target='" << lidarFrame
+                << "' source='" << baselinkFrame << "'"
+                << " stamp=" << std::fixed << std::setprecision(6) << ROS_TIME(lidar_to_base_msg.header.stamp)
+                << " xyz=(" << tr.x << ", " << tr.y << ", " << tr.z << ")"
+                << " quat_xyzw=(" << qr.x << ", " << qr.y << ", " << qr.z << ", " << qr.w << ")"
+                << " rpy=(" << roll << ", " << pitch << ", " << yaw << ")"
+            );
+
             return true;
         }
         catch (tf2::TransformException &ex)
         {
             hasLidar2Baselink = false;
-            RCLCPP_WARN_STREAM_THROTTLE(
-                get_logger(), *get_clock(), 2000,
-                "[TF_DEBUG] (" << context << ") lookupTransform failed target='" << lidarFrame
+            RCLCPP_WARN_STREAM(
+                get_logger(),
+                "[TF_LOOKUP_FAIL] (" << context << ") lookupTransform failed target='" << lidarFrame
                 << "' source='" << baselinkFrame << "' reason=" << ex.what()
             );
             return false;
@@ -1807,10 +1844,11 @@ public:
 
     void publishMapOptimizationTFs(const rclcpp::Time &stamp)
     {
-        std::vector<geometry_msgs::msg::TransformStamped> tf_list;
-        tf_list.reserve(2);
+        // Use sensor time from pointcloud (driver now has correct timestamps)
+        tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);
 
-        // odom -> lidar (optimized pose)
+        // ========== TRANSFORM 1: odom -> lidar_link (direct optimized pose) ==========
+        // This is the raw optimization result from mapOptimization
         tf2::Quaternion quat_tf;
         quat_tf.setRPY(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
         tf2::Transform t_odom_to_lidar = tf2::Transform(
@@ -1818,64 +1856,101 @@ public:
             tf2::Vector3(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5])
         );
 
-        // Use sensor time from pointcloud (driver now has correct timestamps)
-        tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);
+        tf2::Stamped<tf2::Transform> stamped_odom_to_lidar(t_odom_to_lidar, time_point, odometryFrame);
+        geometry_msgs::msg::TransformStamped trans_odom_to_lidar;
+        tf2::convert(stamped_odom_to_lidar, trans_odom_to_lidar);
+        trans_odom_to_lidar.child_frame_id = "lidar_link";
+        br->sendTransform(trans_odom_to_lidar);
 
-        // Always publish odom -> lidar_link
-        tf2::Stamped<tf2::Transform> temp_odom_to_lidar_link(t_odom_to_lidar, time_point, odometryFrame);
-        geometry_msgs::msg::TransformStamped trans_odom_to_lidar_link;
-        tf2::convert(temp_odom_to_lidar_link, trans_odom_to_lidar_link);
-        trans_odom_to_lidar_link.child_frame_id = "lidar_link";
-        tf_list.push_back(trans_odom_to_lidar_link);
+        if (debugTFs)
+        {
+            RCLCPP_INFO_STREAM_THROTTLE(
+                get_logger(), *get_clock(), 10000,
+                "[TF_DEBUG] publish [1/2] " << odometryFrame << "->lidar_link (direct optimization result)"
+                << " xyz=(" << transformTobeMapped[3] << ", " << transformTobeMapped[4] << ", " << transformTobeMapped[5] << ")"
+                << " rpy=(" << transformTobeMapped[0] << ", " << transformTobeMapped[1] << ", " << transformTobeMapped[2] << ")"
+            );
+        }
 
-        // Also publish odom -> baselinkFrame (or lidarFrame) when frames differ (replacing TransformFusion TF publication)
-        tf2::Transform t_odom_to_child = t_odom_to_lidar;
-        std::string child_frame_id = lidarFrame;
+        // ========== TRANSFORM 2: odom -> baselinkFrame (optimized pose * lidar2baselink) ==========
+        // This applies the looked-up or identity lidar<->baselink transform
         if (lidarFrame != baselinkFrame)
         {
+            // Frames differ: attempt lookup if we don't have it yet
             if (!hasLidar2Baselink)
             {
                 const double nowWall = this->now().seconds();
                 if (lastTfLookupAttemptWall < 0.0 || (nowWall - lastTfLookupAttemptWall) >= tfLookupRetryPeriodSec)
                 {
                     lastTfLookupAttemptWall = nowWall;
+                    if (debugTFs)
+                    {
+                        RCLCPP_INFO_STREAM_THROTTLE(
+                            get_logger(), *get_clock(), 10000,
+                            "[TF_DEBUG] retry lookupTransform target='" << lidarFrame
+                            << "' source='" << baselinkFrame << "'"
+                        );
+                    }
                     tryLookupLidarToBaselinkTf("publishMapOptimizationTFs/retry");
                 }
             }
 
+            // Publish to baselink if we have the transform
             if (hasLidar2Baselink)
             {
-                t_odom_to_child *= lidar2Baselink;
-                child_frame_id = baselinkFrame;
+                tf2::Transform t_odom_to_baselink = t_odom_to_lidar * lidar2Baselink;
+                tf2::Stamped<tf2::Transform> stamped_odom_to_baselink(t_odom_to_baselink, time_point, odometryFrame);
+                geometry_msgs::msg::TransformStamped trans_odom_to_baselink;
+                tf2::convert(stamped_odom_to_baselink, trans_odom_to_baselink);
+                trans_odom_to_baselink.child_frame_id = baselinkFrame;
+                br->sendTransform(trans_odom_to_baselink);
+
+                if (debugTFs)
+                {
+                    // Extract transform details for logging
+                    const auto &tr = lidar2Baselink.getOrigin();
+                    tf2::Quaternion q = lidar2Baselink.getRotation();
+                    double roll, pitch, yaw;
+                    tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
+
+                    RCLCPP_INFO_STREAM_THROTTLE(
+                        get_logger(), *get_clock(), 10000,
+                        "[TF_DEBUG] publish [2/2] " << odometryFrame << "->" << baselinkFrame
+                        << " (optimized result * looked-up lidar2baselink)"
+                        << " lidar2baselink_applied: xyz=(" << tr.x() << ", " << tr.y() << ", " << tr.z() << ")"
+                        << " rpy=(" << roll << ", " << pitch << ", " << yaw << ")"
+                    );
+                }
+            }
+            else if (debugTFs)
+            {
+                RCLCPP_INFO_STREAM_THROTTLE(
+                    get_logger(), *get_clock(), 10000,
+                    "[TF_DEBUG] publish [2/2] SKIPPED " << odometryFrame << "->" << baselinkFrame
+                    << " (awaiting valid lidar2baselink lookup)"
+                );
             }
         }
-
-        if (child_frame_id != "lidar_link")  // only add if different from the one already added
+        else
         {
-            tf2::Stamped<tf2::Transform> temp_odom_to_child(t_odom_to_child, time_point, odometryFrame);
-            geometry_msgs::msg::TransformStamped trans_odom_to_child;
-            tf2::convert(temp_odom_to_child, trans_odom_to_child);
-            trans_odom_to_child.child_frame_id = child_frame_id;
-            tf_list.push_back(trans_odom_to_child);
+            // Frames are identical: lidar2baselink is identity, publish with explicit identity explanation
+            tf2::Transform t_odom_to_baselink = t_odom_to_lidar * lidar2Baselink;  // multiplication by identity
+            tf2::Stamped<tf2::Transform> stamped_odom_to_baselink(t_odom_to_baselink, time_point, odometryFrame);
+            geometry_msgs::msg::TransformStamped trans_odom_to_baselink;
+            tf2::convert(stamped_odom_to_baselink, trans_odom_to_baselink);
+            trans_odom_to_baselink.child_frame_id = baselinkFrame;
+            br->sendTransform(trans_odom_to_baselink);
+
+            if (debugTFs)
+            {
+                RCLCPP_INFO_STREAM_THROTTLE(
+                    get_logger(), *get_clock(), 10000,
+                    "[TF_DEBUG] publish [2/2] " << odometryFrame << "->" << baselinkFrame
+                    << " (optimized result * identity lidar2baselink)"
+                    << " [frames identical: '" << lidarFrame << "' == '" << baselinkFrame << "']"
+                );
+            }
         }
-
-        br->sendTransform(tf_list);
-
-        static double lastMapTfStamp = -1.0;
-        static uint64_t mapTfPublishCount = 0;
-        mapTfPublishCount++;
-        const double mapTfStamp = ROS_TIME(stamp);
-        const double mapTfDt = (lastMapTfStamp < 0.0) ? 0.0 : (mapTfStamp - lastMapTfStamp);
-        lastMapTfStamp = mapTfStamp;
-        RCLCPP_INFO_STREAM_THROTTLE(
-            get_logger(), *get_clock(), 1000,
-            "[TF_DEBUG] publish " << odometryFrame << "->" << child_frame_id
-            << " seq=" << mapTfPublishCount
-            << " stamp=" << std::fixed << std::setprecision(6) << mapTfStamp
-            << " dt=" << mapTfDt
-            << " xyz=(" << transformTobeMapped[3] << ", " << transformTobeMapped[4] << ", " << transformTobeMapped[5] << ")"
-            << " rpy=(" << transformTobeMapped[0] << ", " << transformTobeMapped[1] << ", " << transformTobeMapped[2] << ")"
-        );
     }
 
     void publishOdometry()
