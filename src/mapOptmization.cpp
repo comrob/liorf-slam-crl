@@ -209,6 +209,8 @@ public:
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMapDS;
     std::unordered_map<VOXEL_LOC, PointType> voxelHashMap;
     bool require_map_rebuild = true;
+    bool localMapDirty = true;
+    bool kdtreeLocalMapDirty = true;
     double last_gps_rebuild_time = -1.0;
 
     pcl::KdTreeFLANN<PointType>::Ptr kdtreeSurfFromMap;
@@ -449,10 +451,13 @@ public:
             if (diagnostics)
                 diagnostics->recordSlice("updateInitialGuess", t_updateInitialGuess.toc());
 
-            TicToc t_manageLocalMap;
-            manageLocalMap();
-            if (diagnostics)
-                diagnostics->recordSlice("manageLocalMap", t_manageLocalMap.toc());
+            if (require_map_rebuild || localMapDirty)
+            {
+                TicToc t_manageLocalMap;
+                manageLocalMap();
+                if (diagnostics)
+                    diagnostics->recordSlice("manageLocalMap", t_manageLocalMap.toc());
+            }
 
             TicToc t_downsampleCurrentScan;
             downsampleCurrentScan();
@@ -465,7 +470,7 @@ public:
                 diagnostics->recordSlice("scan2MapOptimization", t_scan2MapOptimization.toc());
 
             TicToc t_saveKeyFramesAndFactor;
-            saveKeyFramesAndFactor();
+            bool newKeyframeSaved = saveKeyFramesAndFactor();
             if (diagnostics)
                 diagnostics->recordSlice("saveKeyFramesAndFactor", t_saveKeyFramesAndFactor.toc());
 
@@ -474,7 +479,11 @@ public:
             if (diagnostics)
                 diagnostics->recordSlice("correctPoses", t_correctPoses.toc());
 
-            updateRollingMap();
+            if (newKeyframeSaved)
+            {
+                localMapDirty = true;
+                updateRollingMap();
+            }
 
             publishOdometry();
 
@@ -631,6 +640,9 @@ public:
         if (!require_map_rebuild)
             require_map_rebuild = true;
 
+        localMapDirty = true;
+        kdtreeLocalMapDirty = true;
+
         if (diagnostics)
         {
             std::ostringstream oss;
@@ -667,6 +679,12 @@ public:
         {
             laserCloudSurfFromMapDS->clear();
             laserCloudSurfFromMapDSNum = 0;
+            return;
+        }
+
+        if (!require_map_rebuild && !localMapDirty)
+        {
+            logLocalMapStats("manageLocalMap_reuse");
             return;
         }
 
@@ -729,6 +747,8 @@ public:
             }
         }
 
+        localMapDirty = false;
+        kdtreeLocalMapDirty = true;
         laserCloudSurfFromMapDSNum = laserCloudSurfFromMapDS->size();
         logLocalMapStats("manageLocalMap");
     }
@@ -1763,7 +1783,11 @@ public:
 
         if (laserCloudSurfLastDSNum > 30)
         {
-            kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
+            if (kdtreeLocalMapDirty)
+            {
+                kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
+                kdtreeLocalMapDirty = false;
+            }
 
             for (int iterCount = 0; iterCount < 30; iterCount++)
             {
@@ -2001,10 +2025,10 @@ public:
         aLoopIsClosed = true;
     }
 
-    void saveKeyFramesAndFactor()
+    bool saveKeyFramesAndFactor()
     {
         if (saveFrame() == false)
-            return;
+            return false;
 
         // odom factor
         addOdomFactor();
@@ -2111,6 +2135,8 @@ public:
 
         // save path for visualization
         updatePath(thisPose6D);
+
+        return true;
     }
 
     void correctPoses()

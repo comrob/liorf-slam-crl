@@ -94,6 +94,7 @@ For active iterative work, prefer updating the current top entry instead of appe
 - Added runtime diagnostics logging for rolling-map behavior in [src/mapOptmization.cpp](src/mapOptmization.cpp):
 	- explicit `events.log` entries when map rebuilds are triggered (`loop_closure_factor`, `gps_periodic_60s`),
 	- per-cycle local-map statistics logging (voxel count, local-map points, scan points, keyposes, radius/leaf settings) to the diagnostics log folder.
+- Optimized local-map update policy in [src/mapOptmization.cpp](src/mapOptmization.cpp): local-map maintenance is now keyframe/rebuild-driven (`localMapDirty`), so non-keyframe frames reuse the cached local map; KD-tree refresh is similarly gated by map dirtiness.
 - Enabled the two rebuild-trigger parameters by default across dataset profiles:
 	- [config/lio_sam_default.yaml](config/lio_sam_default.yaml)
 	- [config/lio_sam_identity.yaml](config/lio_sam_identity.yaml)
