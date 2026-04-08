@@ -182,6 +182,8 @@ public:
     float historyKeyframeSearchTimeDiff;
     int   historyKeyframeSearchNum;
     float historyKeyframeFitnessScore;
+    bool rebuild_on_loop_closure;
+    bool rebuild_on_gps_jump;
 
     // global map visualization radius
     float globalMapVisualizationSearchRadius;
@@ -380,6 +382,10 @@ public:
         get_parameter("historyKeyframeSearchNum", historyKeyframeSearchNum);
         declare_parameter<float>("historyKeyframeFitnessScore", 0.3f);
         get_parameter("historyKeyframeFitnessScore", historyKeyframeFitnessScore);
+        declare_parameter<bool>("rebuild_on_loop_closure", true);
+        get_parameter("rebuild_on_loop_closure", rebuild_on_loop_closure);
+        declare_parameter<bool>("rebuild_on_gps_jump", true);
+        get_parameter("rebuild_on_gps_jump", rebuild_on_gps_jump);
 
 
        declare_parameter<float>("globalMapVisualizationSearchRadius", 1e3f);

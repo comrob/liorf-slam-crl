@@ -86,6 +86,23 @@ For active iterative work, prefer updating the current top entry instead of appe
 - Added diagnostics post-processing helper [scripts/plot_time_slicing_stats.py](scripts/plot_time_slicing_stats.py) to plot per-stage time-slicing statistics from `timing_stats.csv` (latest run or user-provided path), with optional smoothing and PNG output; documented usage in [README.md](README.md).
 - Diagnostics logging now also updates a stable symlink `~/.ros/liorf_logs/latest` to the newest run directory for easier tooling and scripting.
 - Updated the plotting helper defaults: when no input is provided it now reads latest diagnostics by default, and it now always both saves and displays the generated plot.
+- Added a hybrid rolling local-map path in [src/mapOptmization.cpp](src/mapOptmization.cpp) using a spatial hash grid keyed by integer voxels:
+	- local map generation now uses `manageLocalMap()` in the LiDAR pipeline,
+	- periodic full rebuilds are triggerable while non-rebuild cycles prune/fill directly from the hash map,
+	- incremental insertion of newly optimized scan points is done via `updateRollingMap()` after pose correction.
+- Added map rebuild trigger controls in [include/utility.h](include/utility.h): `rebuild_on_loop_closure` and `rebuild_on_gps_jump` (both default `true`), and wired them into loop/GPS factor flow in [src/mapOptmization.cpp](src/mapOptmization.cpp).
+- Added runtime diagnostics logging for rolling-map behavior in [src/mapOptmization.cpp](src/mapOptmization.cpp):
+	- explicit `events.log` entries when map rebuilds are triggered (`loop_closure_factor`, `gps_periodic_60s`),
+	- per-cycle local-map statistics logging (voxel count, local-map points, scan points, keyposes, radius/leaf settings) to the diagnostics log folder.
+- Enabled the two rebuild-trigger parameters by default across dataset profiles:
+	- [config/lio_sam_default.yaml](config/lio_sam_default.yaml)
+	- [config/lio_sam_identity.yaml](config/lio_sam_identity.yaml)
+	- [config/lio_sam_livox.yaml](config/lio_sam_livox.yaml)
+	- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+	- [config/kitti.yaml](config/kitti.yaml)
+	- [config/M2DGR.yaml](config/M2DGR.yaml)
+	- [config/mulran.yaml](config/mulran.yaml)
+	- [config/ubran_hongkong.yaml](config/ubran_hongkong.yaml)
 
 ### Migration/runtime risk
 

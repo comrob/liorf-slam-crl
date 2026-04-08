@@ -32,6 +32,8 @@
 #include <fstream>
 #include <iomanip>
 #include <sstream>
+#include <cstdint>
+#include <unordered_map>
 
 
 using namespace gtsam;
@@ -69,6 +71,30 @@ enum class SCInputType
     SINGLE_SCAN_FEAT, 
     MULTI_SCAN_FEAT 
 }; 
+
+struct VOXEL_LOC
+{
+    int64_t x;
+    int64_t y;
+    int64_t z;
+
+    bool operator==(const VOXEL_LOC &other) const
+    {
+        return x == other.x && y == other.y && z == other.z;
+    }
+};
+
+namespace std
+{
+template <>
+struct hash<VOXEL_LOC>
+{
+    std::size_t operator()(const VOXEL_LOC &loc) const noexcept
+    {
+        return ((hash<int64_t>()(loc.x) ^ (hash<int64_t>()(loc.y) << 1)) >> 1) ^ (hash<int64_t>()(loc.z) << 1);
+    }
+};
+} // namespace std
 
 class FloatingAnchorFactor : public gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Pose3> {
 private:
@@ -181,6 +207,9 @@ public:
     map<int, pair<pcl::PointCloud<PointType>, pcl::PointCloud<PointType>>> laserCloudMapContainer;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMap;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMapDS;
+    std::unordered_map<VOXEL_LOC, PointType> voxelHashMap;
+    bool require_map_rebuild = true;
+    double last_gps_rebuild_time = -1.0;
 
     pcl::KdTreeFLANN<PointType>::Ptr kdtreeSurfFromMap;
 
@@ -420,10 +449,10 @@ public:
             if (diagnostics)
                 diagnostics->recordSlice("updateInitialGuess", t_updateInitialGuess.toc());
 
-            TicToc t_extractSurroundingKeyFrames;
-            extractSurroundingKeyFrames();
+            TicToc t_manageLocalMap;
+            manageLocalMap();
             if (diagnostics)
-                diagnostics->recordSlice("extractSurroundingKeyFrames", t_extractSurroundingKeyFrames.toc());
+                diagnostics->recordSlice("manageLocalMap", t_manageLocalMap.toc());
 
             TicToc t_downsampleCurrentScan;
             downsampleCurrentScan();
@@ -444,6 +473,8 @@ public:
             correctPoses();
             if (diagnostics)
                 diagnostics->recordSlice("correctPoses", t_correctPoses.toc());
+
+            updateRollingMap();
 
             publishOdometry();
 
@@ -583,6 +614,141 @@ public:
         thisPose6D.pitch = transformIn[1];
         thisPose6D.yaw   = transformIn[2];
         return thisPose6D;
+    }
+
+    VOXEL_LOC voxelizePoint(const PointType &point, const float leafSize) const
+    {
+        const float safeLeaf = std::max(leafSize, 1e-3f);
+        VOXEL_LOC voxel;
+        voxel.x = static_cast<int64_t>(std::floor(point.x / safeLeaf));
+        voxel.y = static_cast<int64_t>(std::floor(point.y / safeLeaf));
+        voxel.z = static_cast<int64_t>(std::floor(point.z / safeLeaf));
+        return voxel;
+    }
+
+    void markMapRebuildTriggered(const std::string &reason)
+    {
+        if (!require_map_rebuild)
+            require_map_rebuild = true;
+
+        if (diagnostics)
+        {
+            std::ostringstream oss;
+            oss << "[MAP_REBUILD_TRIGGER] reason=" << reason
+                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+                << " keyposes=" << cloudKeyPoses3D->size()
+                << " voxel_count=" << voxelHashMap.size();
+            diagnostics->logEvent(oss.str());
+        }
+    }
+
+    void logLocalMapStats(const std::string &stage)
+    {
+        if (!diagnostics)
+            return;
+
+        std::ostringstream oss;
+        oss << "[LOCAL_MAP_STATS] stage=" << stage
+            << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+            << " rebuild_pending=" << (require_map_rebuild ? 1 : 0)
+            << " voxels=" << voxelHashMap.size()
+            << " local_map_pts=" << laserCloudSurfFromMapDS->size()
+            << " current_scan_pts=" << laserCloudSurfLastDSNum
+            << " keyposes=" << cloudKeyPoses3D->size()
+            << " radius=" << surroundingKeyframeSearchRadius
+            << " leaf=" << surroundingKeyframeMapLeafSize;
+
+        diagnostics->logEventThrottle("local_map_stats", 1.0, oss.str());
+    }
+
+    void manageLocalMap()
+    {
+        if (cloudKeyPoses3D->points.empty())
+        {
+            laserCloudSurfFromMapDS->clear();
+            laserCloudSurfFromMapDSNum = 0;
+            return;
+        }
+
+        if (require_map_rebuild)
+        {
+            const size_t prev_voxel_count = voxelHashMap.size();
+            voxelHashMap.clear();
+            extractSurroundingKeyFrames();
+
+            for (const auto &pt : laserCloudSurfFromMapDS->points)
+                voxelHashMap[voxelizePoint(pt, surroundingKeyframeMapLeafSize)] = pt;
+
+            require_map_rebuild = false;
+
+            if (diagnostics)
+            {
+                std::ostringstream oss;
+                oss << "[MAP_REBUILD_DONE] mode=full"
+                    << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+                    << " prev_voxels=" << prev_voxel_count
+                    << " new_voxels=" << voxelHashMap.size()
+                    << " local_map_pts=" << laserCloudSurfFromMapDS->size();
+                diagnostics->logEvent(oss.str());
+            }
+        }
+        else
+        {
+            const float cx = transformTobeMapped[3];
+            const float cy = transformTobeMapped[4];
+            const float cz = transformTobeMapped[5];
+            const float radius2 = surroundingKeyframeSearchRadius * surroundingKeyframeSearchRadius;
+            const size_t before_prune = voxelHashMap.size();
+
+            for (auto it = voxelHashMap.begin(); it != voxelHashMap.end();)
+            {
+                const auto &pt = it->second;
+                const float dx = pt.x - cx;
+                const float dy = pt.y - cy;
+                const float dz = pt.z - cz;
+                if ((dx * dx + dy * dy + dz * dz) > radius2)
+                    it = voxelHashMap.erase(it);
+                else
+                    ++it;
+            }
+
+            laserCloudSurfFromMapDS->clear();
+            laserCloudSurfFromMapDS->reserve(voxelHashMap.size());
+            for (const auto &entry : voxelHashMap)
+                laserCloudSurfFromMapDS->push_back(entry.second);
+
+            if (diagnostics)
+            {
+                std::ostringstream oss;
+                oss << "[MAP_REBUILD_DONE] mode=incremental"
+                    << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+                    << " voxels_before=" << before_prune
+                    << " voxels_after=" << voxelHashMap.size()
+                    << " local_map_pts=" << laserCloudSurfFromMapDS->size();
+                diagnostics->logEventThrottle("map_incremental_update", 1.0, oss.str());
+            }
+        }
+
+        laserCloudSurfFromMapDSNum = laserCloudSurfFromMapDS->size();
+        logLocalMapStats("manageLocalMap");
+    }
+
+    void updateRollingMap()
+    {
+        if (require_map_rebuild || laserCloudSurfLastDS->empty())
+            return;
+
+        PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
+        pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
+
+        for (const auto &pt : transformedCurrentScan->points)
+        {
+            VOXEL_LOC voxel = voxelizePoint(pt, surroundingKeyframeMapLeafSize);
+            if (voxelHashMap.find(voxel) == voxelHashMap.end())
+                voxelHashMap.emplace(voxel, pt);
+        }
+
+        logLocalMapStats("updateRollingMap");
     }
 
     
@@ -1798,6 +1964,12 @@ public:
                 FloatingAnchorFactor gps_factor(T_GL_KEY, cloudKeyPoses3D->size() - 1, measured_gps, antenna_offset, gps_noise);
                 gtSAMgraph.add(gps_factor);
 
+                if (rebuild_on_gps_jump && (last_gps_rebuild_time < 0.0 || (timeLaserInfoCur - last_gps_rebuild_time) > 60.0))
+                {
+                    markMapRebuildTriggered("gps_periodic_60s");
+                    last_gps_rebuild_time = timeLaserInfoCur;
+                }
+
                 aLoopIsClosed = true;
                 break;
             }
@@ -1822,6 +1994,10 @@ public:
         loopIndexQueue.clear();
         loopPoseQueue.clear();
         loopNoiseQueue.clear();
+
+        if (rebuild_on_loop_closure)
+            markMapRebuildTriggered("loop_closure_factor");
+
         aLoopIsClosed = true;
     }
 
