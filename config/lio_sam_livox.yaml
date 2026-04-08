@@ -86,6 +86,10 @@
     historyKeyframeFitnessScore: 0.3              # icp threshold, the smaller the better alignment
     rebuild_on_loop_closure: true                 # trigger rolling local-map rebuild when loop constraints are added
     rebuild_on_gps_jump: true                     # trigger rolling local-map rebuild on accepted GPS factor (time-gated)
+    transformed_cloud_cache_max_age_sec: 0.5      # keep transformed keyframe cloud cache only for the last N seconds
+    cloud_info_queue_depth: 5                     # CloudInfo subscriber queue depth (smaller -> less backlog, more frame drops)
+    drop_stale_lidar_frames: true                 # drop LiDAR frames that are already too old when callback runs
+    max_lidar_processing_lag_sec: 0.5             # maximum allowed LiDAR processing lag before dropping frame
 
     # Visualization
     globalMapVisualizationSearchRadius: 1000.0    # meters, global map visualization radius

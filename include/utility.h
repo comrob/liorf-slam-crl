@@ -184,6 +184,10 @@ public:
     float historyKeyframeFitnessScore;
     bool rebuild_on_loop_closure;
     bool rebuild_on_gps_jump;
+    double transformed_cloud_cache_max_age_sec;
+    int cloud_info_queue_depth;
+    bool drop_stale_lidar_frames;
+    double max_lidar_processing_lag_sec;
 
     // global map visualization radius
     float globalMapVisualizationSearchRadius;
@@ -386,6 +390,14 @@ public:
         get_parameter("rebuild_on_loop_closure", rebuild_on_loop_closure);
         declare_parameter<bool>("rebuild_on_gps_jump", true);
         get_parameter("rebuild_on_gps_jump", rebuild_on_gps_jump);
+        declare_parameter<double>("transformed_cloud_cache_max_age_sec", 0.5);
+        get_parameter("transformed_cloud_cache_max_age_sec", transformed_cloud_cache_max_age_sec);
+        declare_parameter<int>("cloud_info_queue_depth", 5);
+        get_parameter("cloud_info_queue_depth", cloud_info_queue_depth);
+        declare_parameter<bool>("drop_stale_lidar_frames", true);
+        get_parameter("drop_stale_lidar_frames", drop_stale_lidar_frames);
+        declare_parameter<double>("max_lidar_processing_lag_sec", 0.5);
+        get_parameter("max_lidar_processing_lag_sec", max_lidar_processing_lag_sec);
 
 
        declare_parameter<float>("globalMapVisualizationSearchRadius", 1e3f);

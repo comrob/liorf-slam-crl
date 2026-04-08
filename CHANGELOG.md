@@ -95,6 +95,25 @@ For active iterative work, prefer updating the current top entry instead of appe
 	- explicit `events.log` entries when map rebuilds are triggered (`loop_closure_factor`, `gps_periodic_60s`),
 	- per-cycle local-map statistics logging (voxel count, local-map points, scan points, keyposes, radius/leaf settings) to the diagnostics log folder.
 - Optimized local-map update policy in [src/mapOptmization.cpp](src/mapOptmization.cpp): local-map maintenance is now keyframe/rebuild-driven (`localMapDirty`), so non-keyframe frames reuse the cached local map; KD-tree refresh is similarly gated by map dirtiness.
+- Reduced spatial-hash insertion overhead in [src/mapOptmization.cpp](src/mapOptmization.cpp) by pre-allocating `voxelHashMap` buckets via `reserve()` before bulk insertion loops (both rebuild and rolling-update paths), avoiding repeated mid-loop rehashing.
+- Added finer timing slices in [src/mapOptmization.cpp](src/mapOptmization.cpp) to pinpoint runtime sources in diagnostics logs:
+	- `manageLocalMap` sub-slices (rebuild extract/hash insert, incremental prune/materialize),
+	- `updateRollingMap` sub-slices (transform + hash insert),
+	- `scan2MapOptimization` sub-slices (`setInputCloud`, aggregated `surfOptimization`/`combineOptimizationCoeffs`/`LMOptimization`, and `transformUpdate`), plus throttled per-cycle iteration summaries.
+- Enhanced [scripts/plot_time_slicing_stats.py](scripts/plot_time_slicing_stats.py) to display detailed per-stage timing statistics (count, mean, median, p90, p95, min, max, std), support summary sorting options, and optionally export the summary as CSV.
+- Refined [scripts/plot_time_slicing_stats.py](scripts/plot_time_slicing_stats.py) to prioritize a more detailed time-slicing figure (faceted per-stage view by default) while disabling console stats print by default; textual stats are now opt-in via `--show-summary`.
+- Updated [scripts/plot_time_slicing_stats.py](scripts/plot_time_slicing_stats.py) so default plotting now shows two plots side-by-side: full-stage overlay (previous view) and a dedicated map-handling-components panel (`manageLocalMap*`, `updateRollingMap*`).
+- Refined [scripts/plot_time_slicing_stats.py](scripts/plot_time_slicing_stats.py) side-by-side view so the left panel now emphasizes only high-level pipeline stages (`updateInitialGuess`, `manageLocalMap`, `downsampleCurrentScan`, `scan2MapOptimization`, `saveKeyFramesAndFactor`, `correctPoses`, `updateRollingMap`) instead of all detailed slices.
+- Updated [scripts/plot_time_slicing_stats.py](scripts/plot_time_slicing_stats.py) right-side panel stage selection to also include extraction dissection slices (`extractSurroundingKeyFrames*`, `extractNearby*`, `extractCloud*`) so the newly instrumented extraction path is plotted alongside map-handling slices.
+- Added deeper timing dissection inside [src/mapOptmization.cpp](src/mapOptmization.cpp) for `extractSurroundingKeyFrames` path, including slices for `extractNearby` (radius search, pose collection/downsampling/remap, recent-pose append, extract call) and `extractCloud` (fuse/transform, downsample, cache maintenance).
+- Updated transformed-keyframe cache policy in [src/mapOptmization.cpp](src/mapOptmization.cpp): cache entries are now pruned to retain only the last 0.5 seconds of keyframe-transformed clouds (instead of large-count eviction), and diagnostics now logs cached-cloud count in local-map stats plus throttled cache-prune events.
+- Made transformed-cloud cache retention configurable via new parameter `transformed_cloud_cache_max_age_sec` loaded in [include/utility.h](include/utility.h), used by [src/mapOptmization.cpp](src/mapOptmization.cpp), and set in all primary dataset YAML profiles under [config/](config).
+- Added explicit anti-backlog controls for LiDAR processing in [include/utility.h](include/utility.h), [src/mapOptmization.cpp](src/mapOptmization.cpp), and all primary [config/*.yaml](config):
+	- `cloud_info_queue_depth` (applied to `liorf/deskew/cloud_info` subscription QoS keep-last depth),
+	- `drop_stale_lidar_frames`,
+	- `max_lidar_processing_lag_sec` (drops stale LiDAR frames in callback when lag exceeds threshold),
+	which together bound post-playback buffering and favor frame dropping over accumulated localization lag.
+- Fixed stale-frame drop criterion in [src/mapOptmization.cpp](src/mapOptmization.cpp) to compare each frame stamp against newest seen CloudInfo stamp (queue backlog age), avoiding false full-drop behavior when bag timestamps and node current time are in different clock domains.
 - Enabled the two rebuild-trigger parameters by default across dataset profiles:
 	- [config/lio_sam_default.yaml](config/lio_sam_default.yaml)
 	- [config/lio_sam_identity.yaml](config/lio_sam_identity.yaml)

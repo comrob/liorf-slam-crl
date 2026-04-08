@@ -226,6 +226,7 @@ public:
     rclcpp::Time timeLaserInfoStamp;
     double timeLastProcessing{-1};
     double timeLaserInfoCur{0};
+    double newestCloudInfoStampSec{-1};
     double lastTimeDiff{0};
     double curTimeDiff{0};
 
@@ -281,7 +282,10 @@ public:
             history_policy,
             reliability_policy);
 
-        subCloud = create_subscription<liorf::msg::CloudInfo>("liorf/deskew/cloud_info", QosPolicy(history_policy, reliability_policy),
+        auto cloudInfoQos = QosPolicy(history_policy, reliability_policy);
+        cloudInfoQos.keep_last(std::max(1, cloud_info_queue_depth));
+
+        subCloud = create_subscription<liorf::msg::CloudInfo>("liorf/deskew/cloud_info", cloudInfoQos,
                     std::bind(&mapOptimization::laserCloudInfoHandler, this, std::placeholders::_1));
         subGPS = create_subscription<sensor_msgs::msg::NavSatFix>(gpsTopic, QosPolicy(history_policy, reliability_policy),
                     std::bind(&mapOptimization::gpsHandler, this, std::placeholders::_1));
@@ -426,6 +430,28 @@ public:
         // extract time stamp
         timeLaserInfoStamp = msgIn->header.stamp;
         timeLaserInfoCur = ROS_TIME(msgIn->header.stamp);
+        if (timeLaserInfoCur > newestCloudInfoStampSec)
+            newestCloudInfoStampSec = timeLaserInfoCur;
+
+        if (drop_stale_lidar_frames && max_lidar_processing_lag_sec > 0.0)
+        {
+            const double backlogLagSec = newestCloudInfoStampSec - timeLaserInfoCur;
+            if (backlogLagSec > max_lidar_processing_lag_sec)
+            {
+                if (diagnostics)
+                {
+                    std::ostringstream oss;
+                    oss << "[LIDAR_FRAME_DROP] reason=stale"
+                        << " lag_s=" << std::fixed << std::setprecision(3) << backlogLagSec
+                        << " max_lag_s=" << max_lidar_processing_lag_sec
+                        << " cloud_stamp_s=" << timeLaserInfoCur
+                        << " newest_cloud_stamp_s=" << newestCloudInfoStampSec;
+                    diagnostics->logEventThrottle("lidar_frame_drop_stale", 1.0, oss.str());
+                }
+                return;
+            }
+        }
+
         if (diagnostics)
             diagnostics->markLidarUpdate(timeLaserInfoStamp);
 
@@ -668,12 +694,50 @@ public:
             << " rebuild_pending=" << (require_map_rebuild ? 1 : 0)
             << " voxels=" << voxelHashMap.size()
             << " local_map_pts=" << laserCloudSurfFromMapDS->size()
+            << " cached_clouds=" << laserCloudMapContainer.size()
             << " current_scan_pts=" << laserCloudSurfLastDSNum
             << " keyposes=" << cloudKeyPoses3D->size()
             << " radius=" << surroundingKeyframeSearchRadius
-            << " leaf=" << surroundingKeyframeMapLeafSize;
+            << " leaf=" << surroundingKeyframeMapLeafSize
+            << " cache_max_age_s=" << transformed_cloud_cache_max_age_sec;
 
         diagnostics->logEventThrottle("local_map_stats", 1.0, oss.str());
+    }
+
+    size_t pruneTransformedCloudCache()
+    {
+        if (laserCloudMapContainer.empty())
+            return 0;
+
+        const double oldestAllowed = timeLaserInfoCur - transformed_cloud_cache_max_age_sec;
+        size_t removed = 0;
+
+        for (auto it = laserCloudMapContainer.begin(); it != laserCloudMapContainer.end();)
+        {
+            const int key = it->first;
+            bool erase = false;
+
+            if (key < 0 || key >= static_cast<int>(cloudKeyPoses6D->size()))
+            {
+                erase = true;
+            }
+            else if (cloudKeyPoses6D->points[key].time < oldestAllowed)
+            {
+                erase = true;
+            }
+
+            if (erase)
+            {
+                it = laserCloudMapContainer.erase(it);
+                ++removed;
+            }
+            else
+            {
+                ++it;
+            }
+        }
+
+        return removed;
     }
 
     void manageLocalMap()
@@ -1567,10 +1631,21 @@ public:
 
         // clear map cache if too large
         TicToc t_extractCloud_cacheMaintenance;
-        if (laserCloudMapContainer.size() > 1000)
-            laserCloudMapContainer.clear();
+        const size_t removedCacheEntries = pruneTransformedCloudCache();
         if (diagnostics)
+        {
             diagnostics->recordSlice("extractCloud.cacheMaintenance", t_extractCloud_cacheMaintenance.toc());
+
+            if (removedCacheEntries > 0)
+            {
+                std::ostringstream oss;
+                oss << "[CACHE_PRUNE] removed=" << removedCacheEntries
+                    << " remaining=" << laserCloudMapContainer.size()
+                    << " max_age_s=" << transformed_cloud_cache_max_age_sec
+                    << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur;
+                diagnostics->logEventThrottle("cache_prune", 1.0, oss.str());
+            }
+        }
     }
 
     void extractSurroundingKeyFrames()
