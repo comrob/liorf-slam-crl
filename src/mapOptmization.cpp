@@ -442,8 +442,8 @@ public:
 
     void gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gpsMsg)
     {
-        // if (gpsMsg->status.status != 0)
-        //     return;
+        if (gpsMsg->status.status < 0)
+            return;
 
         Eigen::Vector3d trans_local_;
         
