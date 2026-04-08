@@ -1236,12 +1236,12 @@ public:
         downSizeFilterSurf.setInputCloud(laserCloudSurfLast);
         downSizeFilterSurf.filter(*laserCloudSurfLastDS);
 
-        if (!laserCloudSurfLastDS->empty())
+        if (useSorFilter && !laserCloudSurfLastDS->empty())
         {
             pcl::StatisticalOutlierRemoval<PointType> sor;
             sor.setInputCloud(laserCloudSurfLastDS);
-            sor.setMeanK(5);            // Number of neighbors to analyze
-            sor.setStddevMulThresh(1.0); // Standard deviation multiplier (1 sigma)
+            sor.setMeanK(sorMeanK);
+            sor.setStddevMulThresh(sorStddevMulThresh);
             sor.filter(*laserCloudSurfLastDS);
         }
 

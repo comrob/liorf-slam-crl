@@ -152,6 +152,9 @@ public:
     float mappingSurfLeafSize ;
     float surroundingKeyframeMapLeafSize;
     float loopClosureICPSurfLeafSize ;
+    bool useSorFilter;
+    int sorMeanK;
+    float sorStddevMulThresh;
 
     float z_tollerance; 
     float rotation_tollerance;
@@ -345,6 +348,12 @@ public:
         get_parameter("surroundingKeyframeDensity", surroundingKeyframeDensity);
         declare_parameter<float>("loopClosureICPSurfLeafSize", 0.3f);
         get_parameter("loopClosureICPSurfLeafSize", loopClosureICPSurfLeafSize);
+        declare_parameter<bool>("useSorFilter", false);
+        get_parameter("useSorFilter", useSorFilter);
+        declare_parameter<int>("sorMeanK", 5);
+        get_parameter("sorMeanK", sorMeanK);
+        declare_parameter<float>("sorStddevMulThresh", 1.0f);
+        get_parameter("sorStddevMulThresh", sorStddevMulThresh);
         declare_parameter<float>("surroundingKeyframeSearchRadius", 50.0f);
         get_parameter("surroundingKeyframeSearchRadius", surroundingKeyframeSearchRadius);
 
