@@ -136,6 +136,11 @@ public:
     const gtsam::Key T_GL_KEY = gtsam::Symbol('T', 0);
     bool T_GL_initialized = false;
     gtsam::Pose3 T_GL_estimate = gtsam::Pose3::Identity();
+    bool T_EM_initialized = false;
+    gtsam::Pose3 T_EM_estimate = gtsam::Pose3::Identity();
+    Eigen::Affine3f odomToBaseAffine = Eigen::Affine3f::Identity();
+    Eigen::Affine3f mapLocalToOdomAffine = Eigen::Affine3f::Identity();
+    bool mapLocalToOdomInitialized = false;
     
     // GPS Antenna Lever Arm (Offset from tracking frame)
     double gpsAntennaOffsetX = 0.0;
@@ -448,6 +453,25 @@ public:
             first_gps = false;
             
             gps_trans_.Reset(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude);
+
+            GeographicLib::Geocentric earth = GeographicLib::Geocentric::WGS84();
+            double ecef_x, ecef_y, ecef_z;
+            earth.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, ecef_x, ecef_y, ecef_z);
+
+            const double lat_rad = gpsMsg->latitude * M_PI / 180.0;
+            const double lon_rad = gpsMsg->longitude * M_PI / 180.0;
+            const double sin_lat = std::sin(lat_rad);
+            const double cos_lat = std::cos(lat_rad);
+            const double sin_lon = std::sin(lon_rad);
+            const double cos_lon = std::cos(lon_rad);
+
+            Eigen::Matrix3d R_ecef_enu;
+            R_ecef_enu.col(0) = Eigen::Vector3d(-sin_lon,  cos_lon, 0.0);
+            R_ecef_enu.col(1) = Eigen::Vector3d(-sin_lat * cos_lon, -sin_lat * sin_lon, cos_lat);
+            R_ecef_enu.col(2) = Eigen::Vector3d( cos_lat * cos_lon,  cos_lat * sin_lon, sin_lat);
+
+            T_EM_estimate = gtsam::Pose3(gtsam::Rot3(R_ecef_enu), gtsam::Point3(ecef_x, ecef_y, ecef_z));
+            T_EM_initialized = true;
             RCLCPP_INFO(get_logger(), "GPS origin captured. Publishing will now begin.");
         }
 
@@ -455,7 +479,7 @@ public:
 
         nav_msgs::msg::Odometry gps_odom;
         gps_odom.header = gpsMsg->header;
-        gps_odom.header.frame_id = "map";
+        gps_odom.header.frame_id = mapFrameEnu;
         gps_odom.pose.pose.position.x = trans_local_[0];
         gps_odom.pose.pose.position.y = trans_local_[1];
         gps_odom.pose.pose.position.z = trans_local_[2];
@@ -1931,35 +1955,52 @@ public:
 
     void publishMapOptimizationTFs(const rclcpp::Time &stamp)
     {
+        tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);
+
+        if (T_EM_initialized) {
+            tf2::Quaternion q_ecef_map_enu;
+            q_ecef_map_enu.setRPY(T_EM_estimate.rotation().roll(), T_EM_estimate.rotation().pitch(), T_EM_estimate.rotation().yaw());
+
+            tf2::Transform t_ecef_to_map_enu = tf2::Transform(q_ecef_map_enu, tf2::Vector3(T_EM_estimate.translation().x(), T_EM_estimate.translation().y(), T_EM_estimate.translation().z()));
+            tf2::Stamped<tf2::Transform> stamped_ecef_to_map_enu(t_ecef_to_map_enu, time_point, ECEFframe);
+            geometry_msgs::msg::TransformStamped trans_ecef_to_map_enu;
+            tf2::convert(stamped_ecef_to_map_enu, trans_ecef_to_map_enu);
+            trans_ecef_to_map_enu.child_frame_id = mapFrameEnu;
+            br->sendTransform(trans_ecef_to_map_enu);
+        }
+
+        // 1. Broadcast TF mapFrameEnu -> mapFrameLocal (always present; identity until floating-anchor is initialized)
+        tf2::Quaternion q_map_to_map_local;
+        tf2::Transform t_map_to_map_local;
         if (T_GL_initialized) {
-            tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);
-            
-            // 1. Broadcast TF
-            tf2::Quaternion q_earth_map;
-            q_earth_map.setRPY(T_GL_estimate.rotation().roll(), T_GL_estimate.rotation().pitch(), T_GL_estimate.rotation().yaw());
-                               
-            tf2::Transform t_earth_to_map = tf2::Transform(q_earth_map, tf2::Vector3(T_GL_estimate.translation().x(), T_GL_estimate.translation().y(), T_GL_estimate.translation().z()));
+            q_map_to_map_local.setRPY(T_GL_estimate.rotation().roll(), T_GL_estimate.rotation().pitch(), T_GL_estimate.rotation().yaw());
+            t_map_to_map_local = tf2::Transform(q_map_to_map_local, tf2::Vector3(T_GL_estimate.translation().x(), T_GL_estimate.translation().y(), T_GL_estimate.translation().z()));
+        } else {
+            q_map_to_map_local.setRPY(0.0, 0.0, 0.0);
+            t_map_to_map_local = tf2::Transform(q_map_to_map_local, tf2::Vector3(0.0, 0.0, 0.0));
+        }
 
-            tf2::Stamped<tf2::Transform> stamped_earth_to_map(t_earth_to_map, time_point, "earth");
-            geometry_msgs::msg::TransformStamped trans_earth_to_map;
-            tf2::convert(stamped_earth_to_map, trans_earth_to_map);
-            trans_earth_to_map.child_frame_id = "map";
-            br->sendTransform(trans_earth_to_map);
+        tf2::Stamped<tf2::Transform> stamped_map_to_map_local(t_map_to_map_local, time_point, mapFrameEnu);
+        geometry_msgs::msg::TransformStamped trans_map_to_map_local;
+        tf2::convert(stamped_map_to_map_local, trans_map_to_map_local);
+        trans_map_to_map_local.child_frame_id = mapFrameLocal;
+        br->sendTransform(trans_map_to_map_local);
 
+        if (T_GL_initialized) {
             // 2. Broadcast PoseWithCovarianceStamped Topic
             if (pubGlobalOffset->get_subscription_count() != 0) {
                 geometry_msgs::msg::PoseWithCovarianceStamped offset_msg;
                 offset_msg.header.stamp = timeLaserInfoStamp;
-                offset_msg.header.frame_id = "earth";
+                offset_msg.header.frame_id = mapFrameEnu;
                 
                 offset_msg.pose.pose.position.x = T_GL_estimate.translation().x();
                 offset_msg.pose.pose.position.y = T_GL_estimate.translation().y();
                 offset_msg.pose.pose.position.z = T_GL_estimate.translation().z();
                 
-                offset_msg.pose.pose.orientation.x = q_earth_map.x();
-                offset_msg.pose.pose.orientation.y = q_earth_map.y();
-                offset_msg.pose.pose.orientation.z = q_earth_map.z();
-                offset_msg.pose.pose.orientation.w = q_earth_map.w();
+                offset_msg.pose.pose.orientation.x = q_map_to_map_local.x();
+                offset_msg.pose.pose.orientation.y = q_map_to_map_local.y();
+                offset_msg.pose.pose.orientation.z = q_map_to_map_local.z();
+                offset_msg.pose.pose.orientation.w = q_map_to_map_local.w();
 
                 if (isamCurrentEstimate.exists(T_GL_KEY)) {
                     gtsam::Matrix marginalCov = isam->marginalCovariance(T_GL_KEY);
@@ -1975,17 +2016,32 @@ public:
             }
         }
 
-        // Use sensor time from pointcloud (driver now has correct timestamps)
-        tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);
+        if (mapLocalToOdomInitialized) {
+            float x, y, z, roll, pitch, yaw;
+            pcl::getTranslationAndEulerAngles(mapLocalToOdomAffine, x, y, z, roll, pitch, yaw);
+            tf2::Quaternion q_map_local_to_odom;
+            q_map_local_to_odom.setRPY(roll, pitch, yaw);
+            tf2::Transform t_map_local_to_odom = tf2::Transform(q_map_local_to_odom, tf2::Vector3(x, y, z));
+            tf2::Stamped<tf2::Transform> stamped_map_local_to_odom(t_map_local_to_odom, time_point, mapFrameLocal);
+            geometry_msgs::msg::TransformStamped trans_map_local_to_odom;
+            tf2::convert(stamped_map_local_to_odom, trans_map_local_to_odom);
+            trans_map_local_to_odom.child_frame_id = odometryFrame;
+            br->sendTransform(trans_map_local_to_odom);
+        }
 
         // ========== TRANSFORM 1: odom -> lidar_link (direct optimized pose) ==========
-        // This is the raw optimization result from mapOptimization
-        tf2::Quaternion quat_tf;
-        quat_tf.setRPY(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
-        tf2::Transform t_odom_to_lidar = tf2::Transform(
-            quat_tf,
-            tf2::Vector3(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5])
-        );
+        // This remains published from mapOptimization as requested
+        float odom_x, odom_y, odom_z, odom_roll, odom_pitch, odom_yaw;
+        pcl::getTranslationAndEulerAngles(odomToBaseAffine, odom_x, odom_y, odom_z, odom_roll, odom_pitch, odom_yaw);
+        tf2::Quaternion quat_odom_to_base;
+        quat_odom_to_base.setRPY(odom_roll, odom_pitch, odom_yaw);
+        tf2::Transform t_odom_to_base = tf2::Transform(quat_odom_to_base, tf2::Vector3(odom_x, odom_y, odom_z));
+
+        tf2::Transform t_odom_to_lidar;
+        if (lidarFrame != baselinkFrame && hasLidar2Baselink)
+            t_odom_to_lidar = t_odom_to_base * lidar2Baselink.inverse();
+        else
+            t_odom_to_lidar = t_odom_to_base;
 
         tf2::Stamped<tf2::Transform> stamped_odom_to_lidar(t_odom_to_lidar, time_point, odometryFrame);
         geometry_msgs::msg::TransformStamped trans_odom_to_lidar;
@@ -1998,8 +2054,8 @@ public:
             RCLCPP_INFO_STREAM_THROTTLE(
                 get_logger(), *get_clock(), 10000,
                 "[TF_DEBUG] publish [1/2] " << odometryFrame << "->lidar_link (direct optimization result)"
-                << " xyz=(" << transformTobeMapped[3] << ", " << transformTobeMapped[4] << ", " << transformTobeMapped[5] << ")"
-                << " rpy=(" << transformTobeMapped[0] << ", " << transformTobeMapped[1] << ", " << transformTobeMapped[2] << ")"
+                << " xyz=(" << odom_x << ", " << odom_y << ", " << odom_z << ")"
+                << " rpy=(" << odom_roll << ", " << odom_pitch << ", " << odom_yaw << ")"
             );
         }
 
@@ -2090,7 +2146,7 @@ public:
         nav_msgs::msg::Odometry laserOdometryROS;
         laserOdometryROS.header.stamp = timeLaserInfoStamp;
         laserOdometryROS.header.frame_id = odometryFrame;
-        laserOdometryROS.child_frame_id = "odom_mapping";
+        laserOdometryROS.child_frame_id = "lidar_link";
         laserOdometryROS.pose.pose.position.x = transformTobeMapped[3];
         laserOdometryROS.pose.pose.position.y = transformTobeMapped[4];
         laserOdometryROS.pose.pose.position.z = transformTobeMapped[5];
@@ -2155,6 +2211,29 @@ public:
                 laserOdomIncremental.pose.covariance[0] = 0;
         }
         pubLaserOdometryIncremental->publish(laserOdomIncremental);
+
+        Eigen::Affine3f mapLocalToBase = trans2Affine3f(transformTobeMapped);
+        Eigen::Affine3f odomToBase;
+
+        tf2::Quaternion q_inc(
+            laserOdomIncremental.pose.pose.orientation.x,
+            laserOdomIncremental.pose.pose.orientation.y,
+            laserOdomIncremental.pose.pose.orientation.z,
+            laserOdomIncremental.pose.pose.orientation.w);
+        double inc_roll, inc_pitch, inc_yaw;
+        tf2::Matrix3x3(q_inc).getRPY(inc_roll, inc_pitch, inc_yaw);
+        odomToBase = pcl::getTransformation(
+            laserOdomIncremental.pose.pose.position.x,
+            laserOdomIncremental.pose.pose.position.y,
+            laserOdomIncremental.pose.pose.position.z,
+            inc_roll,
+            inc_pitch,
+            inc_yaw
+        );
+
+        odomToBaseAffine = odomToBase;
+        mapLocalToOdomAffine = mapLocalToBase * odomToBaseAffine.inverse();
+        mapLocalToOdomInitialized = true;
     }
 
     void publishFrames()

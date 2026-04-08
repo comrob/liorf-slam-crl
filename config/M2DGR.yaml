@@ -10,7 +10,9 @@
     lidarFrame: "base_link"
     baselinkFrame: "base_link"
     odometryFrame: "odom"
-    mapFrame: "map"
+    mapFrameLocal: "map_local" # same as "odom" for now
+    mapFrameEnu: "map"
+    ECEFframe: "earth"
 
     # GPS Settings
     useImuHeadingInitialization: true           # if using GPS data, set to "true"

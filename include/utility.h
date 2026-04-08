@@ -105,7 +105,9 @@ public:
     string lidarFrame;
     string baselinkFrame;
     string odometryFrame;
-    string mapFrame;
+    string mapFrameLocal;
+    string mapFrameEnu;
+    string ECEFframe;
 
     // Debug Flags
     bool debugTFs;
@@ -205,8 +207,12 @@ public:
         get_parameter("baselinkFrame", baselinkFrame);
         declare_parameter<string>("odometryFrame", "odom");
         get_parameter("odometryFrame", odometryFrame);
-        declare_parameter<string>("mapFrame", "map");
-        get_parameter("mapFrame", mapFrame);
+        declare_parameter<string>("mapFrameLocal", "map_local");
+        get_parameter("mapFrameLocal", mapFrameLocal);
+        declare_parameter<string>("mapFrameEnu", "map");
+        get_parameter("mapFrameEnu", mapFrameEnu);
+        declare_parameter<string>("ECEFframe", "earth");
+        get_parameter("ECEFframe", ECEFframe);
 
         declare_parameter<bool>("debugTFs", false);
         get_parameter("debugTFs", debugTFs);

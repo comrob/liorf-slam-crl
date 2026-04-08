@@ -11,7 +11,9 @@
     lidarFrame: "os_lidar"
     baselinkFrame: "os_sensor"
     odometryFrame: "odom"
-    mapFrame: "map"
+    mapFrameLocal: "map_local" # same as "odom" for now
+    mapFrameEnu: "map"
+    ECEFframe: "earth"
     debugTFs: true
 
     # GPS Settings

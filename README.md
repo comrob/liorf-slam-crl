@@ -134,16 +134,77 @@ ros2 bag play <path_to_ros2_bag>
 
 ---
 
-## Optional: GPS factor notes
+## 7) Frame model overview
 
-- GNSS topic type should be `sensor_msgs/msg/NavSatFix`
-- Set `gpsTopic` in your selected config file in [config](config)
+LIORF follows ROS frame guidance from REP-105 ([map/odom/base_link](https://www.ros.org/reps/rep-0105.html#map)) and uses a layered variant so local smooth odometry and global georeferencing remain cleanly separated.
+
+### Core frames (always used)
+
+- `mapFrameLocal`: local SLAM optimization frame (always present; identity-aligned to `mapFrameEnu` until GPS anchor estimation is available).
+- `odometryFrame`: compatibility/output frame used by odometry and map products consumed by downstream tools.
+- `baselinkFrame`: robot body frame.
+- `lidarFrame`: lidar sensor frame.
+
+### GPS-enabled frames (used when GNSS is fused)
+
+- `mapFrameEnu`: ENU frame anchored at the first accepted GNSS datum.
+- `ECEFframe`: Earth-centered global frame.
+
+### Two-layer frame scheme
+
+- Global/georeferencing layer:
+  - `ECEFframe -> mapFrameEnu -> mapFrameLocal`
+- Local motion/robot layer:
+  - `mapFrameLocal -> odometryFrame -> baselinkFrame`
+  - Alternative compatibility branch (always published): `odometryFrame -> lidar_link`
+
+### Implementation notes
+
+- `odometryFrame -> lidar_link` is hardcoded and always published as a compatibility branch.
+- To keep TF direction consistent from parent to child, the node computes `odometryFrame -> lidar_link` from optimized odometry and, when `lidarFrame != baselinkFrame`, applies the inverse of the looked-up `lidarFrame -> baselinkFrame` transform (effectively subtracting that offset from the base pose).
+- For now, `mapFrameLocal` and `odometryFrame` are practically the same in nominal operation (their relative transform is initialized as identity and usually remains near identity).
+- Relative to REP-105 terminology, this implementation intentionally splits the usual “map/odom” behavior into `mapFrameLocal` and `odometryFrame` so future loop-closure/global alignment corrections can be represented upstream without degrading odometry smoothness; georeferencing-related jumps are isolated at the `mapFrameEnu -> mapFrameLocal` joint.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for full transform chain, TF ownership, and publication behavior details.
+
+---
+
+## Optional: GPS integration notes (Floating Anchor)
+
+This repository uses a **Floating Anchor** GPS fusion strategy:
+
+- The local SLAM trajectory remains in its native `mapFrameLocal` frame (default: `map_local`).
+- GPS does **not** hard-snap local key poses to global ENU.
+- A separate global-to-local transform $T_{G\_L}$ (published as `mapFrameEnu -> mapFrameLocal`) is optimized in the graph.
+
+### Inputs
+
+- GNSS input topic type: `sensor_msgs/msg/NavSatFix`
+- Configure `gpsTopic` in your selected YAML under [config](config)
 
 Example:
 
 ```yaml
 gpsTopic: "gps/fix"
 ```
+
+### Outputs related to GPS fusion
+
+- `liorf/mapping/gps_odom` (`nav_msgs/msg/Odometry`): local Cartesian projection of NavSatFix.
+- `liorf/gps_origin` (`sensor_msgs/msg/NavSatFix`): captured datum origin used for local projection.
+- TF `mapFrameEnu -> mapFrameLocal`: optimized global offset/rotation from floating-anchor fusion.
+- `liorf/earth_to_map_offset` (`geometry_msgs/msg/PoseWithCovarianceStamped`): same offset as topic, including covariance when available.
+
+### Map saving metadata
+
+When calling `liorf/save_map`, GPS metadata is saved to:
+
+- `map_metadata.yaml`
+
+It includes:
+
+- `global_datum` (latitude/longitude/altitude when available)
+- `T_global_local` (`x,y,z,roll,pitch,yaw`)
 
 ---
 
