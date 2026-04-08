@@ -1,3 +1,5 @@
+#include <gtsam/nonlinear/NonlinearFactor.h>
+
 #include "utility.h"
 #include "liorf/msg/cloud_info.hpp"
 #include "liorf/srv/save_map.hpp"
@@ -15,6 +17,8 @@
 #include <gtsam/nonlinear/Marginals.h>
 #include <gtsam/nonlinear/Values.h>
 #include <gtsam/inference/Symbol.h>
+
+#include <geometry_msgs/msg/pose_with_covariance_stamped.hpp>
 
 #include <gtsam/nonlinear/ISAM2.h>
 
@@ -65,6 +69,38 @@ enum class SCInputType
     MULTI_SCAN_FEAT 
 }; 
 
+class FloatingAnchorFactor : public gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Pose3> {
+private:
+    gtsam::Point3 measured_gps_;
+    gtsam::Point3 lever_arm_;
+
+public:
+    FloatingAnchorFactor(gtsam::Key T_GL_key, gtsam::Key x_t_key, const gtsam::Point3& measured_gps,
+                         const gtsam::Point3& lever_arm, gtsam::SharedNoiseModel model)
+        : gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Pose3>(model, T_GL_key, x_t_key),
+          measured_gps_(measured_gps), lever_arm_(lever_arm) {}
+
+    gtsam::Vector evaluateError(const gtsam::Pose3& T_GL, const gtsam::Pose3& x_t,
+                                boost::optional<gtsam::Matrix&> H1 = boost::none,
+                                boost::optional<gtsam::Matrix&> H2 = boost::none) const override {
+        // 1. Transform lever arm to local odometry frame
+        gtsam::Matrix36 H_xt_pt;
+        gtsam::Point3 local_pt = x_t.transformFrom(lever_arm_, H2 ? &H_xt_pt : 0);
+
+        // 2. Transform local point to global GPS frame
+        gtsam::Matrix36 H_TGL_global;
+        gtsam::Matrix33 H_local_global;
+        gtsam::Point3 global_pt = T_GL.transformFrom(local_pt, H1 ? &H_TGL_global : 0, H2 ? &H_local_global : 0);
+
+        // 3. Assemble Jacobians using chain rule
+        if (H1) *H1 = H_TGL_global;
+        if (H2) *H2 = H_local_global * H_xt_pt;
+
+        // 4. Return error vector
+        return global_pt - measured_gps_;
+    }
+};
+
 class mapOptimization : public ParamServer
 {
 
@@ -94,6 +130,17 @@ public:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubLoopConstraintEdge;
     rclcpp::Publisher<liorf::msg::CloudInfo>::SharedPtr pubSLAMInfo;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubGpsOdom;
+    rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubGlobalOffset;
+
+    // Floating Anchor GPS Fusion Variables
+    const gtsam::Key T_GL_KEY = gtsam::Symbol('T', 0);
+    bool T_GL_initialized = false;
+    gtsam::Pose3 T_GL_estimate = gtsam::Pose3::Identity();
+    
+    // GPS Antenna Lever Arm (Offset from tracking frame)
+    double gpsAntennaOffsetX = 0.0;
+    double gpsAntennaOffsetY = 0.0;
+    double gpsAntennaOffsetZ = 0.0;
 
     // Add the new publisher, timer, and state variables here
     rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr pubGpsOrigin;
@@ -211,6 +258,7 @@ public:
         pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
         pubSLAMInfo = create_publisher<liorf::msg::CloudInfo>("liorf/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
         pubGpsOdom = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/gps_odom", QosPolicy(history_policy, reliability_policy));
+        pubGlobalOffset = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf/earth_to_map_offset", QosPolicy(history_policy, reliability_policy));
 
         pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
         origin_publish_timer = this->create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::timerCallbackPublishOrigin, this));
@@ -511,29 +559,37 @@ public:
       int unused = system((std::string("exec rm -r ") + saveMapDirectory).c_str());
       unused = system((std::string("mkdir -p ") + saveMapDirectory).c_str());
 
-      { // Use a scope for the lock_guard to release the mutex automatically
+      { // Lock guard scope for origin
           std::lock_guard<std::mutex> lock(origin_mutex);
-          if (!first_gps)
+          std::string metadata_file_path = saveMapDirectory + "/map_metadata.yaml";
+          std::ofstream ofs(metadata_file_path);
+          if (ofs.is_open())
           {
-              std::string gps_origin_file_path = saveMapDirectory + "/map_origin.txt";
-              std::ofstream ofs(gps_origin_file_path);
-              if (ofs.is_open())
-              {
-                  ofs << std::fixed << std::setprecision(12); // Use high precision for GPS data
-                  ofs << "latitude: " << stored_origin_gps_msg.latitude << std::endl;
-                  ofs << "longitude: " << stored_origin_gps_msg.longitude << std::endl;
-                  ofs << "altitude: " << stored_origin_gps_msg.altitude << std::endl;
-                  ofs.close();
-                  cout << "GPS origin successfully saved to: " << gps_origin_file_path << endl;
+              ofs << std::fixed << std::setprecision(12);
+              ofs << "global_datum:" << std::endl;
+              
+              if (!first_gps) {
+                  ofs << "  latitude: " << stored_origin_gps_msg.latitude << std::endl;
+                  ofs << "  longitude: " << stored_origin_gps_msg.longitude << std::endl;
+                  ofs << "  altitude: " << stored_origin_gps_msg.altitude << std::endl;
+              } else {
+                  ofs << "  latitude: null\n  longitude: null\n  altitude: null" << std::endl;
               }
-              else
-              {
-                  cout << "[ERROR] Could not open file to save GPS origin: " << gps_origin_file_path << endl;
+
+              ofs << "T_global_local:" << std::endl;
+              if (T_GL_initialized) {
+                  ofs << "  x: " << T_GL_estimate.translation().x() << std::endl;
+                  ofs << "  y: " << T_GL_estimate.translation().y() << std::endl;
+                  ofs << "  z: " << T_GL_estimate.translation().z() << std::endl;
+                  ofs << "  roll: " << T_GL_estimate.rotation().roll() << std::endl;
+                  ofs << "  pitch: " << T_GL_estimate.rotation().pitch() << std::endl;
+                  ofs << "  yaw: " << T_GL_estimate.rotation().yaw() << std::endl;
+              } else {
+                  ofs << "  x: 0.0\n  y: 0.0\n  z: 0.0\n  roll: 0.0\n  pitch: 0.0\n  yaw: 0.0" << std::endl;
               }
-          }
-          else
-          {
-              cout << "[WARNING] No GPS data was fused. GPS origin file will not be saved." << endl;
+              
+              ofs.close();
+              cout << "Map metadata (Datum + Transform) successfully saved to: " << metadata_file_path << endl;
           }
       }
 
@@ -1569,10 +1625,13 @@ public:
     {
         if (cloudKeyPoses3D->points.empty())
         {
-            noiseModel::Diagonal::shared_ptr priorNoise = noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-2, 1e-2, M_PI*M_PI, 1e8, 1e8, 1e8).finished()); // rad*rad, meter*meter
+            // Lock the local trajectory's origin completely to force T_GL to absorb all global drift
+            noiseModel::Diagonal::shared_ptr priorNoise = noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-6, 1e-6, 1e-6).finished()); 
             gtSAMgraph.add(PriorFactor<Pose3>(0, trans2gtsamPose(transformTobeMapped), priorNoise));
             initialEstimate.insert(0, trans2gtsamPose(transformTobeMapped));
-        }else{
+        }
+        else
+        {
             noiseModel::Diagonal::shared_ptr odometryNoise = noiseModel::Diagonal::Variances((gtsam::Vector(6) << 1e-6, 1e-6, 1e-6, 1e-4, 1e-4, 1e-4).finished());
             gtsam::Pose3 poseFrom = pclPointTogtsamPose3(cloudKeyPoses6D->points.back());
             gtsam::Pose3 poseTo   = trans2gtsamPose(transformTobeMapped);
@@ -1596,8 +1655,8 @@ public:
         }
 
         // pose covariance small, no need to correct
-        if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
-            return;
+        // if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
+        //     return;
 
         // last gps position
         static PointType lastGPSPoint;
@@ -1649,10 +1708,34 @@ public:
                 else
                     lastGPSPoint = curGPSPoint;
 
-                gtsam::Vector Vector3(3);
-                Vector3 << max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f);
+                // 1. Initialize T_GL if this is the first GPS fusion
+                if (!T_GL_initialized) {
+                    gtsam::Pose3 current_local_pose = pclPointTogtsamPose3(cloudKeyPoses6D->points.back());
+                    gtsam::Point3 initial_translation(gps_x - current_local_pose.x(), 
+                                                      gps_y - current_local_pose.y(), 
+                                                      gps_z - current_local_pose.z());
+                    
+                    // Start with identity rotation (yaw=0). It will become observable with motion.
+                    T_GL_estimate = gtsam::Pose3(gtsam::Rot3::Identity(), initial_translation);
+                    initialEstimate.insert(T_GL_KEY, T_GL_estimate);
+                    
+                    // Add a weak prior to prevent singularity before heading is observable
+                    gtsam::Vector6 prior_noise_vector;
+                    prior_noise_vector << 1e-2, 1e-2, M_PI, 1e8, 1e8, 1e8; // Weak on yaw
+                    gtSAMgraph.add(PriorFactor<Pose3>(T_GL_KEY, T_GL_estimate, noiseModel::Diagonal::Variances(prior_noise_vector)));
+                    
+                    T_GL_initialized = true;
+                }
+
+                // 2. Create Noise Model and Custom Factor
+                gtsam::Vector3 Vector3(max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f));
                 noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
-                gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
+
+                gtsam::Point3 measured_gps(gps_x, gps_y, gps_z);
+                gtsam::Point3 antenna_offset(gpsAntennaOffsetX, gpsAntennaOffsetY, gpsAntennaOffsetZ);
+
+                // Bypass Expression framework completely
+                FloatingAnchorFactor gps_factor(T_GL_KEY, cloudKeyPoses3D->size() - 1, measured_gps, antenna_offset, gps_noise);
                 gtSAMgraph.add(gps_factor);
 
                 aLoopIsClosed = true;
@@ -1721,7 +1804,11 @@ public:
         Pose3 latestEstimate;
 
         isamCurrentEstimate = isam->calculateEstimate();
-        latestEstimate = isamCurrentEstimate.at<Pose3>(isamCurrentEstimate.size()-1);
+        if (T_GL_initialized && isamCurrentEstimate.exists(T_GL_KEY)) {
+            T_GL_estimate = isamCurrentEstimate.at<Pose3>(T_GL_KEY);
+        }
+        const int latestPoseKey = cloudKeyPoses3D->size(); // capture before push_back
+        latestEstimate = isamCurrentEstimate.at<Pose3>(latestPoseKey);
         // cout << "****************************************************" << endl;
         // isamCurrentEstimate.print("Current estimate: ");
 
@@ -1743,8 +1830,8 @@ public:
 
         // cout << "****************************************************" << endl;
         // cout << "Pose covariance:" << endl;
-        // cout << isam->marginalCovariance(isamCurrentEstimate.size()-1) << endl << endl;
-        poseCovariance = isam->marginalCovariance(isamCurrentEstimate.size()-1);
+        // cout << isam->marginalCovariance(latestPoseKey) << endl << endl;
+        poseCovariance = isam->marginalCovariance(latestPoseKey);
 
         // save updated transform
         transformTobeMapped[0] = latestEstimate.rotation().roll();
@@ -1802,7 +1889,7 @@ public:
             // clear path
             globalPath.poses.clear();
             // update key poses
-            int numPoses = isamCurrentEstimate.size();
+            int numPoses = cloudKeyPoses3D->size();
             for (int i = 0; i < numPoses; ++i)
             {
                 cloudKeyPoses3D->points[i].x = isamCurrentEstimate.at<Pose3>(i).translation().x();
@@ -1844,6 +1931,50 @@ public:
 
     void publishMapOptimizationTFs(const rclcpp::Time &stamp)
     {
+        if (T_GL_initialized) {
+            tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);
+            
+            // 1. Broadcast TF
+            tf2::Quaternion q_earth_map;
+            q_earth_map.setRPY(T_GL_estimate.rotation().roll(), T_GL_estimate.rotation().pitch(), T_GL_estimate.rotation().yaw());
+                               
+            tf2::Transform t_earth_to_map = tf2::Transform(q_earth_map, tf2::Vector3(T_GL_estimate.translation().x(), T_GL_estimate.translation().y(), T_GL_estimate.translation().z()));
+
+            tf2::Stamped<tf2::Transform> stamped_earth_to_map(t_earth_to_map, time_point, "earth");
+            geometry_msgs::msg::TransformStamped trans_earth_to_map;
+            tf2::convert(stamped_earth_to_map, trans_earth_to_map);
+            trans_earth_to_map.child_frame_id = "map";
+            br->sendTransform(trans_earth_to_map);
+
+            // 2. Broadcast PoseWithCovarianceStamped Topic
+            if (pubGlobalOffset->get_subscription_count() != 0) {
+                geometry_msgs::msg::PoseWithCovarianceStamped offset_msg;
+                offset_msg.header.stamp = timeLaserInfoStamp;
+                offset_msg.header.frame_id = "earth";
+                
+                offset_msg.pose.pose.position.x = T_GL_estimate.translation().x();
+                offset_msg.pose.pose.position.y = T_GL_estimate.translation().y();
+                offset_msg.pose.pose.position.z = T_GL_estimate.translation().z();
+                
+                offset_msg.pose.pose.orientation.x = q_earth_map.x();
+                offset_msg.pose.pose.orientation.y = q_earth_map.y();
+                offset_msg.pose.pose.orientation.z = q_earth_map.z();
+                offset_msg.pose.pose.orientation.w = q_earth_map.w();
+
+                if (isamCurrentEstimate.exists(T_GL_KEY)) {
+                    gtsam::Matrix marginalCov = isam->marginalCovariance(T_GL_KEY);
+                    // Map GTSAM [Rot, Trans] to ROS [Trans, Rot]
+                    for (int i = 0; i < 3; i++) {
+                        for (int j = 0; j < 3; j++) {
+                            offset_msg.pose.covariance[(i)*6 + (j)] = marginalCov(i+3, j+3);
+                            offset_msg.pose.covariance[(i+3)*6 + (j+3)] = marginalCov(i, j);
+                        }
+                    }
+                }
+                pubGlobalOffset->publish(offset_msg);
+            }
+        }
+
         // Use sensor time from pointcloud (driver now has correct timestamps)
         tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);
 
