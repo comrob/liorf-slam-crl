@@ -1,10 +1,41 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, Command
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+
+
+def _parse_optional_bool(value: str):
+    normalized = value.strip().lower()
+    if normalized == '':
+        return None
+    if normalized in ('true', '1', 'yes', 'on'):
+        return True
+    if normalized in ('false', '0', 'no', 'off'):
+        return False
+    raise RuntimeError("Invalid 'use_sim_time' value. Use true/false (or leave empty).")
+
+
+def _build_node_parameters(context, *parameter_sources):
+    parameters = list(parameter_sources)
+    use_sim_time_value = LaunchConfiguration('use_sim_time').perform(context)
+    parsed = _parse_optional_bool(use_sim_time_value)
+    if parsed is not None:
+        parameters.append({'use_sim_time': parsed})
+    return parameters
+
+
+def _liorf_node(executable, name, parameters, remappings=None):
+    return Node(
+        package='liorf',
+        executable=executable,
+        name=name,
+        parameters=parameters,
+        remappings=remappings or [],
+        output='screen'
+    )
 
 
 def generate_launch_description():
@@ -31,39 +62,45 @@ def generate_launch_description():
         default_value='true',
         description='Enable RViz visualization (true by default, set to false for headless use)')
 
+    use_sim_time_declare = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='',
+        description='Optional override for use_sim_time (true/false). Empty keeps YAML value.')
+
+    def launch_setup(context, *args, **kwargs):
+        node_parameters = _build_node_parameters(context, parameter_file, config_override)
+        return [
+            _liorf_node(
+                'liorf_imuPreintegration',
+                'liorf_imuPreintegration',
+                node_parameters,
+                remappings=[('/liorf/mapping/odometry', '/estimated_odom')]
+            ),
+            _liorf_node(
+                'liorf_imageProjection',
+                'liorf_imageProjection',
+                node_parameters
+            ),
+            _liorf_node(
+                'liorf_mapOptmization',
+                'liorf_mapOptmization',
+                node_parameters,
+                remappings=[('/liorf/mapping/odometry', '/estimated_odom')]
+            ),
+            Node(
+                package='rviz2',
+                executable='rviz2',
+                name='rviz2',
+                condition=IfCondition(enable_rviz),
+                arguments=['-d', rviz_config_file],
+                output='screen'
+            )
+        ]
+
     return LaunchDescription([
         params_declare,
         config_override_declare,
         rviz_declare,
-        Node(
-            package='liorf',
-            executable='liorf_imuPreintegration',
-            name='liorf_imuPreintegration',
-            parameters=[parameter_file, config_override],
-            remappings=[('/liorf/mapping/odometry', '/estimated_odom')],
-            output='screen'
-        ),
-        Node(
-            package='liorf',
-            executable='liorf_imageProjection',
-            name='liorf_imageProjection',
-            parameters=[parameter_file, config_override],
-            output='screen'
-        ),
-        Node(
-            package='liorf',
-            executable='liorf_mapOptmization',
-            name='liorf_mapOptmization',
-            parameters=[parameter_file, config_override],
-            remappings=[('/liorf/mapping/odometry', '/estimated_odom')],
-            output='screen'
-        ),
-        Node(
-            package='rviz2',
-            executable='rviz2',
-            name='rviz2',
-            condition=IfCondition(enable_rviz),
-            arguments=['-d', rviz_config_file],
-            output='screen'
-        )
+        use_sim_time_declare,
+        OpaqueFunction(function=launch_setup)
     ])

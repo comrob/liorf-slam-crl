@@ -26,6 +26,8 @@ For active iterative work, prefer updating the current top entry instead of appe
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [CHANGELOG.md](CHANGELOG.md)
 - [src/mapOptmization.cpp](src/mapOptmization.cpp)
+- [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
+- [include/tictoc.h](include/tictoc.h)
 - [README.md](README.md)
 - [include/utility.h](include/utility.h)
 - [launch/liorf.launch.py](launch/liorf.launch.py)
@@ -46,6 +48,7 @@ For active iterative work, prefer updating the current top entry instead of appe
 - [launch/run_mulran.launch.py](launch/run_mulran.launch.py)
 - [launch/run_ubran_hongkong.launch.py](launch/run_ubran_hongkong.launch.py)
 - [launch/run_lio_sam_bench.py](launch/run_lio_sam_bench.py)
+- [scripts/plot_time_slicing_stats.py](scripts/plot_time_slicing_stats.py)
 
 ### Behavior impact
 
@@ -72,6 +75,17 @@ For active iterative work, prefer updating the current top entry instead of appe
 	- `mapFrameEnu->mapFrameLocal` is now always published; before anchor estimation it is identity, then it transitions to the optimized floating-anchor transform.
 	- once initialized, last valid global transforms continue publishing through GPS denial.
 - Restored compatibility for visualization/output topics by keeping key map products in `odometryFrame` (`trajectory`, local map clouds, registered clouds, and path), while retaining the internal/global TF hierarchy.
+- Added centralized diagnostics infrastructure:
+	- new [include/liorf_diagnostics.h](include/liorf_diagnostics.h) logger/telemetry module creates timestamped run directories under `~/.ros/liorf_logs/run_YYYYMMDD_HHMMSS/`, writes `timing_stats.csv`, `events.log`, and startup `run_parameters.yaml` dump, and publishes 1 Hz JSON telemetry on `/liorf/diagnostics`.
+	- extended [include/tictoc.h](include/tictoc.h) with non-printing `double toc()` to support silent elapsed-time sampling in milliseconds.
+	- integrated diagnostics ownership in [include/utility.h](include/utility.h) and initialization/use in [src/mapOptmization.cpp](src/mapOptmization.cpp), including per-stage timing slices around the core LiDAR pipeline, LiDAR/GPS freshness tracking, and redirecting the constant-velocity translation prediction throttle message from console to `events.log`.
+- Launch/replay usability improvements:
+	- added optional `use_sim_time` launch argument handling so launch-time override applies only when explicitly provided; otherwise YAML values are preserved.
+	- reduced launch-file duplication by making dataset-specific launchers delegate to [launch/liorf.launch.py](launch/liorf.launch.py) and forward arguments.
+	- documented replay best practice in [README.md](README.md): use `ros2 bag play ... --clock` and set `use_sim_time=true` via launch argument or parameter file for diagnostics during bag playback.
+- Added diagnostics post-processing helper [scripts/plot_time_slicing_stats.py](scripts/plot_time_slicing_stats.py) to plot per-stage time-slicing statistics from `timing_stats.csv` (latest run or user-provided path), with optional smoothing and PNG output; documented usage in [README.md](README.md).
+- Diagnostics logging now also updates a stable symlink `~/.ros/liorf_logs/latest` to the newest run directory for easier tooling and scripting.
+- Updated the plotting helper defaults: when no input is provided it now reads latest diagnostics by default, and it now always both saves and displays the generated plot.
 
 ### Migration/runtime risk
 

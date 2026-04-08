@@ -28,6 +28,7 @@
 
 
 #include "Scancontext.h"
+#include "tictoc.h"
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -243,6 +244,12 @@ public:
         parameters.relinearizeSkip = 1;
         isam = new ISAM2(parameters);
 
+        diagnostics = std::make_shared<LiorfDiagnostics>(
+            this,
+            QosPolicy(history_policy, reliability_policy),
+            history_policy,
+            reliability_policy);
+
         subCloud = create_subscription<liorf::msg::CloudInfo>("liorf/deskew/cloud_info", QosPolicy(history_policy, reliability_policy),
                     std::bind(&mapOptimization::laserCloudInfoHandler, this, std::placeholders::_1));
         subGPS = create_subscription<sensor_msgs::msg::NavSatFix>(gpsTopic, QosPolicy(history_policy, reliability_policy),
@@ -388,6 +395,8 @@ public:
         // extract time stamp
         timeLaserInfoStamp = msgIn->header.stamp;
         timeLaserInfoCur = ROS_TIME(msgIn->header.stamp);
+        if (diagnostics)
+            diagnostics->markLidarUpdate(timeLaserInfoStamp);
 
         // extract info and feature cloud
         cloudInfo = *msgIn;
@@ -406,17 +415,35 @@ public:
         {
             timeLastProcessing = timeLaserInfoCur;
 
+            TicToc t_updateInitialGuess;
             updateInitialGuess();
+            if (diagnostics)
+                diagnostics->recordSlice("updateInitialGuess", t_updateInitialGuess.toc());
 
+            TicToc t_extractSurroundingKeyFrames;
             extractSurroundingKeyFrames();
+            if (diagnostics)
+                diagnostics->recordSlice("extractSurroundingKeyFrames", t_extractSurroundingKeyFrames.toc());
 
+            TicToc t_downsampleCurrentScan;
             downsampleCurrentScan();
+            if (diagnostics)
+                diagnostics->recordSlice("downsampleCurrentScan", t_downsampleCurrentScan.toc());
 
+            TicToc t_scan2MapOptimization;
             scan2MapOptimization();
+            if (diagnostics)
+                diagnostics->recordSlice("scan2MapOptimization", t_scan2MapOptimization.toc());
 
+            TicToc t_saveKeyFramesAndFactor;
             saveKeyFramesAndFactor();
+            if (diagnostics)
+                diagnostics->recordSlice("saveKeyFramesAndFactor", t_saveKeyFramesAndFactor.toc());
 
+            TicToc t_correctPoses;
             correctPoses();
+            if (diagnostics)
+                diagnostics->recordSlice("correctPoses", t_correctPoses.toc());
 
             publishOdometry();
 
@@ -444,6 +471,9 @@ public:
     {
         if (gpsMsg->status.status < 0)
             return;
+
+        if (diagnostics)
+            diagnostics->markGpsUpdate(gpsMsg->header.stamp);
 
         Eigen::Vector3d trans_local_;
         
@@ -1162,12 +1192,15 @@ public:
                 if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
                 {
                     transIncre.translation() = lastLidarOdometryIncrement.translation() * curTimeDiff / lastTimeDiff;
-
-                    RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 10000, 
-                        "Using constant velocity for translation prediction:" << std::endl
-                        << transIncre.translation() << std::endl
-                        << "curTimeDiff: " << curTimeDiff << std::endl
-                        << "lastTimeDiff: " << lastTimeDiff << std::endl);
+                    if (diagnostics)
+                    {
+                        std::ostringstream diag_ss;
+                        diag_ss << "Using constant velocity for translation prediction:" << std::endl
+                                << transIncre.translation() << std::endl
+                                << "curTimeDiff: " << curTimeDiff << std::endl
+                                << "lastTimeDiff: " << lastTimeDiff;
+                        diagnostics->logEventThrottle("constant_velocity_translation_prediction", 10.0, diag_ss.str());
+                    }
                 }
 
                 Eigen::Affine3f transTobe = trans2Affine3f(transformTobeMapped);
@@ -1191,12 +1224,15 @@ public:
             if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
                 {
                     transIncre.translation() = lastLidarOdometryIncrement.translation() * curTimeDiff / lastTimeDiff;
-
-                    RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 10000, 
-                        "Using constant velocity for translation prediction:" << std::endl
-                        << transIncre.translation() << std::endl
-                        << "curTimeDiff: " << curTimeDiff << std::endl
-                        << "lastTimeDiff: " << lastTimeDiff << std::endl);
+                    if (diagnostics)
+                    {
+                        std::ostringstream diag_ss;
+                        diag_ss << "Using constant velocity for translation prediction:" << std::endl
+                                << transIncre.translation() << std::endl
+                                << "curTimeDiff: " << curTimeDiff << std::endl
+                                << "lastTimeDiff: " << lastTimeDiff;
+                        diagnostics->logEventThrottle("constant_velocity_translation_prediction", 10.0, diag_ss.str());
+                    }
                 }
 
             Eigen::Affine3f transTobe = trans2Affine3f(transformTobeMapped);

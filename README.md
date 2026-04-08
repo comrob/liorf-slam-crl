@@ -132,6 +132,43 @@ source install/setup.bash
 ros2 bag play <path_to_ros2_bag>
 ```
 
+For bagfile replay (especially when collecting diagnostics/telemetry), prefer playing with ROS time:
+
+```bash
+ros2 bag play <path_to_ros2_bag> --clock
+```
+
+And set `use_sim_time` to `true` either:
+
+- as a launch argument (recommended for ad-hoc runs), e.g. `use_sim_time:=true`, or
+- in your parameter YAML file.
+
+Launch argument behavior is override-only: if `use_sim_time` is not specified in launch, YAML parameter values remain unchanged.
+
+### Plot time-slicing statistics
+
+Diagnostics logging also maintains a stable symlink:
+
+- `~/.ros/liorf_logs/latest` -> newest `run_YYYYMMDD_HHMMSS` directory
+
+After a run, plot `timing_stats.csv` from diagnostics logs:
+
+```bash
+python3 scripts/plot_time_slicing_stats.py
+```
+
+By default, the script reads the latest run (via `~/.ros/liorf_logs/latest` when available), saves the PNG plot, and displays it.
+
+Useful options:
+
+```bash
+# specific run directory or CSV
+python3 scripts/plot_time_slicing_stats.py --input ~/.ros/liorf_logs/run_YYYYMMDD_HHMMSS
+
+# smoothing + custom output
+python3 scripts/plot_time_slicing_stats.py --window 10 --output /tmp/timing_plot.png
+```
+
 ---
 
 ## 7) Frame model overview
