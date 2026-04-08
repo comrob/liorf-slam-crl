@@ -482,7 +482,10 @@ public:
             if (newKeyframeSaved)
             {
                 localMapDirty = true;
+                TicToc t_updateRollingMap;
                 updateRollingMap();
+                if (diagnostics)
+                    diagnostics->recordSlice("updateRollingMap", t_updateRollingMap.toc());
             }
 
             publishOdometry();
@@ -691,11 +694,20 @@ public:
         if (require_map_rebuild)
         {
             const size_t prev_voxel_count = voxelHashMap.size();
+
+            TicToc t_rebuild_extract;
             voxelHashMap.clear();
             extractSurroundingKeyFrames();
+            if (diagnostics)
+                diagnostics->recordSlice("manageLocalMap.rebuild.extractSurroundingKeyFrames", t_rebuild_extract.toc());
+
+            TicToc t_rebuild_insert;
+            voxelHashMap.reserve(laserCloudSurfFromMapDS->size());
 
             for (const auto &pt : laserCloudSurfFromMapDS->points)
                 voxelHashMap[voxelizePoint(pt, surroundingKeyframeMapLeafSize)] = pt;
+            if (diagnostics)
+                diagnostics->recordSlice("manageLocalMap.rebuild.hashInsert", t_rebuild_insert.toc());
 
             require_map_rebuild = false;
 
@@ -718,6 +730,8 @@ public:
             const float radius2 = surroundingKeyframeSearchRadius * surroundingKeyframeSearchRadius;
             const size_t before_prune = voxelHashMap.size();
 
+            TicToc t_incremental_prune;
+
             for (auto it = voxelHashMap.begin(); it != voxelHashMap.end();)
             {
                 const auto &pt = it->second;
@@ -729,11 +743,16 @@ public:
                 else
                     ++it;
             }
+            if (diagnostics)
+                diagnostics->recordSlice("manageLocalMap.incremental.prune", t_incremental_prune.toc());
 
+            TicToc t_incremental_rebuildCloud;
             laserCloudSurfFromMapDS->clear();
             laserCloudSurfFromMapDS->reserve(voxelHashMap.size());
             for (const auto &entry : voxelHashMap)
                 laserCloudSurfFromMapDS->push_back(entry.second);
+            if (diagnostics)
+                diagnostics->recordSlice("manageLocalMap.incremental.materializeCloud", t_incremental_rebuildCloud.toc());
 
             if (diagnostics)
             {
@@ -759,7 +778,13 @@ public:
             return;
 
         PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
+        TicToc t_transformCurrentScan;
         pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
+        if (diagnostics)
+            diagnostics->recordSlice("updateRollingMap.transformPointCloud", t_transformCurrentScan.toc());
+
+        TicToc t_hashInsert;
+        voxelHashMap.reserve(voxelHashMap.size() + transformedCurrentScan->size());
 
         for (const auto &pt : transformedCurrentScan->points)
         {
@@ -767,6 +792,8 @@ public:
             if (voxelHashMap.find(voxel) == voxelHashMap.end())
                 voxelHashMap.emplace(voxel, pt);
         }
+        if (diagnostics)
+            diagnostics->recordSlice("updateRollingMap.hashInsert", t_hashInsert.toc());
 
         logLocalMapStats("updateRollingMap");
     }
@@ -1454,23 +1481,38 @@ public:
         std::vector<float> pointSearchSqDis;
 
         // extract all the nearby key poses and downsample them
+        TicToc t_extractNearby_radiusSearch;
         kdtreeSurroundingKeyPoses->setInputCloud(cloudKeyPoses3D); // create kd-tree
         kdtreeSurroundingKeyPoses->radiusSearch(cloudKeyPoses3D->back(), (double)surroundingKeyframeSearchRadius, pointSearchInd, pointSearchSqDis);
+        if (diagnostics)
+            diagnostics->recordSlice("extractNearby.radiusSearch", t_extractNearby_radiusSearch.toc());
+
+        TicToc t_extractNearby_collectPoses;
         for (int i = 0; i < (int)pointSearchInd.size(); ++i)
         {
             int id = pointSearchInd[i];
             surroundingKeyPoses->push_back(cloudKeyPoses3D->points[id]);
         }
+        if (diagnostics)
+            diagnostics->recordSlice("extractNearby.collectPoses", t_extractNearby_collectPoses.toc());
 
+        TicToc t_extractNearby_downsamplePoses;
         downSizeFilterSurroundingKeyPoses.setInputCloud(surroundingKeyPoses);
         downSizeFilterSurroundingKeyPoses.filter(*surroundingKeyPosesDS);
+        if (diagnostics)
+            diagnostics->recordSlice("extractNearby.downsamplePoses", t_extractNearby_downsamplePoses.toc());
+
+        TicToc t_extractNearby_remapIndices;
         for(auto& pt : surroundingKeyPosesDS->points)
         {
             kdtreeSurroundingKeyPoses->nearestKSearch(pt, 1, pointSearchInd, pointSearchSqDis);
             pt.intensity = cloudKeyPoses3D->points[pointSearchInd[0]].intensity;
         }
+        if (diagnostics)
+            diagnostics->recordSlice("extractNearby.remapIndices", t_extractNearby_remapIndices.toc());
 
         // also extract some latest key frames in case the robot rotates in one position
+        TicToc t_extractNearby_addRecent;
         int numPoses = cloudKeyPoses3D->size();
         for (int i = numPoses-1; i >= 0; --i)
         {
@@ -1479,14 +1521,20 @@ public:
             else
                 break;
         }
+        if (diagnostics)
+            diagnostics->recordSlice("extractNearby.addRecent", t_extractNearby_addRecent.toc());
 
+        TicToc t_extractNearby_extractCloud;
         extractCloud(surroundingKeyPosesDS);
+        if (diagnostics)
+            diagnostics->recordSlice("extractNearby.extractCloud", t_extractNearby_extractCloud.toc());
     }
 
     void extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtract)
     {
         // fuse the map
         laserCloudSurfFromMap->clear(); 
+        TicToc t_extractCloud_fuse;
         for (int i = 0; i < (int)cloudToExtract->size(); ++i)
         {
             if (common_lib_->pointDistance(cloudToExtract->points[i], cloudKeyPoses3D->back()) > surroundingKeyframeSearchRadius)
@@ -1506,15 +1554,23 @@ public:
             }
             
         }
+        if (diagnostics)
+            diagnostics->recordSlice("extractCloud.fuseAndTransform", t_extractCloud_fuse.toc());
 
         // Downsample the surrounding surf key frames (or map)
+        TicToc t_extractCloud_downsample;
         downSizeFilterLocalMapSurf.setInputCloud(laserCloudSurfFromMap);
         downSizeFilterLocalMapSurf.filter(*laserCloudSurfFromMapDS);
         laserCloudSurfFromMapDSNum = laserCloudSurfFromMapDS->size();
+        if (diagnostics)
+            diagnostics->recordSlice("extractCloud.downsampleLocalMap", t_extractCloud_downsample.toc());
 
         // clear map cache if too large
+        TicToc t_extractCloud_cacheMaintenance;
         if (laserCloudMapContainer.size() > 1000)
             laserCloudMapContainer.clear();
+        if (diagnostics)
+            diagnostics->recordSlice("extractCloud.cacheMaintenance", t_extractCloud_cacheMaintenance.toc());
     }
 
     void extractSurroundingKeyFrames()
@@ -1529,7 +1585,10 @@ public:
         //     extractNearby();
         // }
 
+        TicToc t_extractSurroundingKeyFrames_extractNearby;
         extractNearby();
+        if (diagnostics)
+            diagnostics->recordSlice("extractSurroundingKeyFrames.extractNearby", t_extractSurroundingKeyFrames_extractNearby.toc());
     }
 
     void downsampleCurrentScan()
@@ -1785,24 +1844,59 @@ public:
         {
             if (kdtreeLocalMapDirty)
             {
+                TicToc t_setInputCloud;
                 kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
                 kdtreeLocalMapDirty = false;
+                if (diagnostics)
+                    diagnostics->recordSlice("scan2MapOptimization.setInputCloud", t_setInputCloud.toc());
             }
+
+            double surf_ms_total = 0.0;
+            double combine_ms_total = 0.0;
+            double lm_ms_total = 0.0;
+            int iter_used = 0;
 
             for (int iterCount = 0; iterCount < 30; iterCount++)
             {
+                iter_used++;
                 laserCloudOri->clear();
                 coeffSel->clear();
 
+                TicToc t_surfOptimization;
                 surfOptimization();
+                surf_ms_total += t_surfOptimization.toc();
 
+                TicToc t_combineOptimizationCoeffs;
                 combineOptimizationCoeffs();
+                combine_ms_total += t_combineOptimizationCoeffs.toc();
 
+                TicToc t_lmOptimization;
                 if (LMOptimization(iterCount) == true)
+                {
+                    lm_ms_total += t_lmOptimization.toc();
                     break;              
+                }
+                lm_ms_total += t_lmOptimization.toc();
             }
 
+            if (diagnostics)
+            {
+                diagnostics->recordSlice("scan2MapOptimization.surfOptimization.total", surf_ms_total);
+                diagnostics->recordSlice("scan2MapOptimization.combineOptimizationCoeffs.total", combine_ms_total);
+                diagnostics->recordSlice("scan2MapOptimization.LMOptimization.total", lm_ms_total);
+
+                std::ostringstream oss;
+                oss << "[SCAN2MAP_ITER] iter_used=" << iter_used
+                    << " surf_total_ms=" << std::fixed << std::setprecision(3) << surf_ms_total
+                    << " combine_total_ms=" << combine_ms_total
+                    << " lm_total_ms=" << lm_ms_total;
+                diagnostics->logEventThrottle("scan2map_iter_summary", 1.0, oss.str());
+            }
+
+            TicToc t_transformUpdate;
             transformUpdate();
+            if (diagnostics)
+                diagnostics->recordSlice("scan2MapOptimization.transformUpdate", t_transformUpdate.toc());
         } else {
             RCLCPP_WARN(get_logger(), "Not enough features! Only %d planar features available.", laserCloudSurfLastDSNum);
         }
