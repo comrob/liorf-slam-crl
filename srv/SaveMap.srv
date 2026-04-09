@@ -2,3 +2,11 @@ float32 resolution
 string destination
 ---
 bool success
+string save_directory
+bool enu_map_saved
+uint32 keyframes_used
+uint32 surf_points_local
+uint32 surf_points_enu
+uint32 global_points_local
+uint32 global_points_enu
+string message

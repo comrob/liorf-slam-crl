@@ -33,6 +33,7 @@
 #include <iomanip>
 #include <sstream>
 #include <cstdint>
+#include <filesystem>
 #include <unordered_map>
 
 
@@ -909,16 +910,52 @@ public:
     bool saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req,
                                 std::shared_ptr<liorf::srv::SaveMap::Response> res)
     {
-      string saveMapDirectory;
+      // Resolve output directory.
+      // savePCDDirectory convention: relative to HOME, stored with a leading "/" (e.g. "/Downloads/LOAM/").
+      // req->destination semantics:
+      //   starts with "/"  → absolute path, used as-is
+      //   starts with "~/" → HOME-expanded
+      //   otherwise        → relative to HOME
+      const char* home_env = std::getenv("HOME");
+      const std::string homeDir = (home_env != nullptr) ? home_env : "/tmp";
+      namespace fs = std::filesystem;
+      fs::path saveDir;
+      if (req->destination.empty()) {
+          saveDir = fs::path(homeDir) / fs::path(savePCDDirectory).relative_path();
+      } else if (fs::path(req->destination).is_absolute()) {
+          saveDir = req->destination;
+      } else if (req->destination.rfind("~/", 0) == 0) {
+          saveDir = fs::path(homeDir) / req->destination.substr(2);
+      } else {
+          saveDir = fs::path(homeDir) / req->destination;
+      }
+      saveDir = saveDir.lexically_normal();
+      const std::string saveMapDirectory = saveDir.string();
+    res->save_directory = saveMapDirectory;
+    res->enu_map_saved = false;
+    res->keyframes_used = static_cast<uint32_t>(cloudKeyPoses3D->size());
+    res->surf_points_local = 0;
+    res->surf_points_enu = 0;
+    res->global_points_local = 0;
+    res->global_points_enu = 0;
+    res->message = "";
 
       cout << "****************************************************" << endl;
       cout << "Saving map to pcd files ..." << endl;
-      if(req->destination.empty()) saveMapDirectory = std::getenv("HOME") + savePCDDirectory;
-      else saveMapDirectory = std::getenv("HOME") + req->destination;
       cout << "Save destination: " << saveMapDirectory << endl;
-      // create directory and remove old files;
-      int unused = system((std::string("exec rm -r ") + saveMapDirectory).c_str());
-      unused = system((std::string("mkdir -p ") + saveMapDirectory).c_str());
+      // Recreate output directory fresh (removes any previous run's artifacts).
+      {
+          std::error_code ec;
+          fs::remove_all(saveDir, ec);
+          fs::create_directories(saveDir, ec);
+          if (ec) {
+              RCLCPP_ERROR(get_logger(), "Failed to create save directory '%s': %s",
+                           saveMapDirectory.c_str(), ec.message().c_str());
+              res->success = false;
+              res->message = std::string("failed to create save directory: ") + ec.message();
+              return true;
+          }
+      }
 
       { // Lock guard scope for origin
           std::lock_guard<std::mutex> lock(origin_mutex);
@@ -955,8 +992,8 @@ public:
       }
 
       // save key frame transformations
-      pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory.pcd", *cloudKeyPoses3D);
-      pcl::io::savePCDFileBinary(saveMapDirectory + "/transformations.pcd", *cloudKeyPoses6D);
+      pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory_local.pcd", *cloudKeyPoses3D);
+      pcl::io::savePCDFileBinary(saveMapDirectory + "/transformations_local.pcd", *cloudKeyPoses6D);
       // extract global point cloud map
 
       pcl::PointCloud<PointType>::Ptr globalSurfCloud(new pcl::PointCloud<PointType>());
@@ -974,20 +1011,86 @@ public:
         downSizeFilterSurf.setInputCloud(globalSurfCloud);
         downSizeFilterSurf.setLeafSize(req->resolution, req->resolution, req->resolution);
         downSizeFilterSurf.filter(*globalSurfCloudDS);
-        pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap.pcd", *globalSurfCloudDS);
+        pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap_local.pcd", *globalSurfCloudDS);
       }
       else
       {
 
         // save surf cloud
-        pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap.pcd", *globalSurfCloud);
+        pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap_local.pcd", *globalSurfCloud);
       }
 
       // save global point cloud map
       *globalMapCloud += *globalSurfCloud;
+    res->surf_points_local = static_cast<uint32_t>(globalSurfCloud->size());
+    res->global_points_local = static_cast<uint32_t>(globalMapCloud->size());
 
-      int ret = pcl::io::savePCDFileBinary(saveMapDirectory + "/GlobalMap.pcd", *globalMapCloud);
+      int ret = pcl::io::savePCDFileBinary(saveMapDirectory + "/GlobalMap_local.pcd", *globalMapCloud);
+
+            // Save ENU-frame map products next to local-frame outputs when anchor is available.
+            if (T_GL_initialized)
+            {
+                Eigen::Affine3f tGlobalLocalToEnu = pcl::getTransformation(
+                        static_cast<float>(T_GL_estimate.translation().x()),
+                        static_cast<float>(T_GL_estimate.translation().y()),
+                        static_cast<float>(T_GL_estimate.translation().z()),
+                        static_cast<float>(T_GL_estimate.rotation().roll()),
+                        static_cast<float>(T_GL_estimate.rotation().pitch()),
+                        static_cast<float>(T_GL_estimate.rotation().yaw()));
+
+                pcl::PointCloud<PointType>::Ptr globalSurfCloudEnu(new pcl::PointCloud<PointType>());
+                pcl::PointCloud<PointType>::Ptr globalMapCloudEnu(new pcl::PointCloud<PointType>());
+                pcl::transformPointCloud(*globalSurfCloud, *globalSurfCloudEnu, tGlobalLocalToEnu);
+                *globalMapCloudEnu += *globalSurfCloudEnu;
+                res->enu_map_saved = true;
+                res->surf_points_enu = static_cast<uint32_t>(globalSurfCloudEnu->size());
+                res->global_points_enu = static_cast<uint32_t>(globalMapCloudEnu->size());
+
+                pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap_ENU.pcd", *globalSurfCloudEnu);
+                pcl::io::savePCDFileBinary(saveMapDirectory + "/GlobalMap_ENU.pcd", *globalMapCloudEnu);
+
+                pcl::PointCloud<PointType>::Ptr trajectoryEnu(new pcl::PointCloud<PointType>());
+                trajectoryEnu->reserve(cloudKeyPoses3D->size());
+                for (const auto &pt_local : cloudKeyPoses3D->points)
+                {
+                        gtsam::Point3 pt_enu = T_GL_estimate.transformFrom(gtsam::Point3(pt_local.x, pt_local.y, pt_local.z));
+                        PointType out_pt;
+                        out_pt.x = static_cast<float>(pt_enu.x());
+                        out_pt.y = static_cast<float>(pt_enu.y());
+                        out_pt.z = static_cast<float>(pt_enu.z());
+                        out_pt.intensity = pt_local.intensity;
+                        trajectoryEnu->push_back(out_pt);
+                }
+                pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory_ENU.pcd", *trajectoryEnu);
+            }
+            else
+            {
+                RCLCPP_WARN(get_logger(),
+                                        "ENU map export skipped: T_global_local is not initialized yet.");
+                res->message = "ENU map export skipped: T_global_local is not initialized yet.";
+            }
+
       res->success = ret == 0;
+      if (res->success)
+      {
+          const fs::path lastSavedMapPathFile = fs::path(homeDir) / ".liorf_last_saved_map_path";
+          std::ofstream lastPathOut(lastSavedMapPathFile.string(), std::ios::trunc);
+          if (lastPathOut.is_open())
+          {
+              lastPathOut << saveMapDirectory << std::endl;
+              lastPathOut.close();
+          }
+          else
+          {
+              RCLCPP_WARN(get_logger(), "Failed to write last saved map path file: %s",
+                          lastSavedMapPathFile.string().c_str());
+          }
+      }
+
+      if (res->success && res->message.empty())
+          res->message = "map saved successfully";
+      if (!res->success && res->message.empty())
+          res->message = "failed to save GlobalMap_local.pcd";
 
       downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);
 

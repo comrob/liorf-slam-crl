@@ -234,6 +234,38 @@ gpsTopic: "gps/fix"
 
 ### Map saving metadata
 
+You can trigger map export via ROS service directly or with the helper script:
+
+```bash
+# default destination/resolution
+./scripts/save_map.sh
+
+# set voxel resolution
+./scripts/save_map.sh -r 0.2
+
+# HOME-relative destination
+./scripts/save_map.sh -d Downloads/my_map
+
+# absolute destination
+./scripts/save_map.sh -a /tmp/liorf_map
+```
+
+You can also trigger map export via launch arguments:
+
+```bash
+# default values (resolution=0.0, destination='')
+ros2 launch liorf save_map.launch.py
+
+# custom resolution
+ros2 launch liorf save_map.launch.py resolution:=0.2
+
+# custom destination
+ros2 launch liorf save_map.launch.py destination:=/tmp/liorf_map
+
+# custom wait timeout for service availability
+ros2 launch liorf save_map.launch.py wait_timeout_sec:=60.0
+```
+
 When calling `liorf/save_map`, GPS metadata is saved to:
 
 - `map_metadata.yaml`
@@ -242,6 +274,43 @@ It includes:
 
 - `global_datum` (latitude/longitude/altitude when available)
 - `T_global_local` (`x,y,z,roll,pitch,yaw`)
+
+Save response also reports useful export stats:
+
+- `save_directory`: resolved absolute save path
+- `enu_map_saved`: whether ENU artifacts were exported
+- `keyframes_used`: number of keyframes used for map construction
+- `surf_points_local` / `surf_points_enu`: surf map point counts
+- `global_points_local` / `global_points_enu`: global map point counts
+- `message`: status details (success or skip reason)
+
+After successful map save, the node writes the absolute path to:
+
+- `~/.liorf_last_saved_map_path`
+
+### Satellite overlay visualization (saved maps)
+
+You can visualize saved map outputs over satellite imagery with:
+
+```bash
+python3 scripts/visualize_saved_map_satellite.py --map-dir <saved_map_directory>
+```
+
+If `--map-dir` is omitted, the script resolves map directory in this order:
+
+1. `~/.liorf_last_saved_map_path` (written by `liorf/save_map` on successful save)
+2. default `~/Downloads/LOAM`
+3. fail with an error message
+
+Optional controls:
+
+- `--output <html_path>`: output HTML file path
+- `--max-surf-points <N>`: limit sampled surf points on overlay heatmap
+- `--max-traj-points <N>`: limit sampled trajectory points
+
+The script reads `map_metadata.yaml` and map PCD outputs (`*_ENU.pcd` preferred, or `*_local.pcd` transformed by `T_global_local`) and produces an interactive HTML map with satellite basemap and trajectory/surf overlays.
+
+On success, it prints both the generated HTML path and a `file://...` URI that can be opened from terminal links.
 
 ---
 

@@ -22,28 +22,23 @@ For active iterative work, prefer updating the current top entry instead of appe
 
 ### Files changed
 
-- [src/mapOptmization.cpp](src/mapOptmization.cpp)
-- [include/utility.h](include/utility.h)
-- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
-- [CHANGELOG.md](CHANGELOG.md)
+ [CMakeLists.txt](CMakeLists.txt)
 
 ### Behavior impact
 
 Adds fused GPS publishers to `mapOptimization`:
 
-- `liorf/mapping/lidar_gps_fix` (`sensor_msgs/NavSatFix`): the robot's position expressed as lat/lon/alt, derived by projecting `transformTobeMapped` through the GTSAM floating-anchor `T_GL` into ENU and then reversing via `GeographicLib::LocalCartesian::Reverse()`.
-- `liorf/mapping/lidar_gps_enu_pose` (`geometry_msgs/PoseStamped`, frame = `mapFrameEnu`): the same LiDAR-estimated position + orientation rotated into the ENU frame via `T_GL`.
 
 `liorf/mapping/lidar_gps_ned_pose` (`geometry_msgs/PoseStamped`, frame = `mapFrameNed`) is also published as the NED-frame equivalent.
 
 Publishing now uses a two-stage policy tied to GPS factor observability:
 
-- Before anchor readiness (`gpsFactorsAccepted < 2`): `liorf/mapping/lidar_gps_fix` republishes incoming raw GPS `NavSatFix` only (no fused orientation topics).
-- After anchor readiness (`T_GL_initialized && gpsFactorsAccepted >= 2`): fused `lidar_gps_fix` + fused ENU/NED pose topics are published.
 
 GPS-derived transform/offset publications are also gated by the same readiness condition.
 
-`mapFrameEnu -> mapFrameLocal` is no longer published as identity before readiness; it is not broadcast at all until at least two accepted GPS factors are available.
+ updated [launch/save_map.launch.py](launch/save_map.launch.py) to invoke `scripts/save_map.sh` after service-availability wait, so launch-triggered exports print the same clean response summary as the helper script.
+ updated [CMakeLists.txt](CMakeLists.txt) to install `scripts/` into package share so `save_map.launch.py` can resolve and run `save_map.sh` from installed package paths.
+ updated [scripts/save_map.sh](scripts/save_map.sh) with explicit default variables for resolution/destination (plus env overrides) and clearer runtime messaging that node `savePCDDirectory` defaults are interpreted as HOME-relative for compatibility.
 
 Added RViz visualization topic `/liorf/mapping/gps_constraints` (`visualization_msgs/MarkerArray`) with:
 
@@ -64,6 +59,24 @@ Improved GPS-LiDAR synchronization for GPS factor insertion and visualization:
 - set `gps_processing_delay_sec: 1.0` in the primary Ouster profile [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml) for immediate testing.
 - set `gps_covariance_inflation_m: 2.0` in [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml).
 - propagated remaining declared transport QoS parameters into [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml): `history_policy` and `reliability_policy`.
+- local-frame map save outputs now use `_local` suffix for unambiguous naming: `SurfMap_local.pcd`, `GlobalMap_local.pcd`, `trajectory_local.pcd`, `transformations_local.pcd`.
+- map save now also exports ENU-frame artifacts next to local-frame outputs when `T_global_local` is initialized: `SurfMap_ENU.pcd`, `GlobalMap_ENU.pcd`, and `trajectory_ENU.pcd`.
+- if `T_global_local` is not initialized, ENU export is skipped with a warning while local-frame exports remain unchanged.
+- `saveMapService()` path resolution now uses `std::filesystem`: `req->destination` is treated as absolute if it starts with `/`, HOME-expanded if it starts with `~/`, or HOME-relative otherwise; `getenv("HOME")` null-safety added; `system()` calls replaced with `std::filesystem::remove_all` / `create_directories`.
+- added [scripts/save_map.sh](scripts/save_map.sh) helper to call `liorf/save_map` with CLI arguments for map resolution (`-r/--resolution`) and destination path (`-d/--destination`).
+- [scripts/save_map.sh](scripts/save_map.sh) now prints the resolved save directory after a successful response; when destination is empty, it queries `/liorf_mapOptimization` parameter `savePCDDirectory` and resolves it with the same HOME-relative semantics as `saveMapService()`.
+- extended [srv/SaveMap.srv](srv/SaveMap.srv) response with useful save metadata: `save_directory`, `enu_map_saved`, `keyframes_used`, `surf_points_local`, `surf_points_enu`, and `message`.
+- [src/mapOptmization.cpp](src/mapOptmization.cpp) now populates these response fields from actual save execution state, including absolute destination path and ENU export status.
+- on successful map save, [src/mapOptmization.cpp](src/mapOptmization.cpp) now writes the absolute map directory to `~/.liorf_last_saved_map_path`.
+- [scripts/save_map.sh](scripts/save_map.sh) adds `-a/--absolute-path` and prints the detailed response summary after success.
+- added global map point counters to [srv/SaveMap.srv](srv/SaveMap.srv) response: `global_points_local` and `global_points_enu`, and populated them in [src/mapOptmization.cpp](src/mapOptmization.cpp).
+- added [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) to render saved map trajectory and surf density over satellite imagery into an interactive HTML map.
+- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now supports omitted `--map-dir` and resolves in order: `~/.liorf_last_saved_map_path`, then default `~/Downloads/LOAM`, otherwise exits with a clear error.
+- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now logs how map directory was resolved (user input, last-saved file, or default path), including a resolution trace.
+- added Poetry environment file [scripts/pyproject.toml](scripts/pyproject.toml) for map tools dependencies (`folium`, `numpy`) and console script entrypoint `visualize-saved-map-satellite`.
+- documented satellite overlay usage in [README.md](README.md).
+- refreshed [README.md](README.md) map-saving section with `scripts/save_map.sh` usage, detailed `SaveMap` response fields, and persisted last-saved-path behavior (`~/.liorf_last_saved_map_path`).
+- added [launch/save_map.launch.py](launch/save_map.launch.py) to trigger `liorf/save_map` via `ros2 launch` with arguments `resolution`, `destination`, `service_name`, and `wait_timeout_sec`.
 
 ### Migration/runtime risk
 
