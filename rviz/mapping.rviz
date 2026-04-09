@@ -5,7 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded: ~
       Splitter Ratio: 0.5
-    Tree Height: 822
+    Tree Height: 815
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -57,6 +57,7 @@ Visualization Manager:
           Topic:
             Depth: 5
             Durability Policy: Volatile
+            Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /liorf/mapping/path
@@ -64,8 +65,8 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 21.51711654663086
-            Min Value: -0.5904507637023926
+            Max Value: 20.629247665405273
+            Min Value: -33.652042388916016
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -109,9 +110,9 @@ Visualization Manager:
           Enabled: true
           Invert Rainbow: false
           Max Color: 255; 255; 255
-          Max Intensity: 245
+          Max Intensity: 5495.75
           Min Color: 0; 0; 0
-          Min Intensity: 0
+          Min Intensity: 1
           Name: GlobalMap
           Position Transformer: XYZ
           Selectable: true
@@ -161,12 +162,27 @@ Visualization Manager:
           Topic:
             Depth: 5
             Durability Policy: Volatile
+            Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /liorf/mapping/odometry
           Value: true
       Enabled: true
       Name: Mapping
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        gps_associated_lidar_points: true
+        gps_lidar_links: true
+        gps_received_points: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /liorf/mapping/gps_constraints
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -187,6 +203,9 @@ Visualization Manager:
         Reliability Policy: Reliable
         Value: /clicked_point
     - Class: rviz_default_plugins/SetInitialPose
+      Covariance x: 0.25
+      Covariance y: 0.25
+      Covariance yaw: 0.06853891909122467
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -233,7 +252,7 @@ Window Geometry:
   Height: 1043
   Hide Left Dock: false
   Hide Right Dock: true
-  QMainWindow State: 000000ff00000000fd000000020000000000000156000003b9fc0200000001fb000000100044006900730070006c006100790073010000003d000003b9000000c900ffffff00000001000001cb000003b9fc0200000001fb0000000a00560069006500770073000000003d000003b9000000a400ffffff00000624000003b900000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd000000020000000000000156000003b5fc0200000001fb000000100044006900730070006c006100790073010000003f000003b5000000cc00ffffff00000001000001cb000003b9fc0200000001fb0000000a00560069006500770073000000003d000003b9000000a900ffffff00000624000003b500000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: true
   Width: 1920

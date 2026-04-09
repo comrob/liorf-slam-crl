@@ -18,6 +18,59 @@ For active iterative work, prefer updating the current top entry instead of appe
 
 ---
 
+## 2026-04-09 — Publish LiDAR-estimated GPS fix + ENU orientation
+
+### Files changed
+
+- [src/mapOptmization.cpp](src/mapOptmization.cpp)
+- [include/utility.h](include/utility.h)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+Adds fused GPS publishers to `mapOptimization`:
+
+- `liorf/mapping/lidar_gps_fix` (`sensor_msgs/NavSatFix`): the robot's position expressed as lat/lon/alt, derived by projecting `transformTobeMapped` through the GTSAM floating-anchor `T_GL` into ENU and then reversing via `GeographicLib::LocalCartesian::Reverse()`.
+- `liorf/mapping/lidar_gps_enu_pose` (`geometry_msgs/PoseStamped`, frame = `mapFrameEnu`): the same LiDAR-estimated position + orientation rotated into the ENU frame via `T_GL`.
+
+`liorf/mapping/lidar_gps_ned_pose` (`geometry_msgs/PoseStamped`, frame = `mapFrameNed`) is also published as the NED-frame equivalent.
+
+Publishing now uses a two-stage policy tied to GPS factor observability:
+
+- Before anchor readiness (`gpsFactorsAccepted < 2`): `liorf/mapping/lidar_gps_fix` republishes incoming raw GPS `NavSatFix` only (no fused orientation topics).
+- After anchor readiness (`T_GL_initialized && gpsFactorsAccepted >= 2`): fused `lidar_gps_fix` + fused ENU/NED pose topics are published.
+
+GPS-derived transform/offset publications are also gated by the same readiness condition.
+
+`mapFrameEnu -> mapFrameLocal` is no longer published as identity before readiness; it is not broadcast at all until at least two accepted GPS factors are available.
+
+Added RViz visualization topic `/liorf/mapping/gps_constraints` (`visualization_msgs/MarkerArray`) with:
+
+- received GPS ENU points (`SPHERE_LIST`)
+- associated LiDAR key poses transformed to ENU (`SPHERE_LIST`)
+- line connections from each accepted GPS factor measurement to its corresponding LiDAR key pose (`LINE_LIST`)
+
+Improved GPS-LiDAR synchronization for GPS factor insertion and visualization:
+
+- each stored GPS-LiDAR association now carries GPS timestamp metadata,
+- GPS constraints are associated to the closest recent LiDAR keyframe by timestamp (instead of always the latest keyframe index),
+- throttled warnings are emitted when GPS-to-keyframe association offset exceeds 2.0 seconds.
+- each accepted GPS factor now emits a structured `[GPS_CONSTRAINT_ADDED]` log line to both terminal and diagnostics `events.log`, including GPS time, matched keyframe time, and their delta.
+- matching now explicitly includes the current in-flight keyframe candidate (`timeLaserInfoCur`) so constraints can bind to the just-created factor-graph key instead of only previously saved keyframes.
+- a hard gate now rejects GPS constraints when `|gps_t - keyframe_t| > 0.30 s`; skipped constraints are logged as `[GPS_CONSTRAINT_SKIPPED_TIME]` in diagnostics, and warnings are emitted in terminal.
+- added `gps_processing_delay_sec` parameter (loaded in `ParamServer`): GPS measurements are now processed only after `gps_stamp + gps_processing_delay_sec` enters the processing window, enabling intentional ROS-time holdback before factor insertion.
+- added configurable `gps_covariance_inflation_m` (default `2.0`) to inflate GPS factor variance on XYZ by `gps_covariance_inflation_m^2`, reducing short-term GPS pull when timing misalignment is present while still bounding long-term drift.
+- set `gps_processing_delay_sec: 1.0` in the primary Ouster profile [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml) for immediate testing.
+- set `gps_covariance_inflation_m: 2.0` in [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml).
+- propagated remaining declared transport QoS parameters into [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml): `history_policy` and `reliability_policy`.
+
+### Migration/runtime risk
+
+Low risk. Behavior is intentionally delayed until at least two accepted GPS factors so rotational alignment is better constrained before publishing fused outputs.
+
+---
+
 ## 2026-04-08 — Agent documentation and working-context setup
 
 ### Files changed

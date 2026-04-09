@@ -110,6 +110,7 @@ public:
     string odometryFrame;
     string mapFrameLocal;
     string mapFrameEnu;
+    string mapFrameNed;
     string ECEFframe;
 
     // Debug Flags
@@ -120,6 +121,8 @@ public:
     bool useGpsElevation;
     float gpsCovThreshold;
     float poseCovThreshold;
+    double gps_processing_delay_sec;
+    double gps_covariance_inflation_m;
 
     // Save pcd
     bool savePCD;
@@ -220,6 +223,8 @@ public:
         get_parameter("mapFrameLocal", mapFrameLocal);
         declare_parameter<string>("mapFrameEnu", "map");
         get_parameter("mapFrameEnu", mapFrameEnu);
+        declare_parameter<string>("mapFrameNed", "map_ned");
+        get_parameter("mapFrameNed", mapFrameNed);
         declare_parameter<string>("ECEFframe", "earth");
         get_parameter("ECEFframe", ECEFframe);
 
@@ -234,6 +239,10 @@ public:
         get_parameter("gpsCovThreshold", gpsCovThreshold);
         declare_parameter<float>("poseCovThreshold", 25.0f);
         get_parameter("poseCovThreshold", poseCovThreshold);
+        declare_parameter<double>("gps_processing_delay_sec", 0.0);
+        get_parameter("gps_processing_delay_sec", gps_processing_delay_sec);
+        declare_parameter<double>("gps_covariance_inflation_m", 2.0);
+        get_parameter("gps_covariance_inflation_m", gps_covariance_inflation_m);
 
         declare_parameter<bool>("savePCD", false);
         get_parameter("savePCD", savePCD);

@@ -155,14 +155,19 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubRecentKeyFrame;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudRegisteredRaw;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubLoopConstraintEdge;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubGpsConstraintViz;
     rclcpp::Publisher<liorf::msg::CloudInfo>::SharedPtr pubSLAMInfo;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubGpsOdom;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubGlobalOffset;
+    rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr pubLidarGpsFix;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubLidarGpsEnuPose;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubLidarGpsNedPose;
 
     // Floating Anchor GPS Fusion Variables
     const gtsam::Key T_GL_KEY = gtsam::Symbol('T', 0);
     bool T_GL_initialized = false;
     gtsam::Pose3 T_GL_estimate = gtsam::Pose3::Identity();
+    size_t gpsFactorsAccepted = 0;
     bool T_EM_initialized = false;
     gtsam::Pose3 T_EM_estimate = gtsam::Pose3::Identity();
     Eigen::Affine3f odomToBaseAffine = Eigen::Affine3f::Identity();
@@ -182,9 +187,19 @@ public:
     sensor_msgs::msg::NavSatFix stored_origin_gps_msg;
     bool first_gps = true;
 
+    bool gpsAnchorReady() const
+    {
+        return T_GL_initialized && gpsFactorsAccepted >= 2;
+    }
+
     rclcpp::Service<liorf::srv::SaveMap>::SharedPtr srvSaveMap;
 
     std::deque<nav_msgs::msg::Odometry> gpsQueue;
+    std::deque<gtsam::Point3> gpsReceivedEnuQueue;
+    std::deque<std::pair<int, std::pair<gtsam::Point3, double>>> gpsLidarAssociationQueue;
+    static constexpr size_t kMaxGpsVizPoints = 2000;
+    static constexpr int kGpsKeyframeSearchWindow = 10;
+    static constexpr double kMaxGpsLidarConstraintDtSec = 0.30;
     liorf::msg::CloudInfo cloudInfo;
 
     vector<pcl::PointCloud<PointType>::Ptr> surfCloudKeyFrames;
@@ -300,12 +315,16 @@ public:
         pubHistoryKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/icp_loop_closure_history_cloud", QosPolicy(history_policy, reliability_policy));
         pubIcpKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/icp_loop_closure_corrected_cloud", QosPolicy(history_policy, reliability_policy));
         pubLoopConstraintEdge = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf/mapping/loop_closure_constraints", QosPolicy(history_policy, reliability_policy));
+        pubGpsConstraintViz = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf/mapping/gps_constraints", QosPolicy(history_policy, reliability_policy));
         pubRecentKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/map_local", QosPolicy(history_policy, reliability_policy));
         pubRecentKeyFrame = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
         pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
         pubSLAMInfo = create_publisher<liorf::msg::CloudInfo>("liorf/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
         pubGpsOdom = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/gps_odom", QosPolicy(history_policy, reliability_policy));
         pubGlobalOffset = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf/earth_to_map_offset", QosPolicy(history_policy, reliability_policy));
+        pubLidarGpsFix = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/mapping/lidar_gps_fix", QosPolicy(history_policy, reliability_policy));
+        pubLidarGpsEnuPose = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/lidar_gps_enu_pose", QosPolicy(history_policy, reliability_policy));
+        pubLidarGpsNedPose = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/lidar_gps_ned_pose", QosPolicy(history_policy, reliability_policy));
 
         pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
         origin_publish_timer = this->create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::timerCallbackPublishOrigin, this));
@@ -515,8 +534,10 @@ public:
             }
 
             publishOdometry();
+            publishLidarGpsFix();
 
             publishFrames();
+            visualizeGpsConstraints();
 
             timeLastProcessing = timeLaserInfoCur;
             lastTimeDiff = curTimeDiff;
@@ -574,7 +595,15 @@ public:
             RCLCPP_INFO(get_logger(), "GPS origin captured. Publishing will now begin.");
         }
 
+        // Before anchor is fully observable, forward raw GPS fix only (no fused orientation topics).
+        if (!gpsAnchorReady() && pubLidarGpsFix->get_subscription_count() != 0)
+            pubLidarGpsFix->publish(*gpsMsg);
+
         gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
+
+        gpsReceivedEnuQueue.emplace_back(trans_local_[0], trans_local_[1], trans_local_[2]);
+        if (gpsReceivedEnuQueue.size() > kMaxGpsVizPoints)
+            gpsReceivedEnuQueue.pop_front();
 
         nav_msgs::msg::Odometry gps_odom;
         gps_odom.header = gpsMsg->header;
@@ -587,7 +616,8 @@ public:
         geometry_msgs::msg::Quaternion quat_msg;
         tf2::convert(quat_tf, quat_msg);
         gps_odom.pose.pose.orientation = quat_msg;
-        pubGpsOdom->publish(gps_odom);
+        if (gpsAnchorReady())
+            pubGpsOdom->publish(gps_odom);
         gpsQueue.push_back(gps_odom);
     }
 
@@ -1432,6 +1462,118 @@ public:
         pubLoopConstraintEdge->publish(markerArray);
     }
 
+    void visualizeGpsConstraints()
+    {
+        if (pubGpsConstraintViz->get_subscription_count() == 0)
+            return;
+
+        visualization_msgs::msg::MarkerArray markerArray;
+
+        visualization_msgs::msg::Marker markerGpsPoints;
+        markerGpsPoints.header.frame_id = mapFrameEnu;
+        markerGpsPoints.header.stamp = timeLaserInfoStamp;
+        markerGpsPoints.action = visualization_msgs::msg::Marker::ADD;
+        markerGpsPoints.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+        markerGpsPoints.ns = "gps_received_points";
+        markerGpsPoints.id = 0;
+        markerGpsPoints.pose.orientation.w = 1.0;
+        markerGpsPoints.scale.x = 0.25;
+        markerGpsPoints.scale.y = 0.25;
+        markerGpsPoints.scale.z = 0.25;
+        markerGpsPoints.color.r = 1.0;
+        markerGpsPoints.color.g = 0.2;
+        markerGpsPoints.color.b = 0.2;
+        markerGpsPoints.color.a = 0.9;
+
+        for (const auto &p_gps : gpsReceivedEnuQueue)
+        {
+            geometry_msgs::msg::Point p;
+            p.x = p_gps.x();
+            p.y = p_gps.y();
+            p.z = p_gps.z();
+            markerGpsPoints.points.push_back(p);
+        }
+
+        visualization_msgs::msg::Marker markerLidarPoints;
+        markerLidarPoints.header.frame_id = mapFrameEnu;
+        markerLidarPoints.header.stamp = timeLaserInfoStamp;
+        markerLidarPoints.action = visualization_msgs::msg::Marker::ADD;
+        markerLidarPoints.type = visualization_msgs::msg::Marker::SPHERE_LIST;
+        markerLidarPoints.ns = "gps_associated_lidar_points";
+        markerLidarPoints.id = 1;
+        markerLidarPoints.pose.orientation.w = 1.0;
+        markerLidarPoints.scale.x = 0.22;
+        markerLidarPoints.scale.y = 0.22;
+        markerLidarPoints.scale.z = 0.22;
+        markerLidarPoints.color.r = 0.1;
+        markerLidarPoints.color.g = 0.9;
+        markerLidarPoints.color.b = 0.2;
+        markerLidarPoints.color.a = 0.95;
+
+        visualization_msgs::msg::Marker markerEdges;
+        markerEdges.header.frame_id = mapFrameEnu;
+        markerEdges.header.stamp = timeLaserInfoStamp;
+        markerEdges.action = visualization_msgs::msg::Marker::ADD;
+        markerEdges.type = visualization_msgs::msg::Marker::LINE_LIST;
+        markerEdges.ns = "gps_lidar_links";
+        markerEdges.id = 2;
+        markerEdges.pose.orientation.w = 1.0;
+        markerEdges.scale.x = 0.06;
+        markerEdges.color.r = 1.0;
+        markerEdges.color.g = 1.0;
+        markerEdges.color.b = 0.0;
+        markerEdges.color.a = 0.9;
+
+        if (gpsAnchorReady())
+        {
+            for (const auto &assoc : gpsLidarAssociationQueue)
+            {
+                const int lidar_key = assoc.first;
+                const gtsam::Point3 &p_gps_enu = assoc.second.first;
+                const double gps_time = assoc.second.second;
+                if (lidar_key < 0 || lidar_key >= static_cast<int>(cloudKeyPoses6D->points.size()))
+                    continue;
+
+                const double keyframe_time = cloudKeyPoses6D->points[lidar_key].time;
+                const double assoc_time_diff = std::abs(keyframe_time - gps_time);
+                if (assoc_time_diff > kMaxGpsLidarConstraintDtSec)
+                {
+                    RCLCPP_WARN_THROTTLE(
+                        get_logger(),
+                        *get_clock(),
+                        5000,
+                    "Visualized GPS-LiDAR association exceeds dt threshold: %.3f s (gps=%.3f, keyframe=%.3f, max=%.3f)",
+                        assoc_time_diff,
+                        gps_time,
+                    keyframe_time,
+                    kMaxGpsLidarConstraintDtSec);
+                }
+
+                const auto &lidar_local = cloudKeyPoses6D->points[lidar_key];
+                gtsam::Point3 p_lidar_enu = T_GL_estimate.transformFrom(gtsam::Point3(lidar_local.x, lidar_local.y, lidar_local.z));
+
+                geometry_msgs::msg::Point p_lidar_msg;
+                p_lidar_msg.x = p_lidar_enu.x();
+                p_lidar_msg.y = p_lidar_enu.y();
+                p_lidar_msg.z = p_lidar_enu.z();
+                markerLidarPoints.points.push_back(p_lidar_msg);
+
+                geometry_msgs::msg::Point p_gps_msg;
+                p_gps_msg.x = p_gps_enu.x();
+                p_gps_msg.y = p_gps_enu.y();
+                p_gps_msg.z = p_gps_enu.z();
+
+                markerEdges.points.push_back(p_gps_msg);
+                markerEdges.points.push_back(p_lidar_msg);
+            }
+        }
+
+        markerArray.markers.push_back(markerGpsPoints);
+        markerArray.markers.push_back(markerLidarPoints);
+        markerArray.markers.push_back(markerEdges);
+        pubGpsConstraintViz->publish(markerArray);
+    }
+
     void updateInitialGuess()
     {
         // save current transformation before any processing
@@ -2082,14 +2224,17 @@ public:
 
         while (!gpsQueue.empty())
         {
-            if (ROS_TIME(gpsQueue.front().header.stamp) < timeLaserInfoCur - 0.2)
+            const double gps_stamp = ROS_TIME(gpsQueue.front().header.stamp);
+            const double gps_eligible_time = gps_stamp + gps_processing_delay_sec;
+
+            if (gps_eligible_time < timeLaserInfoCur - 0.2)
             {
                 // message too old
                 gpsQueue.pop_front();
             }
-            else if (ROS_TIME(gpsQueue.front().header.stamp) > timeLaserInfoCur + 0.2)
+            else if (gps_eligible_time > timeLaserInfoCur + 0.2)
             {
-                // message too new
+                // message not yet eligible for delayed processing
                 break;
             }
             else
@@ -2147,15 +2292,88 @@ public:
                 }
 
                 // 2. Create Noise Model and Custom Factor
-                gtsam::Vector3 Vector3(max(noise_x, 1.0f), max(noise_y, 1.0f), max(noise_z, 1.0f));
-                noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
+                // Inflate GPS factor uncertainty to bound long-term drift when GPS/LiDAR timing can be de-synchronized.
+                const double gps_covariance_inflation_var =
+                    std::max(0.0, gps_covariance_inflation_m) * std::max(0.0, gps_covariance_inflation_m);
+                const double gps_var_x = std::max(static_cast<double>(noise_x), 1.0) + gps_covariance_inflation_var;
+                const double gps_var_y = std::max(static_cast<double>(noise_y), 1.0) + gps_covariance_inflation_var;
+                const double gps_var_z = std::max(static_cast<double>(noise_z), 1.0) + gps_covariance_inflation_var;
+                gtsam::Vector3 gpsVarianceVec;
+                gpsVarianceVec << gps_var_x, gps_var_y, gps_var_z;
+                noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(gpsVarianceVec);
 
                 gtsam::Point3 measured_gps(gps_x, gps_y, gps_z);
                 gtsam::Point3 antenna_offset(gpsAntennaOffsetX, gpsAntennaOffsetY, gpsAntennaOffsetZ);
 
+                // Match this GPS measurement to the closest keyframe in time.
+                // Include both recent saved keyframes and the current in-flight keyframe.
+                const double gps_time = ROS_TIME(thisGPS.header.stamp);
+                const int current_keyframe_idx = cloudKeyPoses3D->size();
+                int best_keyframe_idx = current_keyframe_idx;
+                double best_keyframe_time = timeLaserInfoCur;
+                double best_time_diff = std::abs(best_keyframe_time - gps_time);
+
+                const int search_start_idx = std::max(0, static_cast<int>(cloudKeyPoses6D->size()) - kGpsKeyframeSearchWindow);
+                for (int i = search_start_idx; i < static_cast<int>(cloudKeyPoses6D->size()); ++i)
+                {
+                    const double keyframe_time = cloudKeyPoses6D->points[i].time;
+                    const double time_diff = std::abs(keyframe_time - gps_time);
+                    if (time_diff < best_time_diff)
+                    {
+                        best_time_diff = time_diff;
+                        best_keyframe_idx = i;
+                        best_keyframe_time = keyframe_time;
+                    }
+                }
+
+                if (best_time_diff > kMaxGpsLidarConstraintDtSec)
+                {
+                    RCLCPP_WARN_THROTTLE(
+                        get_logger(),
+                        *get_clock(),
+                        5000,
+                        "Skipping GPS constraint due to dt threshold: %.3f s (gps=%.3f, keyframe=%.3f, max=%.3f)",
+                        best_time_diff,
+                        gps_time,
+                        best_keyframe_time,
+                        kMaxGpsLidarConstraintDtSec);
+
+                    if (diagnostics)
+                    {
+                        std::ostringstream skippedConstraintOss;
+                        skippedConstraintOss << "[GPS_CONSTRAINT_SKIPPED_TIME]"
+                                             << " candidate_idx=" << best_keyframe_idx
+                                             << " gps_t=" << std::fixed << std::setprecision(6) << gps_time
+                                             << " keyframe_t=" << best_keyframe_time
+                                             << " dt=" << best_time_diff
+                                             << " max_dt=" << kMaxGpsLidarConstraintDtSec;
+                        diagnostics->logEvent(skippedConstraintOss.str());
+                    }
+                    continue;
+                }
+
                 // Bypass Expression framework completely
-                FloatingAnchorFactor gps_factor(T_GL_KEY, cloudKeyPoses3D->size() - 1, measured_gps, antenna_offset, gps_noise);
+                const int lidar_key = best_keyframe_idx;
+                FloatingAnchorFactor gps_factor(T_GL_KEY, lidar_key, measured_gps, antenna_offset, gps_noise);
                 gtSAMgraph.add(gps_factor);
+                ++gpsFactorsAccepted;
+
+                std::ostringstream gpsConstraintOss;
+                gpsConstraintOss << "[GPS_CONSTRAINT_ADDED]"
+                                 << " idx=" << lidar_key
+                                 << " accepted=" << gpsFactorsAccepted
+                                 << " gps_t=" << std::fixed << std::setprecision(6) << gps_time
+                                 << " keyframe_t=" << best_keyframe_time
+                                 << " dt=" << best_time_diff
+                                 << " gps_xyz=(" << measured_gps.x() << "," << measured_gps.y() << "," << measured_gps.z() << ")";
+
+                RCLCPP_INFO_STREAM(get_logger(), gpsConstraintOss.str());
+                if (diagnostics)
+                    diagnostics->logEvent(gpsConstraintOss.str());
+
+                gpsLidarAssociationQueue.emplace_back(lidar_key, std::make_pair(measured_gps, gps_time));
+                if (gpsLidarAssociationQueue.size() > kMaxGpsVizPoints)
+                    gpsLidarAssociationQueue.pop_front();
 
                 if (rebuild_on_gps_jump && (last_gps_rebuild_time < 0.0 || (timeLaserInfoCur - last_gps_rebuild_time) > 60.0))
                 {
@@ -2376,24 +2594,32 @@ public:
             br->sendTransform(trans_ecef_to_map_enu);
         }
 
-        // 1. Broadcast TF mapFrameEnu -> mapFrameLocal (always present; identity until floating-anchor is initialized)
-        tf2::Quaternion q_map_to_map_local;
-        tf2::Transform t_map_to_map_local;
-        if (T_GL_initialized) {
-            q_map_to_map_local.setRPY(T_GL_estimate.rotation().roll(), T_GL_estimate.rotation().pitch(), T_GL_estimate.rotation().yaw());
-            t_map_to_map_local = tf2::Transform(q_map_to_map_local, tf2::Vector3(T_GL_estimate.translation().x(), T_GL_estimate.translation().y(), T_GL_estimate.translation().z()));
-        } else {
-            q_map_to_map_local.setRPY(0.0, 0.0, 0.0);
-            t_map_to_map_local = tf2::Transform(q_map_to_map_local, tf2::Vector3(0.0, 0.0, 0.0));
+        // 0. Broadcast TF mapFrameEnu -> mapFrameNed (ENU->NED, pure rotation, no children)
+        // R_ned_from_enu: North=ENU_Y, East=ENU_X, Down=-ENU_Z  =>  setRPY(pi, 0, pi/2)
+        {
+            tf2::Quaternion q_enu_to_ned;
+            q_enu_to_ned.setRPY(M_PI, 0.0, M_PI / 2.0);
+            tf2::Transform t_enu_to_ned(q_enu_to_ned, tf2::Vector3(0.0, 0.0, 0.0));
+            tf2::Stamped<tf2::Transform> stamped_enu_to_ned(t_enu_to_ned, time_point, mapFrameEnu);
+            geometry_msgs::msg::TransformStamped trans_enu_to_ned;
+            tf2::convert(stamped_enu_to_ned, trans_enu_to_ned);
+            trans_enu_to_ned.child_frame_id = mapFrameNed;
+            br->sendTransform(trans_enu_to_ned);
         }
 
-        tf2::Stamped<tf2::Transform> stamped_map_to_map_local(t_map_to_map_local, time_point, mapFrameEnu);
-        geometry_msgs::msg::TransformStamped trans_map_to_map_local;
-        tf2::convert(stamped_map_to_map_local, trans_map_to_map_local);
-        trans_map_to_map_local.child_frame_id = mapFrameLocal;
-        br->sendTransform(trans_map_to_map_local);
+        // 1. Broadcast TF mapFrameEnu -> mapFrameLocal only after anchor is ready.
+        if (gpsAnchorReady()) {
+            tf2::Quaternion q_map_to_map_local;
+            tf2::Transform t_map_to_map_local;
+            q_map_to_map_local.setRPY(T_GL_estimate.rotation().roll(), T_GL_estimate.rotation().pitch(), T_GL_estimate.rotation().yaw());
+            t_map_to_map_local = tf2::Transform(q_map_to_map_local, tf2::Vector3(T_GL_estimate.translation().x(), T_GL_estimate.translation().y(), T_GL_estimate.translation().z()));
 
-        if (T_GL_initialized) {
+            tf2::Stamped<tf2::Transform> stamped_map_to_map_local(t_map_to_map_local, time_point, mapFrameEnu);
+            geometry_msgs::msg::TransformStamped trans_map_to_map_local;
+            tf2::convert(stamped_map_to_map_local, trans_map_to_map_local);
+            trans_map_to_map_local.child_frame_id = mapFrameLocal;
+            br->sendTransform(trans_map_to_map_local);
+
             // 2. Broadcast PoseWithCovarianceStamped Topic
             if (pubGlobalOffset->get_subscription_count() != 0) {
                 geometry_msgs::msg::PoseWithCovarianceStamped offset_msg;
@@ -2544,6 +2770,88 @@ public:
                     << " [frames identical: '" << lidarFrame << "' == '" << baselinkFrame << "']"
                 );
             }
+        }
+    }
+
+    void publishLidarGpsFix()
+    {
+        if (first_gps || !gpsAnchorReady())
+            return;
+        if (pubLidarGpsFix->get_subscription_count() == 0 &&
+            pubLidarGpsEnuPose->get_subscription_count() == 0 &&
+            pubLidarGpsNedPose->get_subscription_count() == 0)
+            return;
+
+        // Transform LiDAR local pose into ENU frame via the floating-anchor T_GL
+        gtsam::Point3 p_local(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
+        gtsam::Point3 p_enu = T_GL_estimate.transformFrom(p_local);
+
+        // Project ENU position back to geodetic lat/lon/alt
+        double lat, lon, alt;
+        gps_trans_.Reverse(p_enu.x(), p_enu.y(), p_enu.z(), lat, lon, alt);
+
+        // Build local rotation identically to publishOdometry: setRPY(roll, pitch, yaw)
+        tf2::Quaternion q_local_tf2;
+        q_local_tf2.setRPY(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
+        gtsam::Rot3 R_local(Eigen::Quaterniond(
+            q_local_tf2.w(), q_local_tf2.x(), q_local_tf2.y(), q_local_tf2.z()));
+
+        // Rotate LiDAR orientation into ENU via the floating-anchor T_GL
+        gtsam::Rot3 R_enu = T_GL_estimate.rotation().compose(R_local);
+        gtsam::Quaternion q_enu = R_enu.toQuaternion();
+
+        // Fixed rotation: ENU (East-North-Up) -> NED (North-East-Down)
+        // North = ENU_Y, East = ENU_X, Down = -ENU_Z
+        static const gtsam::Rot3 R_ned_from_enu(
+             0.0, 1.0,  0.0,
+             1.0, 0.0,  0.0,
+             0.0, 0.0, -1.0);
+        gtsam::Point3 p_ned = R_ned_from_enu.rotate(p_enu);
+        gtsam::Rot3   R_ned = R_ned_from_enu.compose(R_enu);
+        gtsam::Quaternion q_ned = R_ned.toQuaternion();
+
+        if (pubLidarGpsFix->get_subscription_count() != 0)
+        {
+            sensor_msgs::msg::NavSatFix fix_msg;
+            fix_msg.header.stamp = timeLaserInfoStamp;
+            fix_msg.header.frame_id = mapFrameEnu;
+            fix_msg.status.status = sensor_msgs::msg::NavSatStatus::STATUS_FIX;
+            fix_msg.status.service = sensor_msgs::msg::NavSatStatus::SERVICE_GPS;
+            fix_msg.latitude  = lat;
+            fix_msg.longitude = lon;
+            fix_msg.altitude  = alt;
+            fix_msg.position_covariance_type = sensor_msgs::msg::NavSatFix::COVARIANCE_TYPE_UNKNOWN;
+            pubLidarGpsFix->publish(fix_msg);
+        }
+
+        if (pubLidarGpsEnuPose->get_subscription_count() != 0)
+        {
+            geometry_msgs::msg::PoseStamped pose_msg;
+            pose_msg.header.stamp = timeLaserInfoStamp;
+            pose_msg.header.frame_id = mapFrameEnu;
+            pose_msg.pose.position.x = p_enu.x();
+            pose_msg.pose.position.y = p_enu.y();
+            pose_msg.pose.position.z = p_enu.z();
+            pose_msg.pose.orientation.x = q_enu.x();
+            pose_msg.pose.orientation.y = q_enu.y();
+            pose_msg.pose.orientation.z = q_enu.z();
+            pose_msg.pose.orientation.w = q_enu.w();
+            pubLidarGpsEnuPose->publish(pose_msg);
+        }
+
+        if (pubLidarGpsNedPose->get_subscription_count() != 0)
+        {
+            geometry_msgs::msg::PoseStamped pose_msg;
+            pose_msg.header.stamp = timeLaserInfoStamp;
+            pose_msg.header.frame_id = mapFrameNed;
+            pose_msg.pose.position.x = p_ned.x();
+            pose_msg.pose.position.y = p_ned.y();
+            pose_msg.pose.position.z = p_ned.z();
+            pose_msg.pose.orientation.x = q_ned.x();
+            pose_msg.pose.orientation.y = q_ned.y();
+            pose_msg.pose.orientation.z = q_ned.z();
+            pose_msg.pose.orientation.w = q_ned.w();
+            pubLidarGpsNedPose->publish(pose_msg);
         }
     }
 

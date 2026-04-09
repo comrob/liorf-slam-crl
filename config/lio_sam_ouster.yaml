@@ -1,5 +1,7 @@
 /**:
   ros__parameters:
+    history_policy: "history_keep_last"
+    reliability_policy: "reliability_reliable"
     translationPredictionSource: constant_velocity
     # Topics
     pointCloudTopic: "/ouster/points"               # Point cloud data
@@ -13,6 +15,7 @@
     odometryFrame: "odom"
     mapFrameLocal: "map" # same as "odom" for now
     mapFrameEnu: "map_enu"
+    mapFrameNed: "map_ned"
     ECEFframe: "earth"
     debugTFs: true
 
@@ -21,6 +24,8 @@
     useGpsElevation: false                      # if GPS elevation is bad, set to "false"
     gpsCovThreshold: 2.0                        # m^2, threshold for using GPS data
     poseCovThreshold: 25.0                      # m^2, threshold for using GPS data
+    gps_processing_delay_sec: 1.0               # process GPS constraints only after this ROS-time delay from GPS stamp
+    gps_covariance_inflation_m: 2.0             # extra GPS factor std-dev [m] added as variance inflation (m^2) on XYZ
     
     # Export settings
     savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3
