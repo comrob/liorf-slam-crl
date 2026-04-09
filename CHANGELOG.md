@@ -126,7 +126,7 @@ Low risk. Behavior is intentionally delayed until at least two accepted GPS fact
 - Implemented floating-anchor GPS fusion in map optimization:
 	- replaced direct `GPSFactor` insertion with a custom floating-anchor factor tied to persistent `T_GL` key,
 	- added `earth -> map` TF publication from optimized `T_GL`,
-	- added `liorf/earth_to_map_offset` PoseWithCovariance topic,
+	- added `liorf/enu_to_local_offset` PoseWithCovariance topic,
 	- switched map-save GPS metadata output from `map_origin.txt` to structured `map_metadata.yaml` including datum + `T_global_local`.
 - Updated README GPS section to describe floating-anchor behavior, related topics/TF, and map metadata output.
 - Added [ARCHITECTURE.md](ARCHITECTURE.md) with a detailed frame model section (frame roles, TF chain, ownership, gating, and parameter mapping), and added a one-sentence frame summary in [README.md](README.md) that links to it.

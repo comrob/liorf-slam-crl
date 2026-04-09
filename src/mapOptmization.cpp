@@ -322,7 +322,7 @@ public:
         pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
         pubSLAMInfo = create_publisher<liorf::msg::CloudInfo>("liorf/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
         pubGpsOdom = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/gps_odom", QosPolicy(history_policy, reliability_policy));
-        pubGlobalOffset = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf/earth_to_map_offset", QosPolicy(history_policy, reliability_policy));
+        pubGlobalOffset = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf/enu_to_local_offset", QosPolicy(history_policy, reliability_policy));
         pubLidarGpsFix = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/mapping/lidar_gps_fix", QosPolicy(history_policy, reliability_policy));
         pubLidarGpsEnuPose = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/lidar_gps_enu_pose", QosPolicy(history_policy, reliability_policy));
         pubLidarGpsNedPose = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/lidar_gps_ned_pose", QosPolicy(history_policy, reliability_policy));

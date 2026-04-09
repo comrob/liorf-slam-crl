@@ -230,7 +230,7 @@ gpsTopic: "gps/fix"
 - `liorf/mapping/gps_odom` (`nav_msgs/msg/Odometry`): local Cartesian projection of NavSatFix.
 - `liorf/gps_origin` (`sensor_msgs/msg/NavSatFix`): captured datum origin used for local projection.
 - TF `mapFrameEnu -> mapFrameLocal`: optimized global offset/rotation from floating-anchor fusion.
-- `liorf/earth_to_map_offset` (`geometry_msgs/msg/PoseWithCovarianceStamped`): same offset as topic, including covariance when available.
+- `liorf/enu_to_local_offset` (`geometry_msgs/msg/PoseWithCovarianceStamped`): same ENU-to-local offset as the TF, including covariance when available.
 
 ### Map saving metadata
 
