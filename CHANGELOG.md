@@ -110,6 +110,7 @@ Improved GPS-LiDAR synchronization for GPS factor insertion and visualization:
 - SaveMap response now also reports dense saved lengths: `trajectory_points_saved` and `gps_points_saved`.
 - [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now reads `goereference.yaml`, supports `gps_origin_enu`/`T_enu_local`, and keeps legacy metadata/path fallbacks.
 - `goereference.yaml` now stores `T_enu_local` orientation as quaternion (`qx/qy/qz/qw`) instead of RPY, and [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now supports quaternion metadata with legacy RPY fallback.
+- fixed TF publication regression in [src/mapOptmization.cpp](src/mapOptmization.cpp): `odometryFrame -> lidar_link` is now built directly from `transformTobeMapped` (matching `publishOdometry()`), and `odometryFrame -> baselinkFrame` is derived from that LiDAR pose using `lidar2Baselink`.
 - map-save file I/O/formatting logic was extracted from `mapOptimization::saveMapService()` into dedicated exporter utility files: [include/export/MapExporter.hpp](include/export/MapExporter.hpp) and [src/export/MapExporter.cpp](src/export/MapExporter.cpp).
 - `mapOptimization::saveMapService()` now performs lightweight snapshot/locking and delegates heavy export work through `MapExporter`.
 - shared keyframe pose point type was moved to [include/export/map_types.hpp](include/export/map_types.hpp) so exporter and map optimization use a common definition.

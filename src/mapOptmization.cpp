@@ -2608,19 +2608,20 @@ public:
             br->sendTransform(trans_map_local_to_odom);
         }
 
-        // ========== TRANSFORM 1: odom -> lidar_link (direct optimized pose) ==========
-        // This remains published from mapOptimization as requested
-        float odom_x, odom_y, odom_z, odom_roll, odom_pitch, odom_yaw;
-        pcl::getTranslationAndEulerAngles(odomToBaseAffine, odom_x, odom_y, odom_z, odom_roll, odom_pitch, odom_yaw);
-        tf2::Quaternion quat_odom_to_base;
-        quat_odom_to_base.setRPY(odom_roll, odom_pitch, odom_yaw);
-        tf2::Transform t_odom_to_base = tf2::Transform(quat_odom_to_base, tf2::Vector3(odom_x, odom_y, odom_z));
+        // ========== TRANSFORM 1: odom -> lidar_link (matches publishOdometry pose) ==========
+        const float odom_x = transformTobeMapped[3];
+        const float odom_y = transformTobeMapped[4];
+        const float odom_z = transformTobeMapped[5];
+        const float odom_roll = transformTobeMapped[0];
+        const float odom_pitch = transformTobeMapped[1];
+        const float odom_yaw = transformTobeMapped[2];
 
-        tf2::Transform t_odom_to_lidar;
-        if (lidarFrame != baselinkFrame && hasLidar2Baselink)
-            t_odom_to_lidar = t_odom_to_base * lidar2Baselink.inverse();
-        else
-            t_odom_to_lidar = t_odom_to_base;
+        tf2::Quaternion quat_odom_to_lidar;
+        quat_odom_to_lidar.setRPY(odom_roll, odom_pitch, odom_yaw);
+        tf2::Transform t_odom_to_lidar = tf2::Transform(
+            quat_odom_to_lidar,
+            tf2::Vector3(odom_x, odom_y, odom_z)
+        );
 
         tf2::Stamped<tf2::Transform> stamped_odom_to_lidar(t_odom_to_lidar, time_point, odometryFrame);
         geometry_msgs::msg::TransformStamped trans_odom_to_lidar;
@@ -2632,7 +2633,7 @@ public:
         {
             RCLCPP_INFO_STREAM_THROTTLE(
                 get_logger(), *get_clock(), 10000,
-                "[TF_DEBUG] publish [1/2] " << odometryFrame << "->lidar_link (direct optimization result)"
+                "[TF_DEBUG] publish [1/2] " << odometryFrame << "->lidar_link (from transformTobeMapped / publishOdometry-aligned)"
                 << " xyz=(" << odom_x << ", " << odom_y << ", " << odom_z << ")"
                 << " rpy=(" << odom_roll << ", " << odom_pitch << ", " << odom_yaw << ")"
             );
