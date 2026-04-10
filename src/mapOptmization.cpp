@@ -149,6 +149,8 @@ public:
     // Floating Anchor GPS Fusion Variables
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
     bool T_EL_initialized = false;
+    bool gtsam_anchor_inserted = false;
+    bool forced_anchor_active = false;
     gtsam::Pose3 T_EL_estimate = gtsam::Pose3::Identity();
     size_t gpsFactorsAccepted = 0;
     bool T_EM_initialized = false;
@@ -172,7 +174,7 @@ public:
 
     bool gpsAnchorReady() const
     {
-        return T_EL_initialized && gpsFactorsAccepted >= 2;
+        return (T_EL_initialized && gpsFactorsAccepted >= 2) || forced_anchor_active;
     }
 
     rclcpp::Service<liorf::srv::SaveMap>::SharedPtr srvSaveMap;
@@ -355,6 +357,15 @@ public:
         }
 
         allocateMemory();
+
+        if (force_initial_gps && manual_gps_origin.size() == 3)
+        {
+            initializeDatum(
+                manual_gps_origin[0],
+                manual_gps_origin[1],
+                manual_gps_origin[2],
+                manual_global_heading);
+        }
     }
 
     bool tryLookupLidarToBaselinkTf(const char *context)
@@ -544,6 +555,54 @@ public:
         }
     }
 
+    void initializeDatum(double lat, double lon, double alt, double heading_deg)
+    {
+        std::lock_guard<std::mutex> lock(origin_mutex);
+        if (!first_gps)
+            return;
+
+        stored_origin_gps_msg.header.stamp = this->now();
+        stored_origin_gps_msg.latitude = lat;
+        stored_origin_gps_msg.longitude = lon;
+        stored_origin_gps_msg.altitude = alt;
+        stored_origin_gps_msg.status.status = sensor_msgs::msg::NavSatStatus::STATUS_FIX;
+        first_gps = false;
+
+        gps_trans_.Reset(lat, lon, alt);
+
+        GeographicLib::Geocentric earth = GeographicLib::Geocentric::WGS84();
+        double ecef_x, ecef_y, ecef_z;
+        earth.Forward(lat, lon, alt, ecef_x, ecef_y, ecef_z);
+
+        const double lat_rad = lat * M_PI / 180.0;
+        const double lon_rad = lon * M_PI / 180.0;
+        const double sin_lat = std::sin(lat_rad);
+        const double cos_lat = std::cos(lat_rad);
+        const double sin_lon = std::sin(lon_rad);
+        const double cos_lon = std::cos(lon_rad);
+
+        Eigen::Matrix3d R_ecef_enu;
+        R_ecef_enu.col(0) = Eigen::Vector3d(-sin_lon, cos_lon, 0.0);
+        R_ecef_enu.col(1) = Eigen::Vector3d(-sin_lat * cos_lon, -sin_lat * sin_lon, cos_lat);
+        R_ecef_enu.col(2) = Eigen::Vector3d(cos_lat * cos_lon, cos_lat * sin_lon, sin_lat);
+
+        T_EM_estimate = gtsam::Pose3(gtsam::Rot3(R_ecef_enu), gtsam::Point3(ecef_x, ecef_y, ecef_z));
+        T_EM_initialized = true;
+
+        if (force_initial_gps)
+        {
+            double yaw_rad = (90.0 - heading_deg) * M_PI / 180.0;
+            T_EL_estimate = gtsam::Pose3(gtsam::Rot3::Yaw(yaw_rad), gtsam::Point3(0, 0, 0));
+            forced_anchor_active = true;
+            T_EL_initialized = true;
+            RCLCPP_INFO(get_logger(), "Manual GPS Datum initialized. Yaw: %.2f rad", yaw_rad);
+        }
+        else
+        {
+            RCLCPP_INFO(get_logger(), "GPS origin captured from sensor. Publishing will now begin.");
+        }
+    }
+
     void gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gpsMsg)
     {
         if (gpsMsg->status.status < 0)
@@ -561,31 +620,7 @@ public:
         Eigen::Vector3d trans_local_;
         
         if (first_gps) {
-            std::lock_guard<std::mutex> lock(origin_mutex);
-            stored_origin_gps_msg = *gpsMsg;
-            first_gps = false;
-            
-            gps_trans_.Reset(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude);
-
-            GeographicLib::Geocentric earth = GeographicLib::Geocentric::WGS84();
-            double ecef_x, ecef_y, ecef_z;
-            earth.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, ecef_x, ecef_y, ecef_z);
-
-            const double lat_rad = gpsMsg->latitude * M_PI / 180.0;
-            const double lon_rad = gpsMsg->longitude * M_PI / 180.0;
-            const double sin_lat = std::sin(lat_rad);
-            const double cos_lat = std::cos(lat_rad);
-            const double sin_lon = std::sin(lon_rad);
-            const double cos_lon = std::cos(lon_rad);
-
-            Eigen::Matrix3d R_ecef_enu;
-            R_ecef_enu.col(0) = Eigen::Vector3d(-sin_lon,  cos_lon, 0.0);
-            R_ecef_enu.col(1) = Eigen::Vector3d(-sin_lat * cos_lon, -sin_lat * sin_lon, cos_lat);
-            R_ecef_enu.col(2) = Eigen::Vector3d( cos_lat * cos_lon,  cos_lat * sin_lon, sin_lat);
-
-            T_EM_estimate = gtsam::Pose3(gtsam::Rot3(R_ecef_enu), gtsam::Point3(ecef_x, ecef_y, ecef_z));
-            T_EM_initialized = true;
-            RCLCPP_INFO(get_logger(), "GPS origin captured. Publishing will now begin.");
+            initializeDatum(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, 0.0);
         }
 
         // Before anchor is fully observable, forward raw GPS fix only (no fused orientation topics).
@@ -2219,22 +2254,27 @@ public:
                     lastGPSPoint = curGPSPoint;
 
                 // 1. Initialize T_GL if this is the first GPS fusion
-                if (!T_EL_initialized) {
+                if (!gtsam_anchor_inserted) {
                     gtsam::Pose3 current_local_pose = pclPointTogtsamPose3(cloudKeyPoses6D->points.back());
                     gtsam::Point3 initial_translation(gps_x - current_local_pose.x(), 
                                                       gps_y - current_local_pose.y(), 
                                                       gps_z - current_local_pose.z());
-                    
-                    // Start with identity rotation (yaw=0). It will become observable with motion.
-                    T_EL_estimate = gtsam::Pose3(gtsam::Rot3::Identity(), initial_translation);
+
+                    if (!forced_anchor_active) {
+                        T_EL_estimate = gtsam::Pose3(gtsam::Rot3::Identity(), initial_translation);
+                    } else {
+                        // Keep manual rotation, but snap translation to the first real GPS.
+                        T_EL_estimate = gtsam::Pose3(T_EL_estimate.rotation(), initial_translation);
+                    }
+
                     initialEstimate.insert(T_EL_KEY, T_EL_estimate);
-                    
-                    // Add a weak prior to prevent singularity before heading is observable
+
                     gtsam::Vector6 prior_noise_vector;
-                    prior_noise_vector << 1e-2, 1e-2, M_PI, 1e8, 1e8, 1e8; // Weak on yaw
+                    prior_noise_vector << 1e-2, 1e-2, M_PI, 1e8, 1e8, 1e8;
                     gtSAMgraph.add(PriorFactor<Pose3>(T_EL_KEY, T_EL_estimate, noiseModel::Diagonal::Variances(prior_noise_vector)));
-                    
+
                     T_EL_initialized = true;
+                    gtsam_anchor_inserted = true;
                 }
 
                 // 2. Create Noise Model and Custom Factor

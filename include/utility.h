@@ -123,6 +123,9 @@ public:
     float poseCovThreshold;
     double gps_processing_delay_sec;
     double gps_covariance_inflation_m;
+    bool force_initial_gps;
+    std::vector<double> manual_gps_origin;
+    double manual_global_heading;
 
     // Save pcd
     bool savePCD;
@@ -245,6 +248,12 @@ public:
         get_parameter("gps_processing_delay_sec", gps_processing_delay_sec);
         declare_parameter<double>("gps_covariance_inflation_m", 2.0);
         get_parameter("gps_covariance_inflation_m", gps_covariance_inflation_m);
+        declare_parameter<bool>("force_initial_gps", false);
+        get_parameter("force_initial_gps", force_initial_gps);
+        declare_parameter("manual_gps_origin", std::vector<double>{0.0, 0.0, 0.0});
+        get_parameter("manual_gps_origin", manual_gps_origin);
+        declare_parameter("manual_global_heading", 0.0);
+        get_parameter("manual_global_heading", manual_global_heading);
 
         declare_parameter<bool>("savePCD", false);
         get_parameter("savePCD", savePCD);

@@ -27,6 +27,10 @@
     gps_processing_delay_sec: 1.0               # process GPS constraints only after this ROS-time delay from GPS stamp
     gps_covariance_inflation_m: 2.0             # extra GPS factor std-dev [m] added as variance inflation (m^2) on XYZ
     
+    force_initial_gps: false
+    manual_gps_origin: [50.0763, 14.41, 252.6]   # LLA GPS origin for manual georeference initialization (if `force_initial_gps` enabled)
+    manual_global_heading: 0.0                   # global yaw heading in degrees to rotate EN
+
     # Export settings
     savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3
     savePCDDirectory: "/Downloads/LOAM/"        # in your home folder, starts and ends with "/". Warning: the code deletes "LOAM" folder then recreates it. See "mapOptimization" for implementation

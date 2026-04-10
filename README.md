@@ -219,6 +219,32 @@ This repository uses a **Floating Anchor** GPS fusion strategy:
 - GNSS input topic type: `sensor_msgs/msg/NavSatFix`
 - Configure `gpsTopic` in your selected YAML under [config](config)
 
+### Manual GPS initialization (before first NavSatFix)
+
+To start ENU-related publishing before the first real GNSS fix arrives, enable manual datum bootstrap:
+
+```yaml
+force_initial_gps: true
+manual_gps_origin: [lat_deg, lon_deg, alt_m]
+manual_global_heading: 0.0
+```
+
+Parameter meaning:
+
+- `force_initial_gps`: enables manual origin/heading bootstrap at node startup.
+- `manual_gps_origin`: datum origin in geodetic coordinates `[latitude, longitude, altitude]`.
+- `manual_global_heading`: initial global heading in degrees (converted internally to ENU yaw).
+
+Behavior:
+
+- `liorf/gps_origin` and ENU/NED GPS-derived outputs can start before the first sensor GNSS message.
+- On the first accepted real GPS factor, the floating-anchor prior is inserted once and translation is aligned, while manual yaw is preserved.
+
+If this appears inactive at runtime, verify you are launching the build that contains your updated YAML and code:
+
+- for source workspace runs: rebuild and `source install/setup.bash` in that workspace before `ros2 launch`.
+- for installed package runs: confirm the installed YAML under `install/liorf/share/liorf/config/` has the same parameter values.
+
 Example:
 
 ```yaml
