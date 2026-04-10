@@ -7,6 +7,8 @@ bool enu_map_saved
 uint32 keyframes_used
 uint32 surf_points_local
 uint32 surf_points_enu
-uint32 global_points_local
-uint32 global_points_enu
+uint32 full_points_local
+uint32 full_points_enu
+uint32 trajectory_points_saved
+uint32 gps_points_saved
 string message

@@ -7,7 +7,7 @@ SERVICE_TYPE="liorf/srv/SaveMap"
 MAP_NODE_NAME="/liorf_mapOptimization"
 
 # Script-level defaults (can be overridden via environment variables).
-DEFAULT_RESOLUTION="${LIORF_SAVE_MAP_DEFAULT_RESOLUTION:-0}"
+DEFAULT_RESOLUTION="${LIORF_SAVE_MAP_DEFAULT_RESOLUTION:-0.2}"
 DEFAULT_DESTINATION="${LIORF_SAVE_MAP_DEFAULT_DESTINATION:-}"
 
 get_save_pcd_directory() {
@@ -69,7 +69,7 @@ Usage: scripts/save_map.sh [-r RESOLUTION] [-d DESTINATION]
 Calls the liorf map saving service.
 
 Options:
-  -r, --resolution   Map voxel resolution (float). Use 0 to keep original cloud density.
+  -r, --resolution   Map voxel resolution (float). Use 0 to save without downsampling.
   -d, --destination  Save path passed to SaveMap.destination.
                      Path semantics follow mapOptimization:
                        /abs/path   -> absolute path
@@ -79,7 +79,7 @@ Options:
   -h, --help         Show this help.
 
 Defaults:
-  resolution: ${LIORF_SAVE_MAP_DEFAULT_RESOLUTION:-0}
+  resolution: ${LIORF_SAVE_MAP_DEFAULT_RESOLUTION:-0.2}
   destination: ${LIORF_SAVE_MAP_DEFAULT_DESTINATION:-<empty, use node savePCDDirectory>}
 
 Environment overrides:
@@ -178,8 +178,10 @@ if grep -q "success=True" <<<"$response"; then
   keyframes_used="$(echo "$response" | sed -n "s/.*keyframes_used=\([^,)]*\).*/\1/p")"
   surf_points_local="$(echo "$response" | sed -n "s/.*surf_points_local=\([^,)]*\).*/\1/p")"
   surf_points_enu="$(echo "$response" | sed -n "s/.*surf_points_enu=\([^,)]*\).*/\1/p")"
-  global_points_local="$(echo "$response" | sed -n "s/.*global_points_local=\([^,)]*\).*/\1/p")"
-  global_points_enu="$(echo "$response" | sed -n "s/.*global_points_enu=\([^,)]*\).*/\1/p")"
+  full_points_local="$(echo "$response" | sed -n "s/.*full_points_local=\([^,)]*\).*/\1/p")"
+  full_points_enu="$(echo "$response" | sed -n "s/.*full_points_enu=\([^,)]*\).*/\1/p")"
+  trajectory_points_saved="$(echo "$response" | sed -n "s/.*trajectory_points_saved=\([^,)]*\).*/\1/p")"
+  gps_points_saved="$(echo "$response" | sed -n "s/.*gps_points_saved=\([^,)]*\).*/\1/p")"
   message="$(echo "$response" | sed -n "s/.*message='\([^']*\)'.*/\1/p")"
 
   if [[ -z "$save_directory" ]]; then
@@ -202,8 +204,10 @@ if grep -q "success=True" <<<"$response"; then
   [[ -n "$keyframes_used" ]] && echo "Keyframes used: $keyframes_used"
   [[ -n "$surf_points_local" ]] && echo "Local surf points: $surf_points_local"
   [[ -n "$surf_points_enu" ]] && echo "ENU surf points: $surf_points_enu"
-  [[ -n "$global_points_local" ]] && echo "Local global-map points: $global_points_local"
-  [[ -n "$global_points_enu" ]] && echo "ENU global-map points: $global_points_enu"
+  [[ -n "$full_points_local" ]] && echo "Local full-map points: $full_points_local"
+  [[ -n "$full_points_enu" ]] && echo "ENU full-map points: $full_points_enu"
+  [[ -n "$trajectory_points_saved" ]] && echo "Dense trajectory points: $trajectory_points_saved"
+  [[ -n "$gps_points_saved" ]] && echo "Raw GPS points: $gps_points_saved"
   [[ -n "$message" ]] && echo "Message: $message"
 else
   echo

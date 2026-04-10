@@ -127,6 +127,8 @@ public:
     // Save pcd
     bool savePCD;
     string savePCDDirectory;
+    bool save_dense_gps_trajectory;
+    bool save_dense_odom_trajectory;
 
     // Lidar Sensor Configuration
     SensorType sensor;
@@ -248,6 +250,10 @@ public:
         get_parameter("savePCD", savePCD);
         declare_parameter<string>("savePCDDirectory", "/Downloads/LOAM/");
         get_parameter("savePCDDirectory", savePCDDirectory);
+        declare_parameter<bool>("save_dense_gps_trajectory", true);
+        get_parameter("save_dense_gps_trajectory", save_dense_gps_trajectory);
+        declare_parameter<bool>("save_dense_odom_trajectory", true);
+        get_parameter("save_dense_odom_trajectory", save_dense_odom_trajectory);
 
         std::string sensorStr;
         declare_parameter<string>("sensor", " ");

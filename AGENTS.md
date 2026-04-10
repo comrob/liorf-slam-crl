@@ -270,3 +270,47 @@ For the current development context, treat the following as the primary runtime 
 - Primary config file: [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
 
 When making iterative changes, prefer validating behavior against this launch/config pair first unless the task explicitly targets another dataset/sensor profile.
+
+---
+
+## 9) Commit message guidelines (mandatory)
+
+Use modern, review-friendly commit messages (Conventional-Commit style is preferred).
+
+Required structure:
+
+1. Header line: short, meaningful, and explicit about scope + change.
+2. Empty line.
+3. Body: concise bullet list focused on what changed, especially algorithmic or architectural deltas.
+
+Required formatting rules:
+
+- Header format (preferred): `<type>(<scope>): <change summary>`
+- Header examples:
+  - `feat(map-export): write T_enu_local orientation as quaternion`
+  - `refactor(cmake): isolate map exporter into dedicated library target`
+- Keep header concise (target <= 72 chars when possible), use new line if out of space.
+- Body bullets must state concrete technical changes, not vague intent.
+- Body line length must be <= 72 characters per line.
+- Keep bullets concise and scannable.
+
+Commit template:
+
+```text
+<type>(<scope>): <short summary>
+
+- <algorithmic/architectural change 1>
+  <second line of bullet if needed>
+- <algorithmic/architectural change 2>
+- <behavior/runtime impact or compatibility note>
+```
+
+Notes:
+
+- Do not omit the blank line between header and body.
+- Avoid `\n` escape sequences inside a single `git commit -m` string.
+- Prefer `git commit -F <file>` or multiple `-m` flags (header/body)
+  to preserve real newlines and bullet formatting.
+- Prefer imperative phrasing in header (`add`, `refactor`, `fix`, etc.).
+- If no algorithm/architecture changes were made, state that explicitly in one bullet.
+- If the change is small, only header can be enough.

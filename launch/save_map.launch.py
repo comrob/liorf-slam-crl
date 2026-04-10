@@ -8,6 +8,9 @@ from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, Opaqu
 from launch.substitutions import LaunchConfiguration
 
 
+DEFAULT_SAVE_MAP_RESOLUTION = os.environ.get('LIORF_SAVE_MAP_DEFAULT_RESOLUTION', '0.2')
+
+
 def _build_actions(context, *args, **kwargs):
     share_dir = get_package_share_directory('liorf')
     save_map_script = os.path.join(share_dir, 'scripts', 'save_map.sh')
@@ -86,8 +89,8 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'resolution',
-            default_value='0.0',
-            description='Map voxel resolution. 0 keeps original density.',
+            default_value=DEFAULT_SAVE_MAP_RESOLUTION,
+            description='Map voxel resolution. 0 means no downsampling.',
         ),
         DeclareLaunchArgument(
             'destination',

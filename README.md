@@ -266,14 +266,20 @@ ros2 launch liorf save_map.launch.py destination:=/tmp/liorf_map
 ros2 launch liorf save_map.launch.py wait_timeout_sec:=60.0
 ```
 
-When calling `liorf/save_map`, GPS metadata is saved to:
+When calling `liorf/save_map`, georeference metadata is saved to:
 
-- `map_metadata.yaml`
+- `goereference.yaml`
 
 It includes:
 
-- `global_datum` (latitude/longitude/altitude when available)
-- `T_global_local` (`x,y,z,roll,pitch,yaw`)
+- `gps_origin_enu` (latitude/longitude/altitude when available)
+- `T_enu_local` (`x,y,z,roll,pitch,yaw`)
+
+Additional export summary is saved to:
+
+- `save_summary.yaml`
+
+It includes ROS save time, keyframe count, dense trajectory points saved, raw GPS points saved, and map point counters.
 
 Save response also reports useful export stats:
 
@@ -281,8 +287,16 @@ Save response also reports useful export stats:
 - `enu_map_saved`: whether ENU artifacts were exported
 - `keyframes_used`: number of keyframes used for map construction
 - `surf_points_local` / `surf_points_enu`: surf map point counts
-- `global_points_local` / `global_points_enu`: global map point counts
+- `full_points_local` / `full_points_enu`: full map point counts
+- `trajectory_points_saved`: dense trajectory points written to `trajectories/trajectory_dense_local.csv`
+- `gps_points_saved`: raw GPS points written to `trajectories/gps_raw_geodetic.csv`
 - `message`: status details (success or skip reason)
+
+Saved artifacts are organized as:
+
+- root: `goereference.yaml`, `save_summary.yaml`, `README.md`
+- `maps/`: `FullMap_*.pcd`, `SurfaceMap_*.pcd`
+- `trajectories/`: trajectory PCDs + CSV exports (`gps_raw_geodetic.csv`, `trajectory_keyframes_local.csv`, `trajectory_dense_local.csv`)
 
 After successful map save, the node writes the absolute path to:
 
@@ -308,7 +322,7 @@ Optional controls:
 - `--max-surf-points <N>`: limit sampled surf points on overlay heatmap
 - `--max-traj-points <N>`: limit sampled trajectory points
 
-The script reads `map_metadata.yaml` and map PCD outputs (`*_ENU.pcd` preferred, or `*_local.pcd` transformed by `T_global_local`) and produces an interactive HTML map with satellite basemap and trajectory/surf overlays.
+The script reads `goereference.yaml` (with compatibility fallback to older metadata filenames) and map PCD outputs (`maps/SurfaceMap_ENU.pcd` preferred, or local maps transformed by `T_enu_local`) and produces an interactive HTML map with satellite basemap and trajectory/surf overlays.
 
 On success, it prints both the generated HTML path and a `file://...` URI that can be opened from terminal links.
 

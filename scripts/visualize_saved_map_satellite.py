@@ -97,17 +97,28 @@ def parse_map_metadata(metadata_path: Path):
 
     state = None
     datum = {"latitude": None, "longitude": None, "altitude": None}
-    t_gl = {"x": 0.0, "y": 0.0, "z": 0.0, "roll": 0.0, "pitch": 0.0, "yaw": 0.0}
+    t_enu_local = {
+        "x": 0.0,
+        "y": 0.0,
+        "z": 0.0,
+        "qx": 0.0,
+        "qy": 0.0,
+        "qz": 0.0,
+        "qw": 1.0,
+        "roll": 0.0,
+        "pitch": 0.0,
+        "yaw": 0.0,
+    }
 
     with metadata_path.open("r", encoding="utf-8") as f:
         for raw in f:
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
-            if line == "global_datum:":
+            if line == "gps_origin_enu:" or line == "global_datum:":
                 state = "datum"
                 continue
-            if line == "T_global_local:":
+            if line == "T_enu_local:" or line == "T_global_local:":
                 state = "tgl"
                 continue
             if ":" not in line:
@@ -116,13 +127,13 @@ def parse_map_metadata(metadata_path: Path):
             key, val = [x.strip() for x in line.split(":", 1)]
             if state == "datum" and key in datum:
                 datum[key] = None if val == "null" else float(val)
-            elif state == "tgl" and key in t_gl:
-                t_gl[key] = float(val)
+            elif state == "tgl" and key in t_enu_local:
+                t_enu_local[key] = float(val)
 
     if datum["latitude"] is None or datum["longitude"] is None or datum["altitude"] is None:
-        raise ValueError("map_metadata.yaml has null global_datum; GPS origin is required for satellite overlay")
+        raise ValueError(f"{metadata_path.name} has null gps_origin_enu/global_datum; GPS origin is required for satellite overlay")
 
-    return datum, t_gl
+    return datum, t_enu_local
 
 
 def read_pcd_xyz(path: Path) -> np.ndarray:
@@ -218,9 +229,44 @@ def rpy_to_rotmat(roll: float, pitch: float, yaw: float) -> np.ndarray:
     return rz @ ry @ rx
 
 
-def local_to_enu(local_xyz: np.ndarray, t_gl: dict) -> np.ndarray:
-    r = rpy_to_rotmat(t_gl["roll"], t_gl["pitch"], t_gl["yaw"])
-    t = np.array([t_gl["x"], t_gl["y"], t_gl["z"]], dtype=np.float64)
+def quat_to_rotmat(qx: float, qy: float, qz: float, qw: float) -> np.ndarray:
+    n = math.sqrt(qx * qx + qy * qy + qz * qz + qw * qw)
+    if n <= 1e-12:
+        return np.eye(3, dtype=np.float64)
+
+    x = qx / n
+    y = qy / n
+    z = qz / n
+    w = qw / n
+
+    return np.array(
+        [
+            [1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - z * w), 2.0 * (x * z + y * w)],
+            [2.0 * (x * y + z * w), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - x * w)],
+            [2.0 * (x * z - y * w), 2.0 * (y * z + x * w), 1.0 - 2.0 * (x * x + y * y)],
+        ],
+        dtype=np.float64,
+    )
+
+
+def local_to_enu(local_xyz: np.ndarray, t_enu_local: dict) -> np.ndarray:
+    quat_norm_sq = (
+        t_enu_local.get("qx", 0.0) ** 2
+        + t_enu_local.get("qy", 0.0) ** 2
+        + t_enu_local.get("qz", 0.0) ** 2
+        + t_enu_local.get("qw", 0.0) ** 2
+    )
+    if quat_norm_sq > 1e-12:
+        r = quat_to_rotmat(
+            t_enu_local.get("qx", 0.0),
+            t_enu_local.get("qy", 0.0),
+            t_enu_local.get("qz", 0.0),
+            t_enu_local.get("qw", 1.0),
+        )
+    else:
+        r = rpy_to_rotmat(t_enu_local["roll"], t_enu_local["pitch"], t_enu_local["yaw"])
+
+    t = np.array([t_enu_local["x"], t_enu_local["y"], t_enu_local["z"]], dtype=np.float64)
     return (local_xyz @ r.T) + t
 
 
@@ -288,28 +334,50 @@ def sample_points(points: np.ndarray, max_points: int) -> np.ndarray:
     return points[::step][:max_points]
 
 
-def resolve_enu_trajectory(map_dir: Path, t_gl: dict) -> np.ndarray:
-    traj_enu = map_dir / "trajectory_ENU.pcd"
+def resolve_enu_trajectory(map_dir: Path, t_enu_local: dict) -> np.ndarray:
+    traj_enu = map_dir / "trajectories" / "trajectory_ENU.pcd"
     if traj_enu.exists():
         return read_pcd_xyz(traj_enu)
 
-    traj_local = map_dir / "trajectory_local.pcd"
+    traj_local = map_dir / "trajectories" / "trajectory_local.pcd"
     if traj_local.exists():
-        return local_to_enu(read_pcd_xyz(traj_local), t_gl)
+        return local_to_enu(read_pcd_xyz(traj_local), t_enu_local)
 
-    raise FileNotFoundError("Neither trajectory_ENU.pcd nor trajectory_local.pcd found")
+    # Legacy fallback (flat export layout)
+    legacy_traj_enu = map_dir / "trajectory_ENU.pcd"
+    if legacy_traj_enu.exists():
+        return read_pcd_xyz(legacy_traj_enu)
+
+    legacy_traj_local = map_dir / "trajectory_local.pcd"
+    if legacy_traj_local.exists():
+        return local_to_enu(read_pcd_xyz(legacy_traj_local), t_enu_local)
+
+    raise FileNotFoundError(
+        "Neither trajectories/trajectory_ENU.pcd nor trajectories/trajectory_local.pcd found"
+    )
 
 
-def resolve_enu_surf(map_dir: Path, t_gl: dict) -> np.ndarray:
-    surf_enu = map_dir / "SurfMap_ENU.pcd"
+def resolve_enu_surf(map_dir: Path, t_enu_local: dict) -> np.ndarray:
+    surf_enu = map_dir / "maps" / "SurfaceMap_ENU.pcd"
     if surf_enu.exists():
         return read_pcd_xyz(surf_enu)
 
-    surf_local = map_dir / "SurfMap_local.pcd"
+    surf_local = map_dir / "maps" / "SurfaceMap_local.pcd"
     if surf_local.exists():
-        return local_to_enu(read_pcd_xyz(surf_local), t_gl)
+        return local_to_enu(read_pcd_xyz(surf_local), t_enu_local)
 
-    raise FileNotFoundError("Neither SurfMap_ENU.pcd nor SurfMap_local.pcd found")
+    # Legacy fallback (flat export layout)
+    legacy_surf_enu = map_dir / "SurfMap_ENU.pcd"
+    if legacy_surf_enu.exists():
+        return read_pcd_xyz(legacy_surf_enu)
+
+    legacy_surf_local = map_dir / "SurfMap_local.pcd"
+    if legacy_surf_local.exists():
+        return local_to_enu(read_pcd_xyz(legacy_surf_local), t_enu_local)
+
+    raise FileNotFoundError(
+        "Neither maps/SurfaceMap_ENU.pcd nor maps/SurfaceMap_local.pcd found"
+    )
 
 
 def main() -> int:
@@ -324,10 +392,15 @@ def main() -> int:
     print(f"Map directory resolved to: {map_dir}")
     print(f"Resolution trace: {map_dir_trace}")
 
-    datum, t_gl = parse_map_metadata(map_dir / "map_metadata.yaml")
+    georef_path = map_dir / "goereference.yaml"
+    if not georef_path.exists():
+        legacy_georef = map_dir / "map_georeference.yaml"
+        georef_path = legacy_georef if legacy_georef.exists() else map_dir / "map_metadata.yaml"
 
-    traj_enu = resolve_enu_trajectory(map_dir, t_gl)
-    surf_enu = resolve_enu_surf(map_dir, t_gl)
+    datum, t_enu_local = parse_map_metadata(georef_path)
+
+    traj_enu = resolve_enu_trajectory(map_dir, t_enu_local)
+    surf_enu = resolve_enu_surf(map_dir, t_enu_local)
 
     traj_enu = sample_points(traj_enu, args.max_traj_points)
     surf_enu = sample_points(surf_enu, args.max_surf_points)

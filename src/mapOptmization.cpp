@@ -1,6 +1,8 @@
 #include <gtsam/nonlinear/NonlinearFactor.h>
 
 #include "utility.h"
+#include "export/map_types.hpp"
+#include "export/MapExporter.hpp"
 #include "liorf/msg/cloud_info.hpp"
 #include "liorf/srv/save_map.hpp"
 // <!-- liorf_yjz_lucky_boy -->
@@ -44,28 +46,6 @@ using symbol_shorthand::V; // Vel   (xdot,ydot,zdot)
 using symbol_shorthand::B; // Bias  (ax,ay,az,gx,gy,gz)
 using symbol_shorthand::G; // GPS pose
 
-/*
-    * A point cloud type that has 6D pose info ([x,y,z,roll,pitch,yaw] intensity is time stamp)
-    */
-struct PointXYZIRPYT
-{
-    PCL_ADD_POINT4D
-    PCL_ADD_INTENSITY;                  // preferred way of adding a XYZ+padding
-    float roll;
-    float pitch;
-    float yaw;
-    double time;
-    EIGEN_MAKE_ALIGNED_OPERATOR_NEW   // make sure our new allocators are aligned
-} EIGEN_ALIGN16;                    // enforce SSE padding for correct memory alignment
-
-POINT_CLOUD_REGISTER_POINT_STRUCT (PointXYZIRPYT,
-                                   (float, x, x) (float, y, y)
-                                   (float, z, z) (float, intensity, intensity)
-                                   (float, roll, roll) (float, pitch, pitch) (float, yaw, yaw)
-                                   (double, time, time))
-
-typedef PointXYZIRPYT  PointTypePose;
-
 enum class SCInputType 
 { 
     SINGLE_SCAN_FULL, 
@@ -103,12 +83,12 @@ private:
     gtsam::Point3 lever_arm_;
 
 public:
-    FloatingAnchorFactor(gtsam::Key T_GL_key, gtsam::Key x_t_key, const gtsam::Point3& measured_gps,
+    FloatingAnchorFactor(gtsam::Key T_EL_key, gtsam::Key x_t_key, const gtsam::Point3& measured_gps,
                          const gtsam::Point3& lever_arm, gtsam::SharedNoiseModel model)
-        : gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Pose3>(model, T_GL_key, x_t_key),
+        : gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Pose3>(model, T_EL_key, x_t_key),
           measured_gps_(measured_gps), lever_arm_(lever_arm) {}
 
-    gtsam::Vector evaluateError(const gtsam::Pose3& T_GL, const gtsam::Pose3& x_t,
+    gtsam::Vector evaluateError(const gtsam::Pose3& T_EL, const gtsam::Pose3& x_t,
                                 boost::optional<gtsam::Matrix&> H1 = boost::none,
                                 boost::optional<gtsam::Matrix&> H2 = boost::none) const override {
         // 1. Transform lever arm to local odometry frame
@@ -118,7 +98,7 @@ public:
         // 2. Transform local point to global GPS frame
         gtsam::Matrix36 H_TGL_global;
         gtsam::Matrix33 H_local_global;
-        gtsam::Point3 global_pt = T_GL.transformFrom(local_pt, H1 ? &H_TGL_global : 0, H2 ? &H_local_global : 0);
+        gtsam::Point3 global_pt = T_EL.transformFrom(local_pt, H1 ? &H_TGL_global : 0, H2 ? &H_local_global : 0);
 
         // 3. Assemble Jacobians using chain rule
         if (H1) *H1 = H_TGL_global;
@@ -133,6 +113,8 @@ class mapOptimization : public ParamServer
 {
 
 public:
+    MapExporter map_exporter_;
+
     // gtsam
     NonlinearFactorGraph gtSAMgraph;
     Values initialEstimate;
@@ -165,9 +147,9 @@ public:
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubLidarGpsNedPose;
 
     // Floating Anchor GPS Fusion Variables
-    const gtsam::Key T_GL_KEY = gtsam::Symbol('T', 0);
-    bool T_GL_initialized = false;
-    gtsam::Pose3 T_GL_estimate = gtsam::Pose3::Identity();
+    const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
+    bool T_EL_initialized = false;
+    gtsam::Pose3 T_EL_estimate = gtsam::Pose3::Identity();
     size_t gpsFactorsAccepted = 0;
     bool T_EM_initialized = false;
     gtsam::Pose3 T_EM_estimate = gtsam::Pose3::Identity();
@@ -190,7 +172,7 @@ public:
 
     bool gpsAnchorReady() const
     {
-        return T_GL_initialized && gpsFactorsAccepted >= 2;
+        return T_EL_initialized && gpsFactorsAccepted >= 2;
     }
 
     rclcpp::Service<liorf::srv::SaveMap>::SharedPtr srvSaveMap;
@@ -198,6 +180,10 @@ public:
     std::deque<nav_msgs::msg::Odometry> gpsQueue;
     std::deque<gtsam::Point3> gpsReceivedEnuQueue;
     std::deque<std::pair<int, std::pair<gtsam::Point3, double>>> gpsLidarAssociationQueue;
+    std::vector<sensor_msgs::msg::NavSatFix> gpsHistory;
+    std::vector<nav_msgs::msg::Odometry> densePoseHistory;
+    std::mutex gpsHistoryMutex;
+    std::mutex densePoseHistoryMutex;
     static constexpr size_t kMaxGpsVizPoints = 2000;
     static constexpr int kGpsKeyframeSearchWindow = 10;
     static constexpr double kMaxGpsLidarConstraintDtSec = 0.30;
@@ -563,6 +549,12 @@ public:
         if (gpsMsg->status.status < 0)
             return;
 
+        if (save_dense_gps_trajectory)
+        {
+            std::lock_guard<std::mutex> history_lock(gpsHistoryMutex);
+            gpsHistory.push_back(*gpsMsg);
+        }
+
         if (diagnostics)
             diagnostics->markGpsUpdate(gpsMsg->header.stamp);
 
@@ -910,194 +902,45 @@ public:
     bool saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req,
                                 std::shared_ptr<liorf::srv::SaveMap::Response> res)
     {
-      // Resolve output directory.
-      // savePCDDirectory convention: relative to HOME, stored with a leading "/" (e.g. "/Downloads/LOAM/").
-      // req->destination semantics:
-      //   starts with "/"  → absolute path, used as-is
-      //   starts with "~/" → HOME-expanded
-      //   otherwise        → relative to HOME
-      const char* home_env = std::getenv("HOME");
-      const std::string homeDir = (home_env != nullptr) ? home_env : "/tmp";
-      namespace fs = std::filesystem;
-      fs::path saveDir;
-      if (req->destination.empty()) {
-          saveDir = fs::path(homeDir) / fs::path(savePCDDirectory).relative_path();
-      } else if (fs::path(req->destination).is_absolute()) {
-          saveDir = req->destination;
-      } else if (req->destination.rfind("~/", 0) == 0) {
-          saveDir = fs::path(homeDir) / req->destination.substr(2);
-      } else {
-          saveDir = fs::path(homeDir) / req->destination;
-      }
-      saveDir = saveDir.lexically_normal();
-      const std::string saveMapDirectory = saveDir.string();
-    res->save_directory = saveMapDirectory;
-    res->enu_map_saved = false;
-    res->keyframes_used = static_cast<uint32_t>(cloudKeyPoses3D->size());
-    res->surf_points_local = 0;
-    res->surf_points_enu = 0;
-    res->global_points_local = 0;
-    res->global_points_enu = 0;
-    res->message = "";
-
-      cout << "****************************************************" << endl;
-      cout << "Saving map to pcd files ..." << endl;
-      cout << "Save destination: " << saveMapDirectory << endl;
-      // Recreate output directory fresh (removes any previous run's artifacts).
+      sensor_msgs::msg::NavSatFix originSnapshot;
+      bool hasOrigin = false;
       {
-          std::error_code ec;
-          fs::remove_all(saveDir, ec);
-          fs::create_directories(saveDir, ec);
-          if (ec) {
-              RCLCPP_ERROR(get_logger(), "Failed to create save directory '%s': %s",
-                           saveMapDirectory.c_str(), ec.message().c_str());
-              res->success = false;
-              res->message = std::string("failed to create save directory: ") + ec.message();
-              return true;
-          }
-      }
-
-      { // Lock guard scope for origin
           std::lock_guard<std::mutex> lock(origin_mutex);
-          std::string metadata_file_path = saveMapDirectory + "/map_metadata.yaml";
-          std::ofstream ofs(metadata_file_path);
-          if (ofs.is_open())
-          {
-              ofs << std::fixed << std::setprecision(12);
-              ofs << "global_datum:" << std::endl;
-              
-              if (!first_gps) {
-                  ofs << "  latitude: " << stored_origin_gps_msg.latitude << std::endl;
-                  ofs << "  longitude: " << stored_origin_gps_msg.longitude << std::endl;
-                  ofs << "  altitude: " << stored_origin_gps_msg.altitude << std::endl;
-              } else {
-                  ofs << "  latitude: null\n  longitude: null\n  altitude: null" << std::endl;
-              }
-
-              ofs << "T_global_local:" << std::endl;
-              if (T_GL_initialized) {
-                  ofs << "  x: " << T_GL_estimate.translation().x() << std::endl;
-                  ofs << "  y: " << T_GL_estimate.translation().y() << std::endl;
-                  ofs << "  z: " << T_GL_estimate.translation().z() << std::endl;
-                  ofs << "  roll: " << T_GL_estimate.rotation().roll() << std::endl;
-                  ofs << "  pitch: " << T_GL_estimate.rotation().pitch() << std::endl;
-                  ofs << "  yaw: " << T_GL_estimate.rotation().yaw() << std::endl;
-              } else {
-                  ofs << "  x: 0.0\n  y: 0.0\n  z: 0.0\n  roll: 0.0\n  pitch: 0.0\n  yaw: 0.0" << std::endl;
-              }
-              
-              ofs.close();
-              cout << "Map metadata (Datum + Transform) successfully saved to: " << metadata_file_path << endl;
-          }
+          originSnapshot = stored_origin_gps_msg;
+          hasOrigin = !first_gps;
       }
 
-      // save key frame transformations
-      pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory_local.pcd", *cloudKeyPoses3D);
-      pcl::io::savePCDFileBinary(saveMapDirectory + "/transformations_local.pcd", *cloudKeyPoses6D);
-      // extract global point cloud map
-
-      pcl::PointCloud<PointType>::Ptr globalSurfCloud(new pcl::PointCloud<PointType>());
-      pcl::PointCloud<PointType>::Ptr globalSurfCloudDS(new pcl::PointCloud<PointType>());
-      pcl::PointCloud<PointType>::Ptr globalMapCloud(new pcl::PointCloud<PointType>());
-      for (int i = 0; i < (int)cloudKeyPoses3D->size(); i++) {
-          *globalSurfCloud   += *transformPointCloud(surfCloudKeyFrames[i],    &cloudKeyPoses6D->points[i]);
-          cout << "\r" << std::flush << "Processing feature cloud " << i << " of " << cloudKeyPoses6D->size() << " ...";
-      }
-
-      if(req->resolution != 0)
+      std::vector<sensor_msgs::msg::NavSatFix> gpsHistorySnapshot;
+      std::vector<nav_msgs::msg::Odometry> densePoseHistorySnapshot;
+      if (save_dense_gps_trajectory)
       {
-        cout << "\n\nSave resolution: " << req->resolution << endl;
-        // down-sample and save surf cloud
-        downSizeFilterSurf.setInputCloud(globalSurfCloud);
-        downSizeFilterSurf.setLeafSize(req->resolution, req->resolution, req->resolution);
-        downSizeFilterSurf.filter(*globalSurfCloudDS);
-        pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap_local.pcd", *globalSurfCloudDS);
+          std::lock_guard<std::mutex> history_lock(gpsHistoryMutex);
+          gpsHistorySnapshot = gpsHistory;
       }
-      else
+      if (save_dense_odom_trajectory)
       {
-
-        // save surf cloud
-        pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap_local.pcd", *globalSurfCloud);
+          std::lock_guard<std::mutex> history_lock(densePoseHistoryMutex);
+          densePoseHistorySnapshot = densePoseHistory;
       }
 
-      // save global point cloud map
-      *globalMapCloud += *globalSurfCloud;
-    res->surf_points_local = static_cast<uint32_t>(globalSurfCloud->size());
-    res->global_points_local = static_cast<uint32_t>(globalMapCloud->size());
-
-      int ret = pcl::io::savePCDFileBinary(saveMapDirectory + "/GlobalMap_local.pcd", *globalMapCloud);
-
-            // Save ENU-frame map products next to local-frame outputs when anchor is available.
-            if (T_GL_initialized)
-            {
-                Eigen::Affine3f tGlobalLocalToEnu = pcl::getTransformation(
-                        static_cast<float>(T_GL_estimate.translation().x()),
-                        static_cast<float>(T_GL_estimate.translation().y()),
-                        static_cast<float>(T_GL_estimate.translation().z()),
-                        static_cast<float>(T_GL_estimate.rotation().roll()),
-                        static_cast<float>(T_GL_estimate.rotation().pitch()),
-                        static_cast<float>(T_GL_estimate.rotation().yaw()));
-
-                pcl::PointCloud<PointType>::Ptr globalSurfCloudEnu(new pcl::PointCloud<PointType>());
-                pcl::PointCloud<PointType>::Ptr globalMapCloudEnu(new pcl::PointCloud<PointType>());
-                pcl::transformPointCloud(*globalSurfCloud, *globalSurfCloudEnu, tGlobalLocalToEnu);
-                *globalMapCloudEnu += *globalSurfCloudEnu;
-                res->enu_map_saved = true;
-                res->surf_points_enu = static_cast<uint32_t>(globalSurfCloudEnu->size());
-                res->global_points_enu = static_cast<uint32_t>(globalMapCloudEnu->size());
-
-                pcl::io::savePCDFileBinary(saveMapDirectory + "/SurfMap_ENU.pcd", *globalSurfCloudEnu);
-                pcl::io::savePCDFileBinary(saveMapDirectory + "/GlobalMap_ENU.pcd", *globalMapCloudEnu);
-
-                pcl::PointCloud<PointType>::Ptr trajectoryEnu(new pcl::PointCloud<PointType>());
-                trajectoryEnu->reserve(cloudKeyPoses3D->size());
-                for (const auto &pt_local : cloudKeyPoses3D->points)
-                {
-                        gtsam::Point3 pt_enu = T_GL_estimate.transformFrom(gtsam::Point3(pt_local.x, pt_local.y, pt_local.z));
-                        PointType out_pt;
-                        out_pt.x = static_cast<float>(pt_enu.x());
-                        out_pt.y = static_cast<float>(pt_enu.y());
-                        out_pt.z = static_cast<float>(pt_enu.z());
-                        out_pt.intensity = pt_local.intensity;
-                        trajectoryEnu->push_back(out_pt);
-                }
-                pcl::io::savePCDFileBinary(saveMapDirectory + "/trajectory_ENU.pcd", *trajectoryEnu);
-            }
-            else
-            {
-                RCLCPP_WARN(get_logger(),
-                                        "ENU map export skipped: T_global_local is not initialized yet.");
-                res->message = "ENU map export skipped: T_global_local is not initialized yet.";
-            }
-
-      res->success = ret == 0;
-      if (res->success)
-      {
-          const fs::path lastSavedMapPathFile = fs::path(homeDir) / ".liorf_last_saved_map_path";
-          std::ofstream lastPathOut(lastSavedMapPathFile.string(), std::ios::trunc);
-          if (lastPathOut.is_open())
-          {
-              lastPathOut << saveMapDirectory << std::endl;
-              lastPathOut.close();
-          }
-          else
-          {
-              RCLCPP_WARN(get_logger(), "Failed to write last saved map path file: %s",
-                          lastSavedMapPathFile.string().c_str());
-          }
-      }
-
-      if (res->success && res->message.empty())
-          res->message = "map saved successfully";
-      if (!res->success && res->message.empty())
-          res->message = "failed to save GlobalMap_local.pcd";
-
-      downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);
-
-      cout << "****************************************************" << endl;
-      cout << "Saving map to pcd files completed\n" << endl;
-
-      return true;
+      return map_exporter_.executeSave(
+          *req,
+          *res,
+          savePCDDirectory,
+          mappingSurfLeafSize,
+          save_dense_gps_trajectory,
+          save_dense_odom_trajectory,
+          originSnapshot,
+          hasOrigin,
+          cloudKeyPoses3D,
+          cloudKeyPoses6D,
+          surfCloudKeyFrames,
+          T_EL_initialized,
+          T_EL_estimate,
+          gpsHistorySnapshot,
+          densePoseHistorySnapshot,
+          get_logger(),
+          this->now());
     }
 
     void visualizeGlobalMapThread()
@@ -1653,7 +1496,7 @@ public:
                 }
 
                 const auto &lidar_local = cloudKeyPoses6D->points[lidar_key];
-                gtsam::Point3 p_lidar_enu = T_GL_estimate.transformFrom(gtsam::Point3(lidar_local.x, lidar_local.y, lidar_local.z));
+                gtsam::Point3 p_lidar_enu = T_EL_estimate.transformFrom(gtsam::Point3(lidar_local.x, lidar_local.y, lidar_local.z));
 
                 geometry_msgs::msg::Point p_lidar_msg;
                 p_lidar_msg.x = p_lidar_enu.x();
@@ -2376,22 +2219,22 @@ public:
                     lastGPSPoint = curGPSPoint;
 
                 // 1. Initialize T_GL if this is the first GPS fusion
-                if (!T_GL_initialized) {
+                if (!T_EL_initialized) {
                     gtsam::Pose3 current_local_pose = pclPointTogtsamPose3(cloudKeyPoses6D->points.back());
                     gtsam::Point3 initial_translation(gps_x - current_local_pose.x(), 
                                                       gps_y - current_local_pose.y(), 
                                                       gps_z - current_local_pose.z());
                     
                     // Start with identity rotation (yaw=0). It will become observable with motion.
-                    T_GL_estimate = gtsam::Pose3(gtsam::Rot3::Identity(), initial_translation);
-                    initialEstimate.insert(T_GL_KEY, T_GL_estimate);
+                    T_EL_estimate = gtsam::Pose3(gtsam::Rot3::Identity(), initial_translation);
+                    initialEstimate.insert(T_EL_KEY, T_EL_estimate);
                     
                     // Add a weak prior to prevent singularity before heading is observable
                     gtsam::Vector6 prior_noise_vector;
                     prior_noise_vector << 1e-2, 1e-2, M_PI, 1e8, 1e8, 1e8; // Weak on yaw
-                    gtSAMgraph.add(PriorFactor<Pose3>(T_GL_KEY, T_GL_estimate, noiseModel::Diagonal::Variances(prior_noise_vector)));
+                    gtSAMgraph.add(PriorFactor<Pose3>(T_EL_KEY, T_EL_estimate, noiseModel::Diagonal::Variances(prior_noise_vector)));
                     
-                    T_GL_initialized = true;
+                    T_EL_initialized = true;
                 }
 
                 // 2. Create Noise Model and Custom Factor
@@ -2457,7 +2300,7 @@ public:
 
                 // Bypass Expression framework completely
                 const int lidar_key = best_keyframe_idx;
-                FloatingAnchorFactor gps_factor(T_GL_KEY, lidar_key, measured_gps, antenna_offset, gps_noise);
+                FloatingAnchorFactor gps_factor(T_EL_KEY, lidar_key, measured_gps, antenna_offset, gps_noise);
                 gtSAMgraph.add(gps_factor);
                 ++gpsFactorsAccepted;
 
@@ -2554,8 +2397,8 @@ public:
         Pose3 latestEstimate;
 
         isamCurrentEstimate = isam->calculateEstimate();
-        if (T_GL_initialized && isamCurrentEstimate.exists(T_GL_KEY)) {
-            T_GL_estimate = isamCurrentEstimate.at<Pose3>(T_GL_KEY);
+        if (T_EL_initialized && isamCurrentEstimate.exists(T_EL_KEY)) {
+            T_EL_estimate = isamCurrentEstimate.at<Pose3>(T_EL_KEY);
         }
         const int latestPoseKey = cloudKeyPoses3D->size(); // capture before push_back
         latestEstimate = isamCurrentEstimate.at<Pose3>(latestPoseKey);
@@ -2714,8 +2557,8 @@ public:
         if (gpsAnchorReady()) {
             tf2::Quaternion q_map_to_map_local;
             tf2::Transform t_map_to_map_local;
-            q_map_to_map_local.setRPY(T_GL_estimate.rotation().roll(), T_GL_estimate.rotation().pitch(), T_GL_estimate.rotation().yaw());
-            t_map_to_map_local = tf2::Transform(q_map_to_map_local, tf2::Vector3(T_GL_estimate.translation().x(), T_GL_estimate.translation().y(), T_GL_estimate.translation().z()));
+            q_map_to_map_local.setRPY(T_EL_estimate.rotation().roll(), T_EL_estimate.rotation().pitch(), T_EL_estimate.rotation().yaw());
+            t_map_to_map_local = tf2::Transform(q_map_to_map_local, tf2::Vector3(T_EL_estimate.translation().x(), T_EL_estimate.translation().y(), T_EL_estimate.translation().z()));
 
             tf2::Stamped<tf2::Transform> stamped_map_to_map_local(t_map_to_map_local, time_point, mapFrameEnu);
             geometry_msgs::msg::TransformStamped trans_map_to_map_local;
@@ -2729,17 +2572,17 @@ public:
                 offset_msg.header.stamp = timeLaserInfoStamp;
                 offset_msg.header.frame_id = mapFrameEnu;
                 
-                offset_msg.pose.pose.position.x = T_GL_estimate.translation().x();
-                offset_msg.pose.pose.position.y = T_GL_estimate.translation().y();
-                offset_msg.pose.pose.position.z = T_GL_estimate.translation().z();
+                offset_msg.pose.pose.position.x = T_EL_estimate.translation().x();
+                offset_msg.pose.pose.position.y = T_EL_estimate.translation().y();
+                offset_msg.pose.pose.position.z = T_EL_estimate.translation().z();
                 
                 offset_msg.pose.pose.orientation.x = q_map_to_map_local.x();
                 offset_msg.pose.pose.orientation.y = q_map_to_map_local.y();
                 offset_msg.pose.pose.orientation.z = q_map_to_map_local.z();
                 offset_msg.pose.pose.orientation.w = q_map_to_map_local.w();
 
-                if (isamCurrentEstimate.exists(T_GL_KEY)) {
-                    gtsam::Matrix marginalCov = isam->marginalCovariance(T_GL_KEY);
+                if (isamCurrentEstimate.exists(T_EL_KEY)) {
+                    gtsam::Matrix marginalCov = isam->marginalCovariance(T_EL_KEY);
                     // Map GTSAM [Rot, Trans] to ROS [Trans, Rot]
                     for (int i = 0; i < 3; i++) {
                         for (int j = 0; j < 3; j++) {
@@ -2887,7 +2730,7 @@ public:
 
         // Transform LiDAR local pose into ENU frame via the floating-anchor T_GL
         gtsam::Point3 p_local(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
-        gtsam::Point3 p_enu = T_GL_estimate.transformFrom(p_local);
+        gtsam::Point3 p_enu = T_EL_estimate.transformFrom(p_local);
 
         // Project ENU position back to geodetic lat/lon/alt
         double lat, lon, alt;
@@ -2900,7 +2743,7 @@ public:
             q_local_tf2.w(), q_local_tf2.x(), q_local_tf2.y(), q_local_tf2.z()));
 
         // Rotate LiDAR orientation into ENU via the floating-anchor T_GL
-        gtsam::Rot3 R_enu = T_GL_estimate.rotation().compose(R_local);
+        gtsam::Rot3 R_enu = T_EL_estimate.rotation().compose(R_local);
         gtsam::Quaternion q_enu = R_enu.toQuaternion();
 
         // Fixed rotation: ENU (East-North-Up) -> NED (North-East-Down)
@@ -2974,6 +2817,13 @@ public:
         geometry_msgs::msg::Quaternion quat_msg;
         tf2::convert(quat_tf, quat_msg);
         laserOdometryROS.pose.pose.orientation = quat_msg;
+
+        if (save_dense_odom_trajectory)
+        {
+            std::lock_guard<std::mutex> history_lock(densePoseHistoryMutex);
+            densePoseHistory.push_back(laserOdometryROS);
+        }
+
         pubLaserOdometryGlobal->publish(laserOdometryROS);
 
         // Publish odometry for ROS (incremental)

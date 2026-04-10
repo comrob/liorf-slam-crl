@@ -30,6 +30,8 @@
     # Export settings
     savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3
     savePCDDirectory: "/Downloads/LOAM/"        # in your home folder, starts and ends with "/". Warning: the code deletes "LOAM" folder then recreates it. See "mapOptimization" for implementation
+    save_dense_gps_trajectory: true             # keep full raw GPS history in memory for save-time CSV export
+    save_dense_odom_trajectory: true            # keep full mapping odometry history in memory for save-time CSV export
 
     # Sensor Settings
     sensor: ouster                            # lidar sensor type, 'velodyne' or 'ouster' or 'livox' or 'robosense'

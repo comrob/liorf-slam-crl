@@ -22,7 +22,22 @@ For active iterative work, prefer updating the current top entry instead of appe
 
 ### Files changed
 
- [CMakeLists.txt](CMakeLists.txt)
+- [CMakeLists.txt](CMakeLists.txt)
+- [package.xml](package.xml)
+- [srv/SaveMap.srv](srv/SaveMap.srv)
+- [src/mapOptmization.cpp](src/mapOptmization.cpp)
+- [src/export/MapExporter.cpp](src/export/MapExporter.cpp)
+- [include/utility.h](include/utility.h)
+- [include/export/MapExporter.hpp](include/export/MapExporter.hpp)
+- [include/export/map_types.hpp](include/export/map_types.hpp)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [scripts/save_map.sh](scripts/save_map.sh)
+- [scripts/build_liorf.sh](scripts/build_liorf.sh)
+- [scripts/saved_map_output_README.md](scripts/saved_map_output_README.md)
+- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py)
+- [README.md](README.md)
+- [CHANGELOG.md](CHANGELOG.md)
+- [AGENTS.md](AGENTS.md)
 
 ### Behavior impact
 
@@ -60,8 +75,8 @@ Improved GPS-LiDAR synchronization for GPS factor insertion and visualization:
 - set `gps_covariance_inflation_m: 2.0` in [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml).
 - propagated remaining declared transport QoS parameters into [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml): `history_policy` and `reliability_policy`.
 - local-frame map save outputs now use `_local` suffix for unambiguous naming: `SurfMap_local.pcd`, `GlobalMap_local.pcd`, `trajectory_local.pcd`, `transformations_local.pcd`.
-- map save now also exports ENU-frame artifacts next to local-frame outputs when `T_global_local` is initialized: `SurfMap_ENU.pcd`, `GlobalMap_ENU.pcd`, and `trajectory_ENU.pcd`.
-- if `T_global_local` is not initialized, ENU export is skipped with a warning while local-frame exports remain unchanged.
+- map save now also exports ENU-frame artifacts next to local-frame outputs when `T_enu_local` is initialized: `SurfaceMap_ENU.pcd`, `FullMap_ENU.pcd`, and `trajectory_ENU.pcd`.
+- if `T_enu_local` is not initialized, ENU export is skipped with a warning while local-frame exports remain unchanged.
 - `saveMapService()` path resolution now uses `std::filesystem`: `req->destination` is treated as absolute if it starts with `/`, HOME-expanded if it starts with `~/`, or HOME-relative otherwise; `getenv("HOME")` null-safety added; `system()` calls replaced with `std::filesystem::remove_all` / `create_directories`.
 - added [scripts/save_map.sh](scripts/save_map.sh) helper to call `liorf/save_map` with CLI arguments for map resolution (`-r/--resolution`) and destination path (`-d/--destination`).
 - [scripts/save_map.sh](scripts/save_map.sh) now prints the resolved save directory after a successful response; when destination is empty, it queries `/liorf_mapOptimization` parameter `savePCDDirectory` and resolves it with the same HOME-relative semantics as `saveMapService()`.
@@ -77,6 +92,31 @@ Improved GPS-LiDAR synchronization for GPS factor insertion and visualization:
 - documented satellite overlay usage in [README.md](README.md).
 - refreshed [README.md](README.md) map-saving section with `scripts/save_map.sh` usage, detailed `SaveMap` response fields, and persisted last-saved-path behavior (`~/.liorf_last_saved_map_path`).
 - added [launch/save_map.launch.py](launch/save_map.launch.py) to trigger `liorf/save_map` via `ros2 launch` with arguments `resolution`, `destination`, `service_name`, and `wait_timeout_sec`.
+- map-save outputs are now structured into subfolders: `maps/` and `trajectories/`.
+- local/global map naming now uses `SurfaceMap_*` and `FullMap_*` files (replacing previous `SurfMap_*` / `GlobalMap_*` names in new exports).
+- root georeference file is now `goereference.yaml`.
+- georeference keys are now explicit: `gps_origin_enu` and `T_enu_local`.
+- dedicated `gps_origin.yaml` export was removed (origin is now represented directly in `goereference.yaml`).
+- save-map now also writes `save_summary.yaml` with ROS save time, keyframe count, dense trajectory count, GPS count, and map point counters.
+- save-map default `resolution` is now controlled at the call sites (`scripts/save_map.sh` and `launch/save_map.launch.py`) with default value `0.2` (overridable via `LIORF_SAVE_MAP_DEFAULT_RESOLUTION`), and request value `0` remains a literal value meaning no downsampling.
+- save-map now copies project template [scripts/saved_map_output_README.md](scripts/saved_map_output_README.md) into output root as `README.md`.
+- added dense export toggles in ROS params: `save_dense_gps_trajectory` and `save_dense_odom_trajectory` (default `true`), loaded by `ParamServer` and set in [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml).
+- added save-time trajectory exports in `trajectories/`:
+	- `gps_raw_geodetic.csv`
+	- `trajectory_keyframes_local.csv`
+	- `trajectory_dense_local.csv`
+- `mapOptimization` now buffers full raw GPS and dense odometry histories in RAM and writes them at save time; older poses are not popped from these buffers.
+- SaveMap response counters were renamed from `global_points_local/global_points_enu` to `full_points_local/full_points_enu`, and helper script parsing/output was updated accordingly.
+- SaveMap response now also reports dense saved lengths: `trajectory_points_saved` and `gps_points_saved`.
+- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now reads `goereference.yaml`, supports `gps_origin_enu`/`T_enu_local`, and keeps legacy metadata/path fallbacks.
+- `goereference.yaml` now stores `T_enu_local` orientation as quaternion (`qx/qy/qz/qw`) instead of RPY, and [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now supports quaternion metadata with legacy RPY fallback.
+- map-save file I/O/formatting logic was extracted from `mapOptimization::saveMapService()` into dedicated exporter utility files: [include/export/MapExporter.hpp](include/export/MapExporter.hpp) and [src/export/MapExporter.cpp](src/export/MapExporter.cpp).
+- `mapOptimization::saveMapService()` now performs lightweight snapshot/locking and delegates heavy export work through `MapExporter`.
+- shared keyframe pose point type was moved to [include/export/map_types.hpp](include/export/map_types.hpp) so exporter and map optimization use a common definition.
+- CMake target graph now builds exporter implementation as a separate library target (`liorf_mapExporter`) linked into `liorf_mapOptmization`, so exporter `.cpp` changes avoid recompiling `mapOptmization.cpp` (relink still required).
+- fixed `liorf_mapExporter` build wiring to link ROS interface typesupport target so generated headers like `liorf/srv/save_map.hpp` resolve during exporter-library compilation.
+- added mandatory commit-message guidance in [AGENTS.md](AGENTS.md): short scoped header, required blank-line separator, concise body bullets for algorithmic/architectural changes, and max body line length of 72 characters.
+- added explicit agent hint in [AGENTS.md](AGENTS.md) to avoid literal `\\n` in `git commit -m` messages and prefer `-F`/multi-`-m` usage for reliable bullet formatting.
 
 ### Migration/runtime risk
 
@@ -127,7 +167,7 @@ Low risk. Behavior is intentionally delayed until at least two accepted GPS fact
 	- replaced direct `GPSFactor` insertion with a custom floating-anchor factor tied to persistent `T_GL` key,
 	- added `earth -> map` TF publication from optimized `T_GL`,
 	- added `liorf/enu_to_local_offset` PoseWithCovariance topic,
-	- switched map-save GPS metadata output from `map_origin.txt` to structured `map_metadata.yaml` including datum + `T_global_local`.
+	- switched map-save GPS metadata output from `map_origin.txt` to structured georeference YAML including datum + ENU-to-local transform (now exposed as `T_enu_local`).
 - Updated README GPS section to describe floating-anchor behavior, related topics/TF, and map metadata output.
 - Added [ARCHITECTURE.md](ARCHITECTURE.md) with a detailed frame model section (frame roles, TF chain, ownership, gating, and parameter mapping), and added a one-sentence frame summary in [README.md](README.md) that links to it.
 - Restructured [README.md](README.md) to add a standalone frame-model chapter (separate from GPS integration notes) and explicitly list GPS-enabled frames there.
