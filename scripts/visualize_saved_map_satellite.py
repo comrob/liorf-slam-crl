@@ -104,11 +104,12 @@ def parse_map_metadata(metadata_path: Path):
         "qx": 0.0,
         "qy": 0.0,
         "qz": 0.0,
-        "qw": 1.0,
+        "qw": 0.0,
         "roll": 0.0,
         "pitch": 0.0,
         "yaw": 0.0,
     }
+    has_quaternion = False
 
     with metadata_path.open("r", encoding="utf-8") as f:
         for raw in f:
@@ -129,11 +130,13 @@ def parse_map_metadata(metadata_path: Path):
                 datum[key] = None if val == "null" else float(val)
             elif state == "tgl" and key in t_enu_local:
                 t_enu_local[key] = float(val)
+                if key in {"qx", "qy", "qz", "qw"}:
+                    has_quaternion = True
 
     if datum["latitude"] is None or datum["longitude"] is None or datum["altitude"] is None:
         raise ValueError(f"{metadata_path.name} has null gps_origin_enu/global_datum; GPS origin is required for satellite overlay")
 
-    return datum, t_enu_local
+    return datum, t_enu_local, has_quaternion
 
 
 def read_pcd_xyz(path: Path) -> np.ndarray:
@@ -215,6 +218,25 @@ def read_pcd_xyz(path: Path) -> np.ndarray:
         raise ValueError(f"Unsupported DATA mode '{data_mode}' in {path}")
 
 
+def read_csv_xyz(path: Path, x_col: str, y_col: str, z_col: str) -> np.ndarray:
+    if not path.exists():
+        raise FileNotFoundError(f"CSV file not found: {path}")
+
+    data = np.genfromtxt(path, delimiter=",", names=True, dtype=np.float64, encoding=None)
+    if data.size == 0:
+        return np.empty((0, 3), dtype=np.float64)
+
+    if data.shape == ():
+        data = np.array([data], dtype=data.dtype)
+
+    field_names = data.dtype.names or ()
+    for field in (x_col, y_col, z_col):
+        if field not in field_names:
+            raise ValueError(f"CSV missing required column '{field}': {path}")
+
+    return np.column_stack((data[x_col], data[y_col], data[z_col])).astype(np.float64)
+
+
 def rpy_to_rotmat(roll: float, pitch: float, yaw: float) -> np.ndarray:
     cr = math.cos(roll)
     sr = math.sin(roll)
@@ -249,14 +271,8 @@ def quat_to_rotmat(qx: float, qy: float, qz: float, qw: float) -> np.ndarray:
     )
 
 
-def local_to_enu(local_xyz: np.ndarray, t_enu_local: dict) -> np.ndarray:
-    quat_norm_sq = (
-        t_enu_local.get("qx", 0.0) ** 2
-        + t_enu_local.get("qy", 0.0) ** 2
-        + t_enu_local.get("qz", 0.0) ** 2
-        + t_enu_local.get("qw", 0.0) ** 2
-    )
-    if quat_norm_sq > 1e-12:
+def local_to_enu(local_xyz: np.ndarray, t_enu_local: dict, has_quaternion: bool) -> np.ndarray:
+    if has_quaternion:
         r = quat_to_rotmat(
             t_enu_local.get("qx", 0.0),
             t_enu_local.get("qy", 0.0),
@@ -334,14 +350,30 @@ def sample_points(points: np.ndarray, max_points: int) -> np.ndarray:
     return points[::step][:max_points]
 
 
-def resolve_enu_trajectory(map_dir: Path, t_enu_local: dict) -> np.ndarray:
+def resolve_enu_trajectory(map_dir: Path, t_enu_local: dict, has_quaternion: bool) -> np.ndarray:
+    dense_local_csv = map_dir / "trajectories" / "trajectory_dense_local.csv"
+    if dense_local_csv.exists():
+        return local_to_enu(
+            read_csv_xyz(dense_local_csv, "x_local", "y_local", "z_local"),
+            t_enu_local,
+            has_quaternion,
+        )
+
+    keyframe_local_csv = map_dir / "trajectories" / "trajectory_keyframes_local.csv"
+    if keyframe_local_csv.exists():
+        return local_to_enu(
+            read_csv_xyz(keyframe_local_csv, "x_local", "y_local", "z_local"),
+            t_enu_local,
+            has_quaternion,
+        )
+
     traj_enu = map_dir / "trajectories" / "trajectory_ENU.pcd"
     if traj_enu.exists():
         return read_pcd_xyz(traj_enu)
 
     traj_local = map_dir / "trajectories" / "trajectory_local.pcd"
     if traj_local.exists():
-        return local_to_enu(read_pcd_xyz(traj_local), t_enu_local)
+        return local_to_enu(read_pcd_xyz(traj_local), t_enu_local, has_quaternion)
 
     # Legacy fallback (flat export layout)
     legacy_traj_enu = map_dir / "trajectory_ENU.pcd"
@@ -350,21 +382,21 @@ def resolve_enu_trajectory(map_dir: Path, t_enu_local: dict) -> np.ndarray:
 
     legacy_traj_local = map_dir / "trajectory_local.pcd"
     if legacy_traj_local.exists():
-        return local_to_enu(read_pcd_xyz(legacy_traj_local), t_enu_local)
+        return local_to_enu(read_pcd_xyz(legacy_traj_local), t_enu_local, has_quaternion)
 
     raise FileNotFoundError(
-        "Neither trajectories/trajectory_ENU.pcd nor trajectories/trajectory_local.pcd found"
+        "No supported trajectory export found in trajectories/ or legacy root layout"
     )
 
 
-def resolve_enu_surf(map_dir: Path, t_enu_local: dict) -> np.ndarray:
+def resolve_enu_surf(map_dir: Path, t_enu_local: dict, has_quaternion: bool) -> np.ndarray:
     surf_enu = map_dir / "maps" / "SurfaceMap_ENU.pcd"
     if surf_enu.exists():
         return read_pcd_xyz(surf_enu)
 
     surf_local = map_dir / "maps" / "SurfaceMap_local.pcd"
     if surf_local.exists():
-        return local_to_enu(read_pcd_xyz(surf_local), t_enu_local)
+        return local_to_enu(read_pcd_xyz(surf_local), t_enu_local, has_quaternion)
 
     # Legacy fallback (flat export layout)
     legacy_surf_enu = map_dir / "SurfMap_ENU.pcd"
@@ -373,7 +405,7 @@ def resolve_enu_surf(map_dir: Path, t_enu_local: dict) -> np.ndarray:
 
     legacy_surf_local = map_dir / "SurfMap_local.pcd"
     if legacy_surf_local.exists():
-        return local_to_enu(read_pcd_xyz(legacy_surf_local), t_enu_local)
+        return local_to_enu(read_pcd_xyz(legacy_surf_local), t_enu_local, has_quaternion)
 
     raise FileNotFoundError(
         "Neither maps/SurfaceMap_ENU.pcd nor maps/SurfaceMap_local.pcd found"
@@ -397,10 +429,10 @@ def main() -> int:
         legacy_georef = map_dir / "map_georeference.yaml"
         georef_path = legacy_georef if legacy_georef.exists() else map_dir / "map_metadata.yaml"
 
-    datum, t_enu_local = parse_map_metadata(georef_path)
+    datum, t_enu_local, has_quaternion = parse_map_metadata(georef_path)
 
-    traj_enu = resolve_enu_trajectory(map_dir, t_enu_local)
-    surf_enu = resolve_enu_surf(map_dir, t_enu_local)
+    traj_enu = resolve_enu_trajectory(map_dir, t_enu_local, has_quaternion)
+    surf_enu = resolve_enu_surf(map_dir, t_enu_local, has_quaternion)
 
     traj_enu = sample_points(traj_enu, args.max_traj_points)
     surf_enu = sample_points(surf_enu, args.max_surf_points)

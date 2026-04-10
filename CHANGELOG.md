@@ -117,6 +117,8 @@ Improved GPS-LiDAR synchronization for GPS factor insertion and visualization:
 - fixed `liorf_mapExporter` build wiring to link ROS interface typesupport target so generated headers like `liorf/srv/save_map.hpp` resolve during exporter-library compilation.
 - added mandatory commit-message guidance in [AGENTS.md](AGENTS.md): short scoped header, required blank-line separator, concise body bullets for algorithmic/architectural changes, and max body line length of 72 characters.
 - added explicit agent hint in [AGENTS.md](AGENTS.md) to avoid literal `\\n` in `git commit -m` messages and prefer `-F`/multi-`-m` usage for reliable bullet formatting.
+- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now matches current save outputs by preferring `trajectories/trajectory_dense_local.csv` and `trajectory_keyframes_local.csv` before falling back to legacy trajectory PCD files.
+- fixed [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) legacy georeference parsing: RPY-only `goereference.yaml` files are no longer misdetected as quaternion exports, which previously caused identity rotation to be applied to trajectories.
 
 ### Migration/runtime risk
 
