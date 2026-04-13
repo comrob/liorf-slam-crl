@@ -175,6 +175,24 @@ python3 scripts/plot_time_slicing_stats.py --window 10 --output /tmp/timing_plot
 
 LIORF follows ROS frame guidance from REP-105 ([map/odom/base_link](https://www.ros.org/reps/rep-0105.html#map)) and uses a layered variant so local smooth odometry and global georeferencing remain cleanly separated.
 
+### TLDR frame tree (active Ouster profile examples)
+
+```text
+----------------- gps-enabled frames
+ECEFframe      (e.g., "earth")
+└── mapFrameEnu    (e.g., "map_enu")
+  ├── mapFrameNed   (e.g., "map_ned")
+------------------ ¡always-active local frames!
+  └── mapFrameLocal (e.g., "map")
+    └── odometryFrame (e.g., "odom")
+      ├── "lidar_link"   (compatibility branch)
+      └── baselinkFrame (e.g., "os_sensor")
+---------------- if lidarFrame != baselinkFrame:
+        └── ... TF chain ...
+          └── lidarFrame (e.g., "os_lidar")
+```
+
+
 ### Core frames (always used)
 
 - `mapFrameLocal`: local SLAM optimization frame (always present; identity-aligned to `mapFrameEnu` until GPS anchor estimation is available).
@@ -193,14 +211,24 @@ LIORF follows ROS frame guidance from REP-105 ([map/odom/base_link](https://www.
   - `ECEFframe -> mapFrameEnu -> mapFrameLocal`
 - Local motion/robot layer:
   - `mapFrameLocal -> odometryFrame -> baselinkFrame`
-  - Alternative compatibility branch (always published): `odometryFrame -> lidar_link`
+  - Alternative compatibility branch (always published): `odometryFrame -> "lidar_link"`
 
 ### Implementation notes
 
-- `odometryFrame -> lidar_link` is hardcoded and always published as a compatibility branch.
-- To keep TF direction consistent from parent to child, the node computes `odometryFrame -> lidar_link` from optimized odometry and, when `lidarFrame != baselinkFrame`, applies the inverse of the looked-up `lidarFrame -> baselinkFrame` transform (effectively subtracting that offset from the base pose).
+- `odometryFrame -> "lidar_link"` is hardcoded and always published as a compatibility branch.
+- `odometryFrame -> "lidar_link"` and `odometryFrame -> baselinkFrame` now come from the smooth incremental LiDAR odometry state, so loop closures and GPS updates are absorbed upstream in `mapFrameLocal -> odometryFrame` instead of causing odom-side TF jumps.
+- When `lidarFrame != baselinkFrame`, base-link poses are derived by composing the LiDAR pose with the looked-up `lidarFrame -> baselinkFrame` transform.
 - For now, `mapFrameLocal` and `odometryFrame` are practically the same in nominal operation (their relative transform is initialized as identity and usually remains near identity).
 - Relative to REP-105 terminology, this implementation intentionally splits the usual “map/odom” behavior into `mapFrameLocal` and `odometryFrame` so future loop-closure/global alignment corrections can be represented upstream without degrading odometry smoothness; georeferencing-related jumps are isolated at the `mapFrameEnu -> mapFrameLocal` joint.
+
+### Odometry topics
+
+- Legacy LiDAR topics kept for compatibility:
+  - `liorf/mapping/odometry`: graph-optimized LiDAR pose in `mapFrameLocal -> "lidar_link"`
+  - `liorf/mapping/odometry_incremental`: smooth LiDAR pose in `odometryFrame -> "lidar_link"`
+- New base-link topics:
+  - `liorf/mapping/baselink_odometry`: graph-optimized base-link pose in `mapFrameLocal -> baselinkFrame`
+  - `liorf/mapping/baselink_odometry_incremental`: smooth base-link pose in `odometryFrame -> baselinkFrame`
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for full transform chain, TF ownership, and publication behavior details.
 
@@ -257,6 +285,8 @@ gpsTopic: "gps/fix"
 - `liorf/gps_origin` (`sensor_msgs/msg/NavSatFix`): captured datum origin used for local projection.
 - TF `mapFrameEnu -> mapFrameLocal`: optimized global offset/rotation from floating-anchor fusion.
 - `liorf/enu_to_local_offset` (`geometry_msgs/msg/PoseWithCovarianceStamped`): same ENU-to-local offset as the TF, including covariance when available.
+- `liorf/mapping/lidar_gps_enu_pose` and `liorf/mapping/lidar_gps_ned_pose` (`geometry_msgs/msg/PoseStamped`): fused LiDAR pose in ENU/NED frames.
+- `liorf/mapping/baselink_gps_enu_odometry` and `liorf/mapping/baselink_gps_ned_odometry` (`nav_msgs/msg/Odometry`): fused base-link pose in ENU/NED frames.
 
 ### Map saving metadata
 

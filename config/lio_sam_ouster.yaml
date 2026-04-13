@@ -13,7 +13,7 @@
     lidarFrame: "os_lidar"
     baselinkFrame: "os_sensor"
     odometryFrame: "odom"
-    mapFrameLocal: "map" # same as "odom" for now
+    mapFrameLocal: "map"
     mapFrameEnu: "map_enu"
     mapFrameNed: "map_ned"
     ECEFframe: "earth"
@@ -27,7 +27,7 @@
     gps_processing_delay_sec: 1.0               # process GPS constraints only after this ROS-time delay from GPS stamp
     gps_covariance_inflation_m: 2.0             # extra GPS factor std-dev [m] added as variance inflation (m^2) on XYZ
     
-    force_initial_gps: false
+    force_initial_gps: true
     manual_gps_origin: [50.0763, 14.41, 252.6]   # LLA GPS origin for manual georeference initialization (if `force_initial_gps` enabled)
     manual_global_heading: 0.0                   # global yaw heading in degrees to rotate EN
 

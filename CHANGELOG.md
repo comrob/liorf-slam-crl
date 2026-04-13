@@ -36,8 +36,10 @@ For active iterative work, prefer updating the current top entry instead of appe
 - [scripts/saved_map_output_README.md](scripts/saved_map_output_README.md)
 - [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py)
 - [README.md](README.md)
+- [ARCHITECTURE.md](ARCHITECTURE.md)
 - [CHANGELOG.md](CHANGELOG.md)
 - [AGENTS.md](AGENTS.md)
+- [src/imuPreintegration.cpp](src/imuPreintegration.cpp)
 
 ### Behavior impact
 
@@ -111,6 +113,16 @@ Improved GPS-LiDAR synchronization for GPS factor insertion and visualization:
 - [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now reads `goereference.yaml`, supports `gps_origin_enu`/`T_enu_local`, and keeps legacy metadata/path fallbacks.
 - `goereference.yaml` now stores `T_enu_local` orientation as quaternion (`qx/qy/qz/qw`) instead of RPY, and [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now supports quaternion metadata with legacy RPY fallback.
 - fixed TF publication regression in [src/mapOptmization.cpp](src/mapOptmization.cpp): `odometryFrame -> lidar_link` is now built directly from `transformTobeMapped` (matching `publishOdometry()`), and `odometryFrame -> baselinkFrame` is derived from that LiDAR pose using `lidar2Baselink`.
+- refactored [src/mapOptmization.cpp](src/mapOptmization.cpp) so smooth odom-side TF now comes from the incremental LiDAR odometry accumulator instead of the jump-prone optimized pose, and `mapFrameLocal -> odometryFrame` absorbs loop-closure/GPS corrections upstream.
+- promoted incremental odometry publication state in [src/mapOptmization.cpp](src/mapOptmization.cpp) from static locals to class members so TF publication and odometry topics share a single smooth-motion source.
+- removed IMU roll/pitch blending from incremental LiDAR odometry in [src/mapOptmization.cpp](src/mapOptmization.cpp), so `liorf/mapping/odometry_incremental` now reflects pure LiDAR scan-to-scan motion.
+- `liorf/mapping/odometry_incremental` now keeps LiDAR-frame semantics but uses `child_frame_id = lidar_link` for consistency with the published TF branch.
+- `liorf/mapping/odometry` now publishes the graph-optimized LiDAR pose in `mapFrameLocal -> lidar_link`.
+- added new base-link odometry topics in [src/mapOptmization.cpp](src/mapOptmization.cpp): `liorf/mapping/baselink_odometry` (`mapFrameLocal -> baselinkFrame`) and `liorf/mapping/baselink_odometry_incremental` (`odometryFrame -> baselinkFrame`).
+- added GPS-fused base-link odometry topics in [src/mapOptmization.cpp](src/mapOptmization.cpp): `liorf/mapping/baselink_gps_enu_odometry` and `liorf/mapping/baselink_gps_ned_odometry`.
+- relabeled map-local visualization and map products in [src/mapOptmization.cpp](src/mapOptmization.cpp) to `mapFrameLocal` so published clouds, path, and loop-closure markers remain numerically consistent after the odometry split.
+- updated [src/imuPreintegration.cpp](src/imuPreintegration.cpp) `TransformFusion` output headers/path frame to follow the incoming LiDAR odometry frame instead of hardcoding `odometryFrame`, keeping the fused topic labeling correct after `liorf/mapping/odometry` moved to `mapFrameLocal`.
+- documented the LiDAR/base-link odometry split and smooth-odom TF behavior in [README.md](README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
 - added manual GPS datum bootstrap in [include/utility.h](include/utility.h) and [src/mapOptmization.cpp](src/mapOptmization.cpp): new params `force_initial_gps`, `manual_gps_origin`, and `manual_global_heading` allow early ENU/LLA publishing and TF readiness before first sensor `NavSatFix`; first real GPS factor now inserts the floating-anchor prior exactly once while preserving manual yaw when enabled.
 - documented manual GPS bootstrap usage and troubleshooting in [README.md](README.md), including parameter semantics (`force_initial_gps`, `manual_gps_origin`, `manual_global_heading`) and note about launching from the correct built/installed config.
 - map-save file I/O/formatting logic was extracted from `mapOptimization::saveMapService()` into dedicated exporter utility files: [include/export/MapExporter.hpp](include/export/MapExporter.hpp) and [src/export/MapExporter.cpp](src/export/MapExporter.cpp).

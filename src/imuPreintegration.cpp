@@ -36,6 +36,7 @@ public:
     Eigen::Affine3f imuOdomAffineBack;
 
     double lidarOdomTime = -1;
+    std::string lidarOdomFrameId;
     deque<nav_msgs::msg::Odometry> imuOdomQueue;
 
     TransformFusion(const rclcpp::NodeOptions & options) : ParamServer("liorf_transformFusion", options)
@@ -66,6 +67,7 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
 
         lidarOdomAffine = odom2affine(*odomMsg);
+        lidarOdomFrameId = odomMsg->header.frame_id;
 
         lidarOdomTime = ROS_TIME(odomMsg->header.stamp);
     }
@@ -100,6 +102,7 @@ public:
         
         // publish latest odometry
         nav_msgs::msg::Odometry laserOdometry = imuOdomQueue.back();
+        laserOdometry.header.frame_id = lidarOdomFrameId.empty() ? odometryFrame : lidarOdomFrameId;
         laserOdometry.pose.pose.position.x = x;
         laserOdometry.pose.pose.position.y = y;
         laserOdometry.pose.pose.position.z = z;
@@ -122,7 +125,7 @@ public:
             last_path_time = imuTime;
             geometry_msgs::msg::PoseStamped pose_stamped;
             pose_stamped.header.stamp = imuOdomQueue.back().header.stamp;
-            pose_stamped.header.frame_id = odometryFrame;
+            pose_stamped.header.frame_id = laserOdometry.header.frame_id;
             pose_stamped.pose = laserOdometry.pose.pose;
             imuPath.poses.push_back(pose_stamped);
             while(!imuPath.poses.empty() && ROS_TIME(imuPath.poses.front().header.stamp) < lidarOdomTime - 1.0)
@@ -130,7 +133,7 @@ public:
             if (pubImuPath->get_subscription_count() != 0)
             {
                 imuPath.header.stamp = imuOdomQueue.back().header.stamp;
-                imuPath.header.frame_id = odometryFrame;
+                imuPath.header.frame_id = laserOdometry.header.frame_id;
                 pubImuPath->publish(imuPath);
             }
         }

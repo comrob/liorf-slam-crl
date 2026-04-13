@@ -130,6 +130,8 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudSurround;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubLaserOdometryGlobal;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubLaserOdometryIncremental;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubBaselinkOdometryGlobal;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubBaselinkOdometryIncremental;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubKeyPoses;
     rclcpp::Publisher<nav_msgs::msg::Path>::SharedPtr pubPath;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubHistoryKeyFrames;
@@ -145,6 +147,8 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr pubLidarGpsFix;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubLidarGpsEnuPose;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubLidarGpsNedPose;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubBaselinkGpsEnuOdometry;
+    rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubBaselinkGpsNedOdometry;
 
     // Floating Anchor GPS Fusion Variables
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
@@ -155,9 +159,13 @@ public:
     size_t gpsFactorsAccepted = 0;
     bool T_EM_initialized = false;
     gtsam::Pose3 T_EM_estimate = gtsam::Pose3::Identity();
+    Eigen::Affine3f increOdomAffine = Eigen::Affine3f::Identity();
+    Eigen::Affine3f odomToLidarAffine = Eigen::Affine3f::Identity();
     Eigen::Affine3f odomToBaseAffine = Eigen::Affine3f::Identity();
     Eigen::Affine3f mapLocalToOdomAffine = Eigen::Affine3f::Identity();
     bool mapLocalToOdomInitialized = false;
+    bool lastIncreOdomPubFlag = false;
+    nav_msgs::msg::Odometry laserOdomIncremental;
     
     // GPS Antenna Lever Arm (Offset from tracking frame)
     double gpsAntennaOffsetX = 0.0;
@@ -300,6 +308,8 @@ public:
         pubLaserCloudSurround = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/map_global", QosPolicy(history_policy, reliability_policy));
         pubLaserOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/odometry", QosPolicy(history_policy, reliability_policy));
         pubLaserOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy));
+        pubBaselinkOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_odometry", QosPolicy(history_policy, reliability_policy));
+        pubBaselinkOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_odometry_incremental", QosPolicy(history_policy, reliability_policy));
         pubPath = create_publisher<nav_msgs::msg::Path>("liorf/mapping/path", QosPolicy(history_policy, reliability_policy));
         pubHistoryKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/icp_loop_closure_history_cloud", QosPolicy(history_policy, reliability_policy));
         pubIcpKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/icp_loop_closure_corrected_cloud", QosPolicy(history_policy, reliability_policy));
@@ -314,6 +324,8 @@ public:
         pubLidarGpsFix = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/mapping/lidar_gps_fix", QosPolicy(history_policy, reliability_policy));
         pubLidarGpsEnuPose = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/lidar_gps_enu_pose", QosPolicy(history_policy, reliability_policy));
         pubLidarGpsNedPose = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/lidar_gps_ned_pose", QosPolicy(history_policy, reliability_policy));
+        pubBaselinkGpsEnuOdometry = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_gps_enu_odometry", QosPolicy(history_policy, reliability_policy));
+        pubBaselinkGpsNedOdometry = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_gps_ned_odometry", QosPolicy(history_policy, reliability_policy));
 
         pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
         origin_publish_timer = this->create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::timerCallbackPublishOrigin, this));
@@ -712,6 +724,53 @@ public:
         return thisPose6D;
     }
 
+    nav_msgs::msg::Odometry odometryMsgFromAffine(
+        const Eigen::Affine3f &affine,
+        const rclcpp::Time &stamp,
+        const std::string &frameId,
+        const std::string &childFrameId)
+    {
+        float x, y, z, roll, pitch, yaw;
+        pcl::getTranslationAndEulerAngles(affine, x, y, z, roll, pitch, yaw);
+
+        nav_msgs::msg::Odometry odom;
+        odom.header.stamp = stamp;
+        odom.header.frame_id = frameId;
+        odom.child_frame_id = childFrameId;
+        odom.pose.pose.position.x = x;
+        odom.pose.pose.position.y = y;
+        odom.pose.pose.position.z = z;
+
+        tf2::Quaternion quat_tf;
+        quat_tf.setRPY(roll, pitch, yaw);
+        geometry_msgs::msg::Quaternion quat_msg;
+        tf2::convert(quat_tf, quat_msg);
+        odom.pose.pose.orientation = quat_msg;
+        return odom;
+    }
+
+    tf2::Transform tfFromAffine(const Eigen::Affine3f &affine) const
+    {
+        float x, y, z, roll, pitch, yaw;
+        pcl::getTranslationAndEulerAngles(affine, x, y, z, roll, pitch, yaw);
+        tf2::Quaternion quat_tf;
+        quat_tf.setRPY(roll, pitch, yaw);
+        return tf2::Transform(quat_tf, tf2::Vector3(x, y, z));
+    }
+
+    Eigen::Affine3f affineFromTf(const tf2::Transform &transform) const
+    {
+        double roll, pitch, yaw;
+        tf2::Matrix3x3(transform.getRotation()).getRPY(roll, pitch, yaw);
+        return pcl::getTransformation(
+            transform.getOrigin().x(),
+            transform.getOrigin().y(),
+            transform.getOrigin().z(),
+            roll,
+            pitch,
+            yaw);
+    }
+
     VOXEL_LOC voxelizePoint(const PointType &point, const float leafSize) const
     {
         const float safeLeaf = std::max(leafSize, 1e-3f);
@@ -1045,7 +1104,7 @@ public:
         downSizeFilterGlobalMapKeyFrames.setLeafSize(globalMapVisualizationLeafSize, globalMapVisualizationLeafSize, globalMapVisualizationLeafSize); // for global map visualization
         downSizeFilterGlobalMapKeyFrames.setInputCloud(globalMapKeyFrames);
         downSizeFilterGlobalMapKeyFrames.filter(*globalMapKeyFramesDS);
-        publishCloud(pubLaserCloudSurround, globalMapKeyFramesDS, timeLaserInfoStamp, odometryFrame);
+        publishCloud(pubLaserCloudSurround, globalMapKeyFramesDS, timeLaserInfoStamp, mapFrameLocal);
     }
 
 
@@ -1112,7 +1171,7 @@ public:
             if (cureKeyframeCloud->size() < 300 || prevKeyframeCloud->size() < 1000)
                 return;
             if (pubHistoryKeyFrames->get_subscription_count() != 0)
-                publishCloud(pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, odometryFrame);
+                publishCloud(pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, mapFrameLocal);
         }
 
         // ICP Settings
@@ -1137,7 +1196,7 @@ public:
         {
             pcl::PointCloud<PointType>::Ptr closed_cloud(new pcl::PointCloud<PointType>());
             pcl::transformPointCloud(*cureKeyframeCloud, *closed_cloud, icp.getFinalTransformation());
-            publishCloud(pubIcpKeyFrames, closed_cloud, timeLaserInfoStamp, odometryFrame);
+            publishCloud(pubIcpKeyFrames, closed_cloud, timeLaserInfoStamp, mapFrameLocal);
         }
 
         // Get pose transformation
@@ -1204,7 +1263,7 @@ public:
             if (cureKeyframeCloud->size() < 300 || prevKeyframeCloud->size() < 1000)
                 return;
             if (pubHistoryKeyFrames->get_subscription_count() != 0)
-                publishCloud(pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, odometryFrame);
+                publishCloud(pubHistoryKeyFrames, prevKeyframeCloud, timeLaserInfoStamp, mapFrameLocal);
         }
 
         // ICP Settings
@@ -1229,7 +1288,7 @@ public:
         {
             pcl::PointCloud<PointType>::Ptr closed_cloud(new pcl::PointCloud<PointType>());
             pcl::transformPointCloud(*cureKeyframeCloud, *closed_cloud, icp.getFinalTransformation());
-            publishCloud(pubIcpKeyFrames, closed_cloud, timeLaserInfoStamp, odometryFrame);
+            publishCloud(pubIcpKeyFrames, closed_cloud, timeLaserInfoStamp, mapFrameLocal);
         }
 
         // Get pose transformation
@@ -1398,7 +1457,7 @@ public:
         visualization_msgs::msg::MarkerArray markerArray;
         // loop nodes
         visualization_msgs::msg::Marker markerNode;
-        markerNode.header.frame_id = odometryFrame;
+        markerNode.header.frame_id = mapFrameLocal;
         markerNode.header.stamp = timeLaserInfoStamp;
         markerNode.action = visualization_msgs::msg::Marker::ADD;
         markerNode.type = visualization_msgs::msg::Marker::SPHERE_LIST;
@@ -1410,7 +1469,7 @@ public:
         markerNode.color.a = 1;
         // loop edges
         visualization_msgs::msg::Marker markerEdge;
-        markerEdge.header.frame_id = odometryFrame;
+        markerEdge.header.frame_id = mapFrameLocal;
         markerEdge.header.stamp = timeLaserInfoStamp;
         markerEdge.action = visualization_msgs::msg::Marker::ADD;
         markerEdge.type = visualization_msgs::msg::Marker::LINE_LIST;
@@ -2550,7 +2609,7 @@ public:
         geometry_msgs::msg::PoseStamped pose_stamped;
         rclcpp::Time t(static_cast<uint32_t>(pose_in.time * 1e9));
         pose_stamped.header.stamp = t;
-        pose_stamped.header.frame_id = odometryFrame;
+        pose_stamped.header.frame_id = mapFrameLocal;
         pose_stamped.pose.position.x = pose_in.x;
         pose_stamped.pose.position.y = pose_in.y;
         pose_stamped.pose.position.z = pose_in.z;
@@ -2648,20 +2707,11 @@ public:
             br->sendTransform(trans_map_local_to_odom);
         }
 
-        // ========== TRANSFORM 1: odom -> lidar_link (matches publishOdometry pose) ==========
-        const float odom_x = transformTobeMapped[3];
-        const float odom_y = transformTobeMapped[4];
-        const float odom_z = transformTobeMapped[5];
-        const float odom_roll = transformTobeMapped[0];
-        const float odom_pitch = transformTobeMapped[1];
-        const float odom_yaw = transformTobeMapped[2];
-
-        tf2::Quaternion quat_odom_to_lidar;
-        quat_odom_to_lidar.setRPY(odom_roll, odom_pitch, odom_yaw);
-        tf2::Transform t_odom_to_lidar = tf2::Transform(
-            quat_odom_to_lidar,
-            tf2::Vector3(odom_x, odom_y, odom_z)
-        );
+        // ========== TRANSFORM 1: odom -> lidar_link (smooth incremental LiDAR pose) ==========
+        tf2::Transform t_odom_to_lidar = tfFromAffine(odomToLidarAffine);
+        const auto &odom_to_lidar_origin = t_odom_to_lidar.getOrigin();
+        double odom_roll, odom_pitch, odom_yaw;
+        tf2::Matrix3x3(t_odom_to_lidar.getRotation()).getRPY(odom_roll, odom_pitch, odom_yaw);
 
         tf2::Stamped<tf2::Transform> stamped_odom_to_lidar(t_odom_to_lidar, time_point, odometryFrame);
         geometry_msgs::msg::TransformStamped trans_odom_to_lidar;
@@ -2673,14 +2723,13 @@ public:
         {
             RCLCPP_INFO_STREAM_THROTTLE(
                 get_logger(), *get_clock(), 10000,
-                "[TF_DEBUG] publish [1/2] " << odometryFrame << "->lidar_link (from transformTobeMapped / publishOdometry-aligned)"
-                << " xyz=(" << odom_x << ", " << odom_y << ", " << odom_z << ")"
+                "[TF_DEBUG] publish [1/2] " << odometryFrame << "->lidar_link (from smooth incremental LiDAR odometry)"
+                << " xyz=(" << odom_to_lidar_origin.x() << ", " << odom_to_lidar_origin.y() << ", " << odom_to_lidar_origin.z() << ")"
                 << " rpy=(" << odom_roll << ", " << odom_pitch << ", " << odom_yaw << ")"
             );
         }
 
-        // ========== TRANSFORM 2: odom -> baselinkFrame (optimized pose * lidar2baselink) ==========
-        // This applies the looked-up or identity lidar<->baselink transform
+        // ========== TRANSFORM 2: odom -> baselinkFrame (smooth incremental base-link pose) ==========
         if (lidarFrame != baselinkFrame)
         {
             // Frames differ: attempt lookup if we don't have it yet
@@ -2705,7 +2754,7 @@ public:
             // Publish to baselink if we have the transform
             if (hasLidar2Baselink)
             {
-                tf2::Transform t_odom_to_baselink = t_odom_to_lidar * lidar2Baselink;
+                tf2::Transform t_odom_to_baselink = tfFromAffine(odomToBaseAffine);
                 tf2::Stamped<tf2::Transform> stamped_odom_to_baselink(t_odom_to_baselink, time_point, odometryFrame);
                 geometry_msgs::msg::TransformStamped trans_odom_to_baselink;
                 tf2::convert(stamped_odom_to_baselink, trans_odom_to_baselink);
@@ -2723,7 +2772,7 @@ public:
                     RCLCPP_INFO_STREAM_THROTTLE(
                         get_logger(), *get_clock(), 10000,
                         "[TF_DEBUG] publish [2/2] " << odometryFrame << "->" << baselinkFrame
-                        << " (optimized result * looked-up lidar2baselink)"
+                        << " (from smooth incremental base-link odometry)"
                         << " lidar2baselink_applied: xyz=(" << tr.x() << ", " << tr.y() << ", " << tr.z() << ")"
                         << " rpy=(" << roll << ", " << pitch << ", " << yaw << ")"
                     );
@@ -2740,8 +2789,8 @@ public:
         }
         else
         {
-            // Frames are identical: lidar2baselink is identity, publish with explicit identity explanation
-            tf2::Transform t_odom_to_baselink = t_odom_to_lidar * lidar2Baselink;  // multiplication by identity
+            // Frames are identical: base-link and lidar share the same smooth odometry state.
+            tf2::Transform t_odom_to_baselink = tfFromAffine(odomToBaseAffine);
             tf2::Stamped<tf2::Transform> stamped_odom_to_baselink(t_odom_to_baselink, time_point, odometryFrame);
             geometry_msgs::msg::TransformStamped trans_odom_to_baselink;
             tf2::convert(stamped_odom_to_baselink, trans_odom_to_baselink);
@@ -2753,7 +2802,7 @@ public:
                 RCLCPP_INFO_STREAM_THROTTLE(
                     get_logger(), *get_clock(), 10000,
                     "[TF_DEBUG] publish [2/2] " << odometryFrame << "->" << baselinkFrame
-                    << " (optimized result * identity lidar2baselink)"
+                    << " (from smooth incremental base-link odometry)"
                     << " [frames identical: '" << lidarFrame << "' == '" << baselinkFrame << "']"
                 );
             }
@@ -2766,7 +2815,9 @@ public:
             return;
         if (pubLidarGpsFix->get_subscription_count() == 0 &&
             pubLidarGpsEnuPose->get_subscription_count() == 0 &&
-            pubLidarGpsNedPose->get_subscription_count() == 0)
+            pubLidarGpsNedPose->get_subscription_count() == 0 &&
+            pubBaselinkGpsEnuOdometry->get_subscription_count() == 0 &&
+            pubBaselinkGpsNedOdometry->get_subscription_count() == 0)
             return;
 
         // Transform LiDAR local pose into ENU frame via the floating-anchor T_GL
@@ -2840,24 +2891,48 @@ public:
             pose_msg.pose.orientation.w = q_ned.w();
             pubLidarGpsNedPose->publish(pose_msg);
         }
+
+        if ((lidarFrame == baselinkFrame || hasLidar2Baselink) &&
+            (pubBaselinkGpsEnuOdometry->get_subscription_count() != 0 ||
+             pubBaselinkGpsNedOdometry->get_subscription_count() != 0))
+        {
+            tf2::Quaternion q_enu_tf(q_enu.x(), q_enu.y(), q_enu.z(), q_enu.w());
+            tf2::Quaternion q_ned_tf(q_ned.x(), q_ned.y(), q_ned.z(), q_ned.w());
+
+            tf2::Transform t_enu_to_lidar(q_enu_tf, tf2::Vector3(p_enu.x(), p_enu.y(), p_enu.z()));
+            tf2::Transform t_ned_to_lidar(q_ned_tf, tf2::Vector3(p_ned.x(), p_ned.y(), p_ned.z()));
+            tf2::Transform t_enu_to_baselink = t_enu_to_lidar * lidar2Baselink;
+            tf2::Transform t_ned_to_baselink = t_ned_to_lidar * lidar2Baselink;
+
+            if (pubBaselinkGpsEnuOdometry->get_subscription_count() != 0)
+            {
+                pubBaselinkGpsEnuOdometry->publish(
+                    odometryMsgFromAffine(affineFromTf(t_enu_to_baselink), timeLaserInfoStamp, mapFrameEnu, baselinkFrame));
+            }
+
+            if (pubBaselinkGpsNedOdometry->get_subscription_count() != 0)
+            {
+                pubBaselinkGpsNedOdometry->publish(
+                    odometryMsgFromAffine(affineFromTf(t_ned_to_baselink), timeLaserInfoStamp, mapFrameNed, baselinkFrame));
+            }
+        }
     }
 
     void publishOdometry()
     {
-        // Publish odometry for ROS (global)
-        nav_msgs::msg::Odometry laserOdometryROS;
-        laserOdometryROS.header.stamp = timeLaserInfoStamp;
-        laserOdometryROS.header.frame_id = odometryFrame;
-        laserOdometryROS.child_frame_id = "lidar_link";
-        laserOdometryROS.pose.pose.position.x = transformTobeMapped[3];
-        laserOdometryROS.pose.pose.position.y = transformTobeMapped[4];
-        laserOdometryROS.pose.pose.position.z = transformTobeMapped[5];
-        // Ref: http://wiki.ros.org/tf2/Tutorials/Migration/DataConversions
-        tf2::Quaternion quat_tf;
-        quat_tf.setRPY(transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
-        geometry_msgs::msg::Quaternion quat_msg;
-        tf2::convert(quat_tf, quat_msg);
-        laserOdometryROS.pose.pose.orientation = quat_msg;
+        const Eigen::Affine3f mapLocalToLidarAffine = trans2Affine3f(transformTobeMapped);
+        const Eigen::Affine3f lidarToBaselinkAffine = affineFromTf(lidar2Baselink);
+
+        nav_msgs::msg::Odometry laserOdometryROS =
+            odometryMsgFromAffine(mapLocalToLidarAffine, timeLaserInfoStamp, mapFrameLocal, "lidar_link");
+
+        Eigen::Affine3f mapLocalToBaselinkAffine = mapLocalToLidarAffine;
+        bool canPublishBaselinkPose = false;
+        if (lidarFrame == baselinkFrame || hasLidar2Baselink)
+        {
+            mapLocalToBaselinkAffine = mapLocalToLidarAffine * lidarToBaselinkAffine;
+            canPublishBaselinkPose = true;
+        }
 
         if (save_dense_odom_trajectory)
         {
@@ -2866,82 +2941,46 @@ public:
         }
 
         pubLaserOdometryGlobal->publish(laserOdometryROS);
+        if (canPublishBaselinkPose)
+        {
+            pubBaselinkOdometryGlobal->publish(
+                odometryMsgFromAffine(mapLocalToBaselinkAffine, timeLaserInfoStamp, mapFrameLocal, baselinkFrame));
+        }
 
-        // Publish odometry for ROS (incremental)
-        static bool lastIncreOdomPubFlag = false;
-        static nav_msgs::msg::Odometry laserOdomIncremental; // incremental odometry msg
-        static Eigen::Affine3f increOdomAffine; // incremental odometry in affine
         if (lastIncreOdomPubFlag == false)
         {
             lastIncreOdomPubFlag = true;
             laserOdomIncremental = laserOdometryROS;
             increOdomAffine = trans2Affine3f(transformTobeMapped);
-        } else {
+        }
+        else
+        {
             lastLidarOdometryIncrement = incrementalOdometryAffineFront.inverse() * incrementalOdometryAffineBack;
             increOdomAffine = increOdomAffine * lastLidarOdometryIncrement;
-            float x, y, z, roll, pitch, yaw;
-            pcl::getTranslationAndEulerAngles (increOdomAffine, x, y, z, roll, pitch, yaw);
-            if (cloudInfo.imuavailable == true && imuType)
-            {
-                if (std::abs(cloudInfo.imupitchinit) < 1.4)
-                {
-                    double imuWeight = 0.1;
-                    tf2::Quaternion imuQuaternion;
-                    tf2::Quaternion transformQuaternion;
-                    double rollMid, pitchMid, yawMid;
-
-                    // slerp roll
-                    transformQuaternion.setRPY(roll, 0, 0);
-                    imuQuaternion.setRPY(cloudInfo.imurollinit, 0, 0);
-                    tf2::Matrix3x3(transformQuaternion.slerp(imuQuaternion, imuWeight)).getRPY(rollMid, pitchMid, yawMid);
-                    roll = rollMid;
-
-                    // slerp pitch
-                    transformQuaternion.setRPY(0, pitch, 0);
-                    imuQuaternion.setRPY(0, cloudInfo.imupitchinit, 0);
-                    tf2::Matrix3x3(transformQuaternion.slerp(imuQuaternion, imuWeight)).getRPY(rollMid, pitchMid, yawMid);
-                    pitch = pitchMid;
-                }
-            }
-            laserOdomIncremental.header.stamp = timeLaserInfoStamp;
-            laserOdomIncremental.header.frame_id = odometryFrame;
-            laserOdomIncremental.child_frame_id = "odom_mapping";
-            laserOdomIncremental.pose.pose.position.x = x;
-            laserOdomIncremental.pose.pose.position.y = y;
-            laserOdomIncremental.pose.pose.position.z = z;
-            tf2::Quaternion quat_tf;
-            quat_tf.setRPY(roll, pitch, yaw);
-            geometry_msgs::msg::Quaternion quat_msg;
-            tf2::convert(quat_tf, quat_msg);
-            laserOdomIncremental.pose.pose.orientation = quat_msg;
-            if (isDegenerate)
-                laserOdomIncremental.pose.covariance[0] = 1;
-            else
-                laserOdomIncremental.pose.covariance[0] = 0;
         }
+
+        odomToLidarAffine = increOdomAffine;
+        laserOdomIncremental =
+            odometryMsgFromAffine(odomToLidarAffine, timeLaserInfoStamp, odometryFrame, "lidar_link");
+        if (isDegenerate)
+            laserOdomIncremental.pose.covariance[0] = 1;
+        else
+            laserOdomIncremental.pose.covariance[0] = 0;
+
         pubLaserOdometryIncremental->publish(laserOdomIncremental);
 
-        Eigen::Affine3f mapLocalToBase = trans2Affine3f(transformTobeMapped);
-        Eigen::Affine3f odomToBase;
+        if (canPublishBaselinkPose)
+        {
+            odomToBaseAffine = odomToLidarAffine * lidarToBaselinkAffine;
+            pubBaselinkOdometryIncremental->publish(
+                odometryMsgFromAffine(odomToBaseAffine, timeLaserInfoStamp, odometryFrame, baselinkFrame));
+        }
+        else
+        {
+            odomToBaseAffine = odomToLidarAffine;
+        }
 
-        tf2::Quaternion q_inc(
-            laserOdomIncremental.pose.pose.orientation.x,
-            laserOdomIncremental.pose.pose.orientation.y,
-            laserOdomIncremental.pose.pose.orientation.z,
-            laserOdomIncremental.pose.pose.orientation.w);
-        double inc_roll, inc_pitch, inc_yaw;
-        tf2::Matrix3x3(q_inc).getRPY(inc_roll, inc_pitch, inc_yaw);
-        odomToBase = pcl::getTransformation(
-            laserOdomIncremental.pose.pose.position.x,
-            laserOdomIncremental.pose.pose.position.y,
-            laserOdomIncremental.pose.pose.position.z,
-            inc_roll,
-            inc_pitch,
-            inc_yaw
-        );
-
-        odomToBaseAffine = odomToBase;
-        mapLocalToOdomAffine = mapLocalToBase * odomToBaseAffine.inverse();
+        mapLocalToOdomAffine = mapLocalToLidarAffine * odomToLidarAffine.inverse();
         mapLocalToOdomInitialized = true;
     }
 
@@ -2950,16 +2989,16 @@ public:
         if (cloudKeyPoses3D->points.empty())
             return;
         // publish key poses
-        publishCloud(pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, odometryFrame);
+        publishCloud(pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, mapFrameLocal);
         // Publish surrounding key frames
-        publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, odometryFrame);
+        publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, mapFrameLocal);
         // publish registered key frame
         if (pubRecentKeyFrame->get_subscription_count() != 0)
         {
             pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
             PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
             *cloudOut += *transformPointCloud(laserCloudSurfLastDS,    &thisPose6D);
-            publishCloud(pubRecentKeyFrame, cloudOut, timeLaserInfoStamp, odometryFrame);
+            publishCloud(pubRecentKeyFrame, cloudOut, timeLaserInfoStamp, mapFrameLocal);
         }
         // publish registered high-res raw cloud
         if (pubCloudRegisteredRaw->get_subscription_count() != 0)
@@ -2968,13 +3007,13 @@ public:
             pcl::fromROSMsg(cloudInfo.cloud_deskewed, *cloudOut);
             PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
             *cloudOut = *transformPointCloud(cloudOut,  &thisPose6D);
-            publishCloud(pubCloudRegisteredRaw, cloudOut, timeLaserInfoStamp, odometryFrame);
+            publishCloud(pubCloudRegisteredRaw, cloudOut, timeLaserInfoStamp, mapFrameLocal);
         }
         // publish path
         if (pubPath->get_subscription_count() != 0)
         {
             globalPath.header.stamp = timeLaserInfoStamp;
-            globalPath.header.frame_id = odometryFrame;
+            globalPath.header.frame_id = mapFrameLocal;
             pubPath->publish(globalPath);
         }
         // publish SLAM infomation for 3rd-party usage
