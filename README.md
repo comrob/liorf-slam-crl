@@ -1,7 +1,22 @@
-# LIORF (ROS 2 Jazzy) — Ubuntu 24.04 Setup
+# LIORF. Improved by CRL, CTU in Prague (ROS 2 Jazzy)
+
+Main features:
+- **Robust constant-velocity motion model** for translation prediction, improving resilience to IMU noise and sensor dropouts. Works with ouster's IMU out-of-the-box.
+- **REP-105 compliant frame hierarchy** with layered separation between local SLAM (`mapFrameLocal`) and global georeferencing (`mapFrameEnu`), enabling clean extension without degrading smoothness.
+- **Floating-anchor GPS fusion** with improved timestamp-based keyframe association (0.30s hard gating), GPS constraint visualization in RViz, and configurable processing delays to handle sensor sync issues.
+  - Add `--force_initial_gps` mode for manual GPS datum bootstrap before the first real fix, allowing ENU outputs to start immediately.
+  - Publish fused GPS/SLAM poses in both ENU and NED frames for compatibility with different navigation systems.
+  - Keep publishing the estimated lla coordinates of the current pose after GPS disappears.
+  - Publish the gps origin and more useful informaiton related to GPS fusion.
+- **Rolling local map optimization** using spatial hash grids for stable CPU load during loop closure and map rebuilds (triggerable on loop closure and GPS jumps).
+- **NED frame outputs** alongside ENU for navigation system compatibility, including full pose/odometry split between LiDAR and base-link frames.
+- **Dense trajectory exports** (CSV format) preserving full raw GPS and odometry histories for offline geo-referencing and post-run analysis.
+- **Satellite visualization tool** (`visualize_saved_map_satellite.py`) rendering saved maps over satellite imagery as interactive HTML overlays.
+- **Diagnostics infrastructure** with per-stage time-slicing statistics and per-cycle event logging for systematic performance analysis.
+- **Structured map metadata** output with geo-referenced clouds in both local and ENU frames, timestamped trajectories, and automatic orbit path persistence.
+
 
 This repository provides a ROS 2 Jazzy port of LIORF/LIO-SAM style lidar-inertial odometry and mapping.
-
 This guide is simplified for **Ubuntu 24.04** and uses **Zenoh (`rmw_zenoh_cpp`)** as the default ROS middleware.
 
 ---
@@ -395,6 +410,7 @@ Zenoh-based Docker setup is documented in [docker/README.md](docker/README.md).
 Thanks to the original projects and datasets:
 
 - [LIO-SAM](https://github.com/TixiaoShan/LIO-SAM)
+- [LIORF](https://github.com/YJZLuckyBoy/liorf)
 - [FAST_LIO2](https://github.com/hku-mars/FAST_LIO)
 - [UrbanNavDataset](https://github.com/weisongwen/UrbanNavDataset)
 - [M2DGR](https://github.com/SJTU-ViSYS/M2DGR)

@@ -1,11 +1,11 @@
 # Docker Infrastructure for LIORF SLAM
 
-A complete containerized development environment for the **LIORF SLAM** package, optimized for LiDAR data processing with CycloneDDS middleware.
+A complete containerized development environment for the **LIORF SLAM** package, optimized for LiDAR data processing with Zenoh middleware.
 
 **Key Features:**
 - 🚀 **Two deployment modes** - PC-based bagfile testing OR live robot driver integration
 - 📦 **Pre-compiled images** - Golden Image with GTSAM & all dependencies
-- 📡 **CycloneDDS** - High-performance middleware for pointcloud data
+- 📡 **Zenoh** - Efficient pub/sub middleware for pointcloud transport and ROS 2 communication
 - 🔄 **Hybrid workflow** - Develop in container, mount code from host
 - 🎯 **Reproducible** - Same environment across machines via GitHub Container Registry
 
@@ -88,30 +88,29 @@ Monitor RViz on your host for SLAM results!
 
 ---
 
-## PC-Based: Host Machine DDS Setup
+## PC-Based: Host Machine Middleware Setup
 
-The Docker containers use **CycloneDDS** for efficient pointcloud transport. Your host must also use CycloneDDS to see container topics in RViz.
+The Docker containers use **Zenoh** for efficient pointcloud transport. Your host must also use Zenoh to see container topics in RViz.
 
-### Install CycloneDDS on Host
+### Install Zenoh on Host
 
 ```bash
-# Install DDS implementation
-sudo apt-get install ros-jazzy-rmw-cyclonedds-cpp
+# Install Zenoh DDS implementation
+sudo apt-get install ros-jazzy-rmw-zenoh-cpp
 
-# Copy the optimized config from the repository
+# Copy the optimized config from the repository (optional)
 mkdir -p ~/.ros
-cp /path/to/liorf-orig-2/docker/cyclonedds.xml ~/.cyclonedds.xml
+cp /path/to/liorf-slam-crl/docker/zenoh.json5 ~/.zenoh.json5
 ```
 
-**Note:** The repository includes an optimized `docker/cyclonedds.xml` configured for LiDAR performance. Use this for both host and container.
+**Note:** The repository includes an optimized `docker/zenoh.json5` configured for LiDAR performance. Use this for both host and container if you need custom tuning.
 
 ### Enable in Shell
 
 Add to `~/.bashrc`:
 ```bash
 export ROS_DOMAIN_ID=0
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export CYCLONEDDS_URI=file://$HOME/.cyclonedds.xml
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 ```
 
 Then:
@@ -119,33 +118,31 @@ Then:
 source ~/.bashrc
 ```
 
-### Override DDS Config (Optional)
+### Override Zenoh Config (Optional)
 
-If you want to use a custom DDS configuration instead of the repo default:
+If you want to use a custom Zenoh configuration instead of the repo default:
 
 **Option 1: Set in `.env`**
 ```bash
 # Edit docker/.env
-HOST_DDS_CONFIG=/path/to/your/custom/cyclonedds.xml
+HOST_ZENOH_CONFIG=/path/to/your/custom/zenoh.json5
 ```
 
 **Option 2: Copy to expected location**
 ```bash
-cp /your/config/cyclonedds.xml ~/.cyclonedds.xml
+cp /your/config/zenoh.json5 ~/.zenoh.json5
 ```
 
-The docker-compose will use `${HOST_DDS_CONFIG:-./cyclonedds.xml}`, meaning:
-- If `HOST_DDS_CONFIG` is set, use that
-- Otherwise, use `docker/cyclonedds.xml` (default)
+The docker-compose will use `${HOST_ZENOH_CONFIG}`, set in environment variables, or default to the container's bundled config.
 
 ### Verify
 
 ```bash
 echo $RMW_IMPLEMENTATION
-# Output: rmw_cyclonedds_cpp
+# Output: rmw_zenoh_cpp
 
 ros2 doctor
-# Should show CycloneDDS
+# Should show Zenoh as the RMW implementation
 ```
 
 ---
@@ -194,7 +191,7 @@ nano config/lio_sam_ouster.yaml
 ### Monitor ROS Topics
 
 ```bash
-# From host (with CycloneDDS enabled)
+# From host (with Zenoh enabled)
 source ~/.bashrc
 ros2 topic list
 ros2 topic echo /odometry/filtered
@@ -216,7 +213,7 @@ rviz2
 │  │                                     │  │
 │  │  Ouster Driver (liorf repo)        │  │
 │  │  └─ Publishes: /os1/points, /os1/imu
-│  │  └─ CycloneDDS enabled             │  │
+  │  │  └─ Zenoh enabled                  │  │
 │  │                                     │  │
 │  └─────────────────────────────────────┘  │
 │                  ↓ (DDS)                   │
@@ -227,13 +224,13 @@ rviz2
 │  │  ├─ imageProjection                │  │
 │  │  ├─ imuPreintegration              │  │
 │  │  ├─ mapOptmization                 │  │
-│  │  └─ CycloneDDS (same config)       │  │
+│  └─ Zenoh (host-container link)    │  │
 │  │                                     │  │
 │  │  Subscribes: /os1/points, /os1/imu│  │
 │  │  Publishes: odometry, map          │  │
 │  └─────────────────────────────────────┘  │
 │                                             │
-│  **Same .cyclonedds.xml for both**         │
+│  **Same ROS middleware (Zenoh) for both**  │
 └─────────────────────────────────────────────┘
 ```
 
@@ -256,25 +253,25 @@ git clone https://github.com/comrob/liorf-orig-2.git
 cd liorf-orig-2
 ```
 
-### Step 2: Create Shared DDS Configuration
+### Step 2: Create Shared Zenoh Configuration (Optional)
 
 ```bash
-# Copy the optimized config from the cloned repository to host
+# Copy the optimized config from the cloned repository to host (optional)
 mkdir -p ~/.ros
-cp liorf-orig-2/docker/cyclonedds.xml ~/.cyclonedds.xml
+cp liorf-slam-crl/docker/zenoh.json5 ~/.zenoh.json5
 ```
 
-Both host and container will use this identical configuration for DDS communication.
+Both host and container will use Zenoh for communication. Using an identical config is optional but recommended for tuning.
 
-### Step 3: Install Ouster Drivers + CycloneDDS
+### Step 3: Install Ouster Drivers + Zenoh
 
 ```bash
 # Install Ouster driver
 sudo apt-get update
 sudo apt-get install ros-jazzy-ouster-ros
 
-# Install CycloneDDS
-sudo apt-get install ros-jazzy-rmw-cyclonedds-cpp
+# Install Zenoh
+sudo apt-get install ros-jazzy-rmw-zenoh-cpp
 ```
 
 ### Step 4: Configure Host Environment
@@ -285,10 +282,9 @@ Add to `~/.bashrc`:
 # Source ROS 2
 source /opt/ros/jazzy/setup.bash
 
-# DDS Configuration (must match Docker)
+# ROS Middleware Configuration (must match Docker)
 export ROS_DOMAIN_ID=0
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export CYCLONEDDS_URI=file://$HOME/.cyclonedds.xml
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp
 
 # Ouster settings
 export OUSTER_SENSOR_HOSTNAME=192.168.1.101  # Your lidar IP
@@ -317,17 +313,8 @@ nano .env
 HOST_BAGS_PATH=~/bags          # Not used with live driver
 HOST_MAPS_PATH=/home/user/maps # Where to save maps
 
-# Optional: use custom DDS config
-# HOST_DDS_CONFIG=/path/to/custom/cyclonedds.xml
-
 USER_UID=1000
 USER_GID=1000
-```
-
-**Optional:** To use a custom DDS config instead of the repo default:
-```bash
-# Edit .env and set:
-HOST_DDS_CONFIG=~/.cyclonedds.xml
 ```
 
 ### Step 6: Build Docker Image
@@ -387,31 +374,25 @@ rviz2
 
 ---
 
-## Robot: Verify DDS Configuration
+## Robot: Verify Middleware Configuration
 
-**Critical:** Host and Docker must use identical DDS config.
+**Critical:** Host and Docker must use the same ROS middleware (Zenoh).
 
 ```bash
 # Check host is configured
 echo $RMW_IMPLEMENTATION
-# Output: rmw_cyclonedds_cpp
-
-echo $CYCLONEDDS_URI
-# Output: file://$HOME/.cyclonedds.xml
+# Output: rmw_zenoh_cpp
 
 # Enter container
 make shell
 
 # Check container has same settings
 echo $RMW_IMPLEMENTATION
-# Output: rmw_cyclonedds_cpp (same!)
+# Output: rmw_zenoh_cpp (same!)
 
-echo $CYCLONEDDS_URI
-# Output: file:///home/dev/cyclonedds.xml
-
-# Verify configs match
-diff ~/.cyclonedds.xml <(docker exec $(docker ps -q -f ancestor=liorf_jazzy_dev) cat /home/dev/cyclonedds.xml)
-# Should be identical
+# Verify middleware is working
+ros2 topic list
+# Should see /os1/points, /os1/imu, etc.
 ```
 
 ---
@@ -420,12 +401,10 @@ diff ~/.cyclonedds.xml <(docker exec $(docker ps -q -f ancestor=liorf_jazzy_dev)
 
 | Component | Setting | Host | Container |
 |-----------|---------|------|-----------|
-| RMW Implementation | `RMW_IMPLEMENTATION` | `rmw_cyclonedds_cpp` | `rmw_cyclonedds_cpp` |
-| DDS Config URI | `CYCLONEDDS_URI` | `file://$HOME/.cyclonedds.xml` | `file:///home/dev/cyclonedds.xml` |
+| RMW Implementation | `RMW_IMPLEMENTATION` | `rmw_zenoh_cpp` | `rmw_zenoh_cpp` |
 | ROS Domain | `ROS_DOMAIN_ID` | `0` | `0` |
 | Network | `network_mode` | N/A | `host` |
-| Config Content | XML | `/home/user/.cyclonedds.xml` | `/home/dev/cyclonedds.xml` |
-| **Content must match** | ✓ | Identical | Identical |
+| **Middleware must match** | ✓ | Zenoh | Zenoh |
 
 ---
 
@@ -441,27 +420,24 @@ ros2 topic list | grep os1
 # 2. Check RMW on both sides
 echo "Host: $RMW_IMPLEMENTATION"
 docker exec $(docker ps -q -f ancestor=liorf_jazzy_dev) sh -c "echo Container: \$RMW_IMPLEMENTATION"
-# Both should be: rmw_cyclonedds_cpp
+# Both should be: rmw_zenoh_cpp
 
-# 3. Compare DDS configs
-diff ~/.cyclonedds.xml docker/cyclonedds.xml
-# Should output nothing (identical)
+# 3. Verify Zenoh is working
+ros2 topic list
+# Should sync between host and container
 
-# 4. If different, update container config
-docker exec $(docker ps -q -f ancestor=liorf_jazzy_dev) cp /home/dev/cyclonedds.xml /tmp/backup.xml
-docker cp ~/.cyclonedds.xml $(docker ps -q -f ancestor=liorf_jazzy_dev):/home/dev/cyclonedds.xml
-docker exec $(docker ps -q -f ancestor=liorf_jazzy_dev) chown dev:dev /home/dev/cyclonedds.xml
+# 4. Restart Zenoh router if needed
+docker compose up -d zenoh_router  # Ensure router is running
 ```
 
 ### High latency or dropped messages
 
-Edit `~/.cyclonedds.xml` and increase buffers:
-```xml
-<SocketReceiveBufferSize min="50MB" />  <!-- Was 10MB -->
-<WhcHigh>1MB</WhcHigh>                  <!-- Was 500kB -->
+Tuning Zenoh buffer sizes:
+```bash
+# Edit device config or increase UDP buffer on host
+sudo sysctl -w net.core.rmem_max=134217728
+sudo sysctl -w net.core.wmem_max=134217728
 ```
-
-Then restart both driver and SLAM.
 
 ### Ouster sensor connection fails
 
@@ -513,14 +489,14 @@ cat config/lio_sam_ouster.yaml | grep -E "sensor:|N_SCAN:|Horizon_SCAN:"
 
 **Symptom:** SLAM processes few points, runs slowly
 
-**Solution:** Verify CycloneDDS is active:
+**Solution:** Verify Zenoh is active:
 ```bash
 make shell
 echo $RMW_IMPLEMENTATION
-# Should output: rmw_cyclonedds_cpp
+# Should output: rmw_zenoh_cpp
 ```
 
-If not set, CycloneDDS isn't configured. Rebuild with:
+If not set, rebuild with:
 ```bash
 make reimage
 ```
@@ -567,14 +543,14 @@ ls -lh /bag_data/
 | **bag_player** | `liorf_jazzy_dev` | Bagfile playback | Data mounted from host |
 | **run_slam** | `liorf_jazzy_prod` | Benchmark testing (opt-in) | Profile for framework compatibility validation |
 
-**Note on run_slam service:** This optional service (activated with `--profile run_slam`) is designed for **local testing only** to validate compatibility with external SLAM evaluation frameworks. Production benchmarks use their own docker-compose orchestration and only consume the built `liorf_jazzy_prod` image. The run_slam profile mounts framework-compatible paths (`/config/dds/cyclonedds.xml`, `/config/override.yaml`) and sets required environment variables (`ROS_LOCALHOST_ONLY=1`) for compatibility validation.
+**Note on run_slam service:** This optional service (activated with `--profile run_slam`) is designed for **local testing only** to validate compatibility with external SLAM evaluation frameworks. Production benchmarks use their own docker-compose orchestration and only consume the built `liorf_jazzy_prod` image. The run_slam profile mounts framework-compatible paths (`/config/override.yaml`) and sets required environment variables (`ROS_LOCALHOST_ONLY=1`) for compatibility validation.
 
 ### Networking & IPC
 
 - **Network:** `host` - Direct network access (zero-copy for pointclouds)
 - **IPC:** `host` - Shared memory (SLAM ↔ RViz communication)
 - **PID:** `host` - Process namespace (debugging)
-- **DDS:** CycloneDDS with optimized config for LiDAR
+- **Middleware:** Zenoh for efficient pub/sub communication
 
 ### File System
 
