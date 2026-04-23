@@ -25,11 +25,13 @@ For active iterative work, prefer updating the current top entry instead of appe
 - [CMakeLists.txt](CMakeLists.txt)
 - [package.xml](package.xml)
 - [srv/SaveMap.srv](srv/SaveMap.srv)
-- [src/mapOptmization.cpp](src/mapOptmization.cpp)
-- [src/export/MapExporter.cpp](src/export/MapExporter.cpp)
 - [include/utility.h](include/utility.h)
 - [include/export/MapExporter.hpp](include/export/MapExporter.hpp)
 - [include/export/map_types.hpp](include/export/map_types.hpp)
+- [src/mapOptmization.cpp](src/mapOptmization.cpp)
+- [src/export/MapExporter.cpp](src/export/MapExporter.cpp)
+- [src/imuPreintegration.cpp](src/imuPreintegration.cpp)
+- [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
 - [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
 - [scripts/save_map.sh](scripts/save_map.sh)
 - [scripts/build_liorf.sh](scripts/build_liorf.sh)
@@ -39,13 +41,35 @@ For active iterative work, prefer updating the current top entry instead of appe
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [CHANGELOG.md](CHANGELOG.md)
 - [AGENTS.md](AGENTS.md)
-- [src/imuPreintegration.cpp](src/imuPreintegration.cpp)
+
 
 ### Behavior impact
 
 Adds fused GPS publishers to `mapOptimization`:
 
+- added translation-prediction safety params in [include/utility.h](include/utility.h): `maxTranslationPrediction` (default `5.0 m`) and `minTranslationPredictionSpeed` (default `0.0 m/s`, disabled).
+- constant-velocity translation prediction in [src/mapOptmization.cpp](src/mapOptmization.cpp) now clamps to zero on threshold violations and emits explicit logs (`[TRANSLATION_PREDICTION_EXCEEDED]`, `[TRANSLATION_PREDICTION_SPEED_TOO_LOW]`).
+- added warning publication topic `/liorf/warnings` in [include/liorf_diagnostics.h](include/liorf_diagnostics.h), and wired guard messages to publish there.
+- diagnostics telemetry JSON now includes `max_translation_delta_last_batch_m`, and the max is tracked per diagnostics publish batch.
+- diagnostics now write per-processed-frame time deltas to `time_deltas.csv` under each run folder.
+- diagnostics now write unified frame metrics to `frame_metrics.csv` with columns: `stamp_sec,time_delta_s,prediction_delta_m,optimized_delta_m` — logging the frame processing interval, predicted motion magnitude, and actual optimized motion magnitude per frame.
+- diagnostics now publish per-frame metrics as `std_msgs/msg/String` on `/liorf/frame_metrics` with JSON fields: `stamp_sec`, `time_delta_s`, `prediction_delta_m`, `optimized_delta_m`.
+- `/liorf/frame_metrics` now publishes all numeric fields with fixed dot-decimal formatting at 3 digits after the decimal point.
+- `stamp_sec` in `/liorf/frame_metrics` and `frame_metrics.csv` now uses LiDAR header time (frame stamp) instead of node/system wall time.
+- split diagnostics implementation into [include/liorf_diagnostics.h](include/liorf_diagnostics.h) declarations + [src/liorf_diagnostics.cpp](src/liorf_diagnostics.cpp) definitions.
+- added dedicated CMake target `liorf_diagnostics` and linked it to node executables so diagnostics-only changes rebuild a smaller compilation unit.
+- unified diagnostics debug topics under `/liorf/debug/<log_name>` naming: telemetry, timing_stats, time_deltas, frame_metrics, event, warnings.
+- diagnostics event log file renamed from `events.log` to `event.txt`; each event line now corresponds to one published message on `/liorf/debug/event`.
+- each diagnostics stream now has one-to-one topic/file correspondence and publishes one message per appended file row/line.
+- added ROS params for diagnostics file-writing control: master switch `diagnostics_write_files_master` and per-log switches `diagnostics_write_timing_stats`, `diagnostics_write_event`, `diagnostics_write_warnings`, `diagnostics_write_telemetry`, `diagnostics_write_time_deltas`, `diagnostics_write_frame_metrics`.
+- parameter metadata file (`run_parameters.yaml`) remains always written regardless of diagnostics file-write switches.
+- moved `[FRAME_TIME_DELTA]` details from event stream into per-frame diagnostics (`frame_metrics`) to reduce event noise.
+- per-frame diagnostics now include `last_time_delta_s` and `estimated_velocity_mps` (`estimated_velocity_mps = last_optimized_delta_m / last_time_delta_s` when last dt > 0).
+- configured primary Ouster profile [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml) with `maxTranslationPrediction: 5.0` and `minTranslationPredictionSpeed: 0.0`.
 
+ - diagnostics now persist runtime staleness telemetry in [include/liorf_diagnostics.h](include/liorf_diagnostics.h) to `telemetry.csv` (`time_since_last_lidar_s`, `time_since_last_gps_s`) inside each run folder under `~/.ros/liorf_logs/run_*`.
+ - added [scripts/plot_telemetry_staleness.py](scripts/plot_telemetry_staleness.py) to visualize LiDAR/GPS staleness signals from `telemetry.csv` (latest-run auto-discovery supported).
+ - documented telemetry staleness log location and plotting usage in [README.md](README.md).
 `liorf/mapping/lidar_gps_ned_pose` (`geometry_msgs/PoseStamped`, frame = `mapFrameNed`) is also published as the NED-frame equivalent.
 
 Publishing now uses a two-stage policy tied to GPS factor observability:

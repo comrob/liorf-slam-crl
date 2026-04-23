@@ -2,7 +2,17 @@
   ros__parameters:
     history_policy: "history_keep_last"
     reliability_policy: "reliability_reliable"
+    diagnostics_write_files_master: true
+    diagnostics_write_timing_stats: true
+    diagnostics_write_event: true
+    diagnostics_write_warnings: true
+    diagnostics_write_telemetry: true
+    diagnostics_write_time_deltas: true
+    diagnostics_write_frame_metrics: true
+    
     translationPredictionSource: constant_velocity
+    maxTranslationPrediction: 5.0
+    minTranslationPredictionSpeed: 0.0
     # Topics
     pointCloudTopic: "/ouster/points"               # Point cloud data
     imuTopic: "/ouster/imu"                         # IMU data
@@ -98,7 +108,7 @@
     loopClosureICPSurfLeafSize: 0.5               # downsample icp point cloud  
     historyKeyframeFitnessScore: 0.3              # icp threshold, the smaller the better alignment
     rebuild_on_loop_closure: true                 # trigger rolling local-map rebuild when loop constraints are added
-    rebuild_on_gps_jump: true                     # trigger rolling local-map rebuild on accepted GPS factor (time-gated)
+    rebuild_on_gps_jump: false                     # trigger rolling local-map rebuild on accepted GPS factor (time-gated)
     transformed_cloud_cache_max_age_sec: 0.5      # keep transformed keyframe cloud cache only for the last N seconds
     cloud_info_queue_depth: 5                     # CloudInfo subscriber queue depth (smaller -> less backlog, more frame drops)
     drop_stale_lidar_frames: true                 # drop LiDAR frames that are already too old when callback runs

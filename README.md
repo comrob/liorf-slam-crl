@@ -164,13 +164,19 @@ Launch argument behavior is override-only: if `use_sim_time` is not specified in
 
 Diagnostics logging also maintains a stable symlink:
 
-- `~/.ros/liorf_logs/latest` -> newest `run_YYYYMMDD_HHMMSS` directory
 
 After a run, plot `timing_stats.csv` from diagnostics logs:
 
 ```bash
 python3 scripts/plot_time_slicing_stats.py
 ```
+
+Diagnostics telemetry is also persisted as `telemetry.csv` in each run directory, including:
+
+- `time_since_last_lidar_s`
+- `time_since_last_gps_s`
+
+
 
 By default, the script reads the latest run (via `~/.ros/liorf_logs/latest` when available), saves the PNG plot, and displays it.
 

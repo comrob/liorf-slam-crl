@@ -95,6 +95,13 @@ public:
 
     string history_policy;
     string reliability_policy;
+    bool diagnostics_write_files_master;
+    bool diagnostics_write_timing_stats;
+    bool diagnostics_write_event;
+    bool diagnostics_write_warnings;
+    bool diagnostics_write_telemetry;
+    bool diagnostics_write_time_deltas;
+    bool diagnostics_write_frame_metrics;
 
     std::string robot_id;
 
@@ -136,6 +143,8 @@ public:
     // Lidar Sensor Configuration
     SensorType sensor;
     TranslationPredictionSource translationPredictionSource;
+    double maxTranslationPrediction;
+    double minTranslationPredictionSpeed;
 
     int N_SCAN;
     int Horizon_SCAN;
@@ -208,6 +217,20 @@ public:
         get_parameter("history_policy", history_policy);
         declare_parameter<string>("reliability_policy", "reliability_reliable");
         get_parameter("reliability_policy", reliability_policy);
+        declare_parameter<bool>("diagnostics_write_files_master", true);
+        get_parameter("diagnostics_write_files_master", diagnostics_write_files_master);
+        declare_parameter<bool>("diagnostics_write_timing_stats", true);
+        get_parameter("diagnostics_write_timing_stats", diagnostics_write_timing_stats);
+        declare_parameter<bool>("diagnostics_write_event", true);
+        get_parameter("diagnostics_write_event", diagnostics_write_event);
+        declare_parameter<bool>("diagnostics_write_warnings", true);
+        get_parameter("diagnostics_write_warnings", diagnostics_write_warnings);
+        declare_parameter<bool>("diagnostics_write_telemetry", true);
+        get_parameter("diagnostics_write_telemetry", diagnostics_write_telemetry);
+        declare_parameter<bool>("diagnostics_write_time_deltas", true);
+        get_parameter("diagnostics_write_time_deltas", diagnostics_write_time_deltas);
+        declare_parameter<bool>("diagnostics_write_frame_metrics", true);
+        get_parameter("diagnostics_write_frame_metrics", diagnostics_write_frame_metrics);
 
         declare_parameter<string>("pointCloudTopic", "/points_raw");
         get_parameter("pointCloudTopic", pointCloudTopic);
@@ -316,6 +339,11 @@ public:
         // 3. LOG result
         std::string translationPredictionSourceStr = TranslationPredictionSourceToString(translationPredictionSource);
         RCLCPP_INFO_STREAM(this->get_logger(), "Translation Prediction Source: " << translationPredictionSourceStr);
+
+        declare_parameter<double>("maxTranslationPrediction", 5.0);
+        get_parameter("maxTranslationPrediction", maxTranslationPrediction);
+        declare_parameter<double>("minTranslationPredictionSpeed", 0.0);
+        get_parameter("minTranslationPredictionSpeed", minTranslationPredictionSpeed);
 
         declare_parameter<int>("N_SCAN", 16);
         get_parameter("N_SCAN", N_SCAN);

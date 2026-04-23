@@ -241,6 +241,7 @@ public:
     double newestCloudInfoStampSec{-1};
     double lastTimeDiff{0};
     double curTimeDiff{0};
+    double lastOptimizedDeltaM{0};
 
     float transformTobeMapped[6];
 
@@ -292,7 +293,17 @@ public:
             this,
             QosPolicy(history_policy, reliability_policy),
             history_policy,
-            reliability_policy);
+            reliability_policy,
+            "~/.ros/liorf_logs",
+            "/liorf/debug/telemetry",
+            1.0,
+            diagnostics_write_files_master,
+            diagnostics_write_timing_stats,
+            diagnostics_write_event,
+            diagnostics_write_warnings,
+            diagnostics_write_telemetry,
+            diagnostics_write_time_deltas,
+            diagnostics_write_frame_metrics);
 
         auto cloudInfoQos = QosPolicy(history_policy, reliability_policy);
         cloudInfoQos.keep_last(std::max(1, cloud_info_queue_depth));
@@ -499,6 +510,9 @@ public:
         curTimeDiff = timeLaserInfoCur - timeLastProcessing;
         if (curTimeDiff >= mappingProcessInterval)
         {
+            if (diagnostics)
+                diagnostics->recordTimeDelta(curTimeDiff);
+
             timeLastProcessing = timeLaserInfoCur;
 
             TicToc t_updateInitialGuess;
@@ -545,6 +559,24 @@ public:
 
             publishOdometry();
             publishLidarGpsFix();
+
+            // Record frame metrics: time delta, prediction delta, and optimized motion delta
+            if (diagnostics)
+            {
+                const double optimized_delta_m = static_cast<double>(lastLidarOdometryIncrement.translation().norm());
+                const double prediction_delta_m = diagnostics->getLastPredictionDelta();
+                const double estimated_velocity_mps = (lastTimeDiff > 0.0)
+                                                          ? (lastOptimizedDeltaM / lastTimeDiff)
+                                                          : 0.0;
+                diagnostics->recordFrameMetrics(
+                    timeLaserInfoCur,
+                    curTimeDiff,
+                    lastTimeDiff,
+                    prediction_delta_m,
+                    optimized_delta_m,
+                    estimated_velocity_mps);
+                lastOptimizedDeltaM = optimized_delta_m;
+            }
 
             publishFrames();
             visualizeGpsConstraints();
@@ -1619,6 +1651,49 @@ public:
         // save current transformation before any processing
         incrementalOdometryAffineFront = trans2Affine3f(transformTobeMapped);
 
+        const auto clampTranslationPrediction = [this](Eigen::Affine3f &transIncre, const char *branch_name) {
+            const double predNorm = static_cast<double>(transIncre.translation().norm());
+            const double predSpeed = (curTimeDiff > 0.0)
+                                         ? (predNorm / curTimeDiff)
+                                         : std::numeric_limits<double>::infinity();
+
+            if (diagnostics)
+                diagnostics->recordTranslationPrediction(predNorm);
+
+            if (maxTranslationPrediction > 0.0 && predNorm > maxTranslationPrediction)
+            {
+                std::ostringstream err_ss;
+                err_ss << "[TRANSLATION_PREDICTION_EXCEEDED]"
+                       << " branch=" << branch_name
+                       << " delta_m=" << std::fixed << std::setprecision(3) << predNorm
+                       << " limit_m=" << maxTranslationPrediction
+                       << " cur_dt_s=" << curTimeDiff
+                       << " last_dt_s=" << lastTimeDiff;
+                const std::string err_msg = err_ss.str();
+                RCLCPP_ERROR_STREAM(this->get_logger(), err_msg);
+                transIncre.translation().setZero();
+                if (diagnostics)
+                    diagnostics->publishWarning(err_msg);
+            }
+
+            if (minTranslationPredictionSpeed > 0.0 && predSpeed < minTranslationPredictionSpeed)
+            {
+                std::ostringstream warn_ss;
+                warn_ss << "[TRANSLATION_PREDICTION_SPEED_TOO_LOW]"
+                        << " branch=" << branch_name
+                        << " speed_mps=" << std::fixed << std::setprecision(3) << predSpeed
+                        << " min_speed_mps=" << minTranslationPredictionSpeed
+                        << " delta_m=" << predNorm
+                        << " cur_dt_s=" << curTimeDiff
+                        << " last_dt_s=" << lastTimeDiff;
+                const std::string warn_msg = warn_ss.str();
+                RCLCPP_WARN_STREAM(this->get_logger(), warn_msg);
+                transIncre.translation().setZero();
+                if (diagnostics)
+                    diagnostics->publishWarning(warn_msg);
+            }
+        };
+
         static Eigen::Affine3f lastImuTransformation;
         // initialization
         if (cloudKeyPoses3D->points.empty())
@@ -1651,6 +1726,7 @@ public:
                 if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
                 {
                     transIncre.translation() = lastLidarOdometryIncrement.translation() * curTimeDiff / lastTimeDiff;
+                    clampTranslationPrediction(transIncre, "imu_preintegration");
                     if (diagnostics)
                     {
                         std::ostringstream diag_ss;
@@ -1683,6 +1759,7 @@ public:
             if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
                 {
                     transIncre.translation() = lastLidarOdometryIncrement.translation() * curTimeDiff / lastTimeDiff;
+                    clampTranslationPrediction(transIncre, "imu_incremental");
                     if (diagnostics)
                     {
                         std::ostringstream diag_ss;
