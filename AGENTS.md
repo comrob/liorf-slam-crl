@@ -23,7 +23,13 @@ The runtime architecture is topic-driven and split across front-end deskewing, I
   - Builds:
     - `src/imageProjection.cpp`
     - `src/imuPreintegration.cpp`
-    - `src/mapOptmization.cpp`
+    - `src/mapOptimization/main.cpp`
+    - `src/mapOptimization/mapOptimization_core.cpp`
+    - `src/mapOptimization/mapOptimization_map.cpp`
+    - `src/mapOptimization/mapOptimization_scan.cpp`
+    - `src/mapOptimization/mapOptimization_gps.cpp`
+    - `src/mapOptimization/mapOptimization_loop.cpp`
+    - `src/mapOptimization/mapOptimization_publish.cpp`
   - Generates ROS interfaces:
     - [msg/CloudInfo.msg](msg/CloudInfo.msg)
     - [srv/SaveMap.srv](srv/SaveMap.srv)
@@ -79,22 +85,24 @@ The runtime architecture is topic-driven and split across front-end deskewing, I
     - `TransformFusion` node (fuses LiDAR mapping odometry with IMU incremental updates)
   - Publishes both incremental odom for deskew loop and fused odom/path.
 
-- [src/mapOptmization.cpp](src/mapOptmization.cpp)
-  - Defines `mapOptimization` node.
-  - Responsibilities:
-    - consumes deskewed cloud + cloud info
-    - scan-to-map optimization
-    - keyframe management
-    - factor graph optimization (GTSAM / ISAM2)
-    - loop closure (including Scan Context support)
-    - GPS integration path (`NavSatFix` -> local odom)
-    - map/trajectory/odometry/TF publication
-    - `liorf/save_map` service implementation
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+  - Declares the `mapOptimization` node class and shared state used across split translation units.
+
+- [src/mapOptimization/](src/mapOptimization)
+  - Split implementation of `mapOptimization` node (same class, multiple `.cpp` files).
+  - File roles:
+    - [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp): node constructor, memory setup, LiDAR callback orchestration.
+    - [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp): local/global map management, map extraction/cache, save-map service hooks.
+    - [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp): scan alignment and optimization (`scan2MapOptimization`, LM, pose update).
+    - [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp): datum init, GPS fusion factors, GPS outputs.
+    - [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp): RS/SC loop closure and loop visualization.
+    - [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp): TF/odometry/frame publication + geometry helpers.
+    - [src/mapOptimization/main.cpp](src/mapOptimization/main.cpp): executable entry point.
 
 ### Loop-closure support and utilities
 
 - [include/Scancontext.h](include/Scancontext.h) and [include/Scancontext.cpp](include/Scancontext.cpp)
-  - Scan Context manager implementation used by `mapOptmization`.
+  - Scan Context manager implementation used by `mapOptimization` (loop closure path in [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp)).
 
 - [include/KDTreeVectorOfVectorsAdaptor.h](include/KDTreeVectorOfVectorsAdaptor.h)
   - KD-tree adaptor utilities used by Scan Context logic.
@@ -146,7 +154,7 @@ The runtime architecture is topic-driven and split across front-end deskewing, I
      - `liorf/deskew/cloud_deskewed`
      - `liorf/deskew/cloud_info`
 
-3. `mapOptimization` ([src/mapOptmization.cpp](src/mapOptmization.cpp))
+3. `mapOptimization` ([src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp), [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp), [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp), [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp), [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp))
    - Subscribes:
      - `liorf/deskew/cloud_info`
      - GPS (`gpsTopic`)
@@ -194,7 +202,7 @@ This loop is intentional and is the first place to inspect when timing or drift 
 
 - `ImageProjection`: [src/imageProjection.cpp](src/imageProjection.cpp)
 - `IMUPreintegration` / `TransformFusion`: [src/imuPreintegration.cpp](src/imuPreintegration.cpp)
-- `mapOptimization`: [src/mapOptmization.cpp](src/mapOptmization.cpp)
+- `mapOptimization`: [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp), [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp), [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp), [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp), [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
 
 ### Adjust deskewing/front-end filtering
 
@@ -205,7 +213,12 @@ This loop is intentional and is the first place to inspect when timing or drift 
 
 ### Adjust back-end optimization / loop closure / GPS behavior
 
-- [src/mapOptmization.cpp](src/mapOptmization.cpp)
+- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp)
+- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp)
+- [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp)
+- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
   - scan-to-map optimization functions
   - keyframe/factor-graph update logic
   - `gpsHandler()` and GPS gating behavior

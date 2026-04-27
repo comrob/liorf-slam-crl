@@ -64,7 +64,7 @@ using namespace std;
 typedef pcl::PointXYZI PointType;
 
 // <!-- liorf_localization_yjz_lucky_boy -->
-std::shared_ptr<CommonLib::common_lib> common_lib_;
+inline std::shared_ptr<CommonLib::common_lib> common_lib_;
 
 enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN};
 
@@ -549,9 +549,9 @@ void imuRPY2rosRPY(sensor_msgs::msg::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T
     *rosYaw = imuYaw;
 }
 
-rclcpp::QoS QosPolicy(const string &history_policy, const string &reliability_policy)
+inline rclcpp::QoS QosPolicy(const string &history_policy, const string &reliability_policy)
 {
-    rmw_qos_profile_t qos_profile;
+    rmw_qos_profile_t qos_profile = rmw_qos_profile_default;
     if (history_policy == "history_keep_last")
         qos_profile.history = rmw_qos_history_policy_t::RMW_QOS_POLICY_HISTORY_KEEP_LAST;
     else if (history_policy == "history_keep_all")

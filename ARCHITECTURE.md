@@ -1,5 +1,18 @@
 # LIORF Architecture Notes
 
+## mapOptimization implementation layout
+
+`mapOptimization` is implemented as a single class split across multiple translation units:
+
+- Declarations/state: [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- Constructor and LiDAR callback orchestration: [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- Map management/representation: [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp)
+- Scan alignment/optimization: [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- GPS fusion: [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp)
+- Loop closure: [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp)
+- TF/odometry publishing: [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+- Entry point: [src/mapOptimization/main.cpp](src/mapOptimization/main.cpp)
+
 ## Frame architecture (detailed)
 
 This section describes the runtime frame model used by the current floating-anchor GPS integration.

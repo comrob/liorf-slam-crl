@@ -26,9 +26,16 @@ For active iterative work, prefer updating the current top entry instead of appe
 - [package.xml](package.xml)
 - [srv/SaveMap.srv](srv/SaveMap.srv)
 - [include/utility.h](include/utility.h)
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
 - [include/export/MapExporter.hpp](include/export/MapExporter.hpp)
 - [include/export/map_types.hpp](include/export/map_types.hpp)
-- [src/mapOptmization.cpp](src/mapOptmization.cpp)
+- [src/mapOptimization/main.cpp](src/mapOptimization/main.cpp)
+- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp)
+- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp)
+- [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp)
+- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
 - [src/export/MapExporter.cpp](src/export/MapExporter.cpp)
 - [src/imuPreintegration.cpp](src/imuPreintegration.cpp)
 - [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
@@ -44,6 +51,16 @@ For active iterative work, prefer updating the current top entry instead of appe
 
 
 ### Behavior impact
+
+- split monolithic map optimization implementation into a dedicated module layout under [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp) and [src/mapOptimization/main.cpp](src/mapOptimization/main.cpp), [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp), [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp), [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp), [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp), and [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp).
+- moved the build target for `liorf_mapOptmization` in [CMakeLists.txt](CMakeLists.txt) to compile from the new split sources; runtime behavior is intended to remain unchanged with lower refactor-risk by preserving the original `mapOptimization` state and method logic.
+- fixed post-split linker ODR issues in [include/utility.h](include/utility.h) by marking header-defined shared symbols as `inline` (`common_lib_` variable and `QosPolicy(...)`), allowing safe inclusion from multiple `mapOptimization` translation units.
+- fixed compiler warning cleanup in split sources: `yawDiffRad` marked `[[maybe_unused]]` in [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp), removed unused `lastSLAMInfoPubSize` in [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp), and initialized QoS profile from `rmw_qos_profile_default` in [include/utility.h](include/utility.h) to avoid `-Wmaybe-uninitialized`.
+- added GCC-only suppression `-Wno-array-bounds` for target `liorf_mapOptmization` in [CMakeLists.txt](CMakeLists.txt) to silence known Eigen/PCL template false positives emitted from external headers during optimization builds.
+- fixed `-Wreturn-type` warning in [include/Scancontext.cpp](include/Scancontext.cpp) by adding an explicit fallback return path in `xy2theta(...)` for degenerate/unexpected numeric cases.
+- follow-up review hardening: [include/Scancontext.cpp](include/Scancontext.cpp) now computes heading with `atan2` and normalizes to `[0, 360)` to avoid division-by-zero/NaN-prone quadrant math.
+- follow-up review hardening: removed global `using namespace gtsam;` and symbol-shorthand `using` declarations from public header [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp), and qualified remaining GTSAM member types.
+- follow-up review hardening: [CMakeLists.txt](CMakeLists.txt) now gates `-Wno-array-bounds` behind `LIORF_SUPPRESS_GNU_ARRAY_BOUNDS_WARNINGS` and Release+GNU conditions instead of unconditional GNU application.
 
 Adds fused GPS publishers to `mapOptimization`:
 
