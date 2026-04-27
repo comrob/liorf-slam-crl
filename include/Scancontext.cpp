@@ -1,4 +1,5 @@
 #include "Scancontext.h"
+#include <cmath>
 
 // namespace SC2
 // {
@@ -22,17 +23,8 @@ float deg2rad(float degrees)
 
 float xy2theta( const float & _x, const float & _y )
 {
-    if ( (_x >= 0) & (_y >= 0)) 
-        return (180/M_PI) * atan(_y / _x);
-
-    if ( (_x < 0) & (_y >= 0)) 
-        return 180 - ( (180/M_PI) * atan(_y / (-_x)) );
-
-    if ( (_x < 0) & (_y < 0)) 
-        return 180 + ( (180/M_PI) * atan(_y / _x) );
-
-    if ( (_x >= 0) & (_y < 0))
-        return 360 - ( (180/M_PI) * atan((-_y) / _x) );
+    const float theta_deg = rad2deg(static_cast<float>(std::atan2(_y, _x)));
+    return (theta_deg < 0.0f) ? (theta_deg + 360.0f) : theta_deg;
 } // xy2theta
 
 

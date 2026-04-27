@@ -104,6 +104,18 @@ rosdep install --from-paths src --ignore-src -r -y
 colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
 
+### Developer code structure (mapOptimization)
+
+The `mapOptimization` node is split across multiple files under `src/mapOptimization/` with shared declarations in `include/mapOptimization/mapOptimization.hpp`.
+
+- `src/mapOptimization/mapOptimization_core.cpp`: constructor, memory setup, LiDAR callback orchestration
+- `src/mapOptimization/mapOptimization_map.cpp`: local/global map representation, extraction/cache, save-map service wiring
+- `src/mapOptimization/mapOptimization_scan.cpp`: scan-to-map alignment and optimization
+- `src/mapOptimization/mapOptimization_gps.cpp`: GPS datum/anchor/factor fusion and GPS outputs
+- `src/mapOptimization/mapOptimization_loop.cpp`: loop closure logic and loop visualization
+- `src/mapOptimization/mapOptimization_publish.cpp`: TF, odometry, and frame publications + geometry helpers
+- `src/mapOptimization/main.cpp`: executable entry point
+
 ---
 
 ## 5) Configure ROS 2 to use Zenoh
