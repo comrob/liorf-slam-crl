@@ -79,7 +79,7 @@ void mapOptimization::updateInitialGuess()
 
             if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
             {
-                transIncre.translation() = lastLidarOdometryIncrement.translation() * curTimeDiff / lastTimeDiff;
+                transIncre.translation() = lastIncrementalDeltaPoseLocal.translation() * curTimeDiff / lastTimeDiff;
                 clampTranslationPrediction(transIncre, "imu_preintegration");
                 if (diagnostics)
                 {
@@ -112,7 +112,7 @@ void mapOptimization::updateInitialGuess()
 
         if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
             {
-                transIncre.translation() = lastLidarOdometryIncrement.translation() * curTimeDiff / lastTimeDiff;
+                transIncre.translation() = lastIncrementalDeltaPoseLocal.translation() * curTimeDiff / lastTimeDiff;
                 clampTranslationPrediction(transIncre, "imu_incremental");
                 if (diagnostics)
                 {

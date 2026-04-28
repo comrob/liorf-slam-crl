@@ -90,6 +90,7 @@ add_executable(${PROJECT_NAME}_mapOptmization
   src/mapOptimization/mapOptimization_core.cpp
   src/mapOptimization/mapOptimization_map.cpp
   src/mapOptimization/mapOptimization_scan.cpp
+  src/mapOptimization/mapOptimization_graph.cpp
   src/mapOptimization/mapOptimization_gps.cpp
   src/mapOptimization/mapOptimization_loop.cpp
   src/mapOptimization/mapOptimization_publish.cpp

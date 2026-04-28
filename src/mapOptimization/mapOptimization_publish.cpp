@@ -350,15 +350,15 @@ void mapOptimization::publishOdometry()
     {
         lastIncreOdomPubFlag = true;
         laserOdomIncremental = laserOdometryROS;
-        increOdomAffine = trans2Affine3f(transformTobeMapped);
+        poseAcumulatedIncremental = trans2Affine3f(transformTobeMapped);
     }
     else
     {
-        lastLidarOdometryIncrement = incrementalOdometryAffineFront.inverse() * incrementalOdometryAffineBack;
-        increOdomAffine = increOdomAffine * lastLidarOdometryIncrement;
+        lastIncrementalDeltaPoseLocal = incrementalOdometryAffineFront.inverse() * incrementalOdometryAffineBack;
+        poseAcumulatedIncremental = poseAcumulatedIncremental * lastIncrementalDeltaPoseLocal;
     }
 
-    odomToLidarAffine = increOdomAffine;
+    odomToLidarAffine = poseAcumulatedIncremental;
     laserOdomIncremental =
         odometryMsgFromAffine(odomToLidarAffine, timeLaserInfoStamp, odometryFrame, "lidar_link");
     if (isDegenerate)

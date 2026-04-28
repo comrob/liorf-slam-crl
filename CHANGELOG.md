@@ -33,6 +33,7 @@ For active iterative work, prefer updating the current top entry instead of appe
 - [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
 - [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp)
 - [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [src/mapOptimization/mapOptimization_graph.cpp](src/mapOptimization/mapOptimization_graph.cpp)
 - [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp)
 - [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp)
 - [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
@@ -51,6 +52,10 @@ For active iterative work, prefer updating the current top entry instead of appe
 
 
 ### Behavior impact
+
+- renamed incremental-motion state variables for clearer intent in `mapOptimization`: `lastLidarOdometryIncrement` -> `lastIncrementalDeltaPoseLocal` and `increOdomAffine` -> `poseAcumulatedIncremental`; no algorithmic behavior change intended.
+- refactored non-GPS factor-graph orchestration methods out of [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp) into [src/mapOptimization/mapOptimization_graph.cpp](src/mapOptimization/mapOptimization_graph.cpp): `addOdomFactor`, `addLoopFactor`, `saveKeyFramesAndFactor`, and `correctPoses`.
+- updated [CMakeLists.txt](CMakeLists.txt) target sources to compile the new graph translation unit while preserving runtime node behavior.
 
 - split monolithic map optimization implementation into a dedicated module layout under [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp) and [src/mapOptimization/main.cpp](src/mapOptimization/main.cpp), [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp), [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp), [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp), [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp), and [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp).
 - moved the build target for `liorf_mapOptmization` in [CMakeLists.txt](CMakeLists.txt) to compile from the new split sources; runtime behavior is intended to remain unchanged with lower refactor-risk by preserving the original `mapOptimization` state and method logic.

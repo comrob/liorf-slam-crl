@@ -156,7 +156,7 @@ public:
     size_t gpsFactorsAccepted = 0;
     bool T_EM_initialized = false;
     gtsam::Pose3 T_EM_estimate = gtsam::Pose3::Identity();
-    Eigen::Affine3f increOdomAffine = Eigen::Affine3f::Identity();
+    Eigen::Affine3f poseAcumulatedIncremental = Eigen::Affine3f::Identity();
     Eigen::Affine3f odomToLidarAffine = Eigen::Affine3f::Identity();
     Eigen::Affine3f odomToBaseAffine = Eigen::Affine3f::Identity();
     Eigen::Affine3f mapLocalToOdomAffine = Eigen::Affine3f::Identity();
@@ -261,7 +261,7 @@ public:
     Eigen::Affine3f transPointAssociateToMap;
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
-    Eigen::Affine3f lastLidarOdometryIncrement;
+    Eigen::Affine3f lastIncrementalDeltaPoseLocal;
 
     GeographicLib::LocalCartesian gps_trans_;
 

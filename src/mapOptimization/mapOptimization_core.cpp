@@ -284,7 +284,7 @@ void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedP
         // Record frame metrics: time delta, prediction delta, and optimized motion delta
         if (diagnostics)
         {
-            const double optimized_delta_m = static_cast<double>(lastLidarOdometryIncrement.translation().norm());
+            const double optimized_delta_m = static_cast<double>(lastIncrementalDeltaPoseLocal.translation().norm());
             const double prediction_delta_m = diagnostics->getLastPredictionDelta();
             const double estimated_velocity_mps = (lastTimeDiff > 0.0)
                                                       ? (lastOptimizedDeltaM / lastTimeDiff)
