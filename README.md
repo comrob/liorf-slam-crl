@@ -94,8 +94,8 @@ sudo ldconfig
 ## 4) Build this repository
 
 ```bash
-mkdir -p ~/liorf-ros2/src
-cd ~/liorf-ros2/src
+mkdir -p ~/liorf_ws/src
+cd ~/liorf_ws/src
 git clone <YOUR_FORK_OR_THIS_REPO_URL> liorf
 cd ..
 
@@ -146,15 +146,15 @@ echo $RMW_IMPLEMENTATION
 ## 6) Run
 
 ```bash
-cd ~/liorf-ros2
+cd ~/liorf_ws
 source install/setup.bash
-ros2 launch liorf run_lio_sam_default.launch.py
+ros2 launch liorf liorf.launch.py
 ```
 
 In another terminal (same environment), play a bag:
 
 ```bash
-cd ~/liorf-ros2
+cd ~/liorf_ws
 source install/setup.bash
 ros2 bag play <path_to_ros2_bag>
 ```
