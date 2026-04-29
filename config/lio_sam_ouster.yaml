@@ -17,7 +17,7 @@
     pointCloudTopic: "/ouster/points"               # Point cloud data
     imuTopic: "/ouster/imu"                         # IMU data
     odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
-    gpsTopic: "/gnss/septentrio/fix"                   # GPS odometry topic from navsat, see module_navsat.launch file
+    gpsTopic: "/gnss/septentrio/fix1"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
     # Frames
     lidarFrame: "os_lidar"
@@ -79,6 +79,7 @@
 
     # voxel filter paprams
     mappingSurfLeafSize: 0.2                      # default: 0.4 - outdoor, 0.2 - indoor
+    surfKnnMinDistance: 5.0                       # meters, max allowed distance to 5th kNN neighbor for surf matching
     useSorFilter: false                           # enable Statistical Outlier Removal on current scan surf cloud
     sorMeanK: 5                                   # number of neighbors to analyze in SoR
     sorStddevMulThresh: 1.0                       # SoR standard deviation multiplier
@@ -95,8 +96,9 @@
     surroundingkeyframeAddingDistThreshold: 1.0   # meters, regulate keyframe adding threshold
     surroundingkeyframeAddingAngleThreshold: 0.2  # radians, regulate keyframe adding threshold
     surroundingKeyframeDensity: 2.0               # meters, downsample surrounding keyframe poses   
-    surroundingKeyframeSearchRadius: 50.0         # meters, within n meters scan-to-map optimization (when loop closure disabled)
-    surroundingKeyframeMapLeafSize: 0.5           # downsample local map point cloud
+    surroundingKeyframeSearchRadius: 50.0         # meters, radius for keyframe neighbor search
+    localMapTruncationRadius: 150.0               # meters, radius for voxel map pruning (local map truncation)
+    surroundingKeyframeMapLeafSize: 0.3           # downsample local map point cloud
 
     # Loop closure
     loopClosureEnableFlag: true

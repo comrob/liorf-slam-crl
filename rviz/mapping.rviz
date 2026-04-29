@@ -3,7 +3,9 @@ Panels:
     Help Height: 70
     Name: Displays
     Property Tree Widget:
-      Expanded: ~
+      Expanded:
+        - /Mapping1
+        - /PointCloud22
       Splitter Ratio: 0.5
     Tree Height: 815
   - Class: rviz_common/Views
@@ -65,8 +67,8 @@ Visualization Manager:
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
-            Max Value: 20.629247665405273
-            Min Value: -33.652042388916016
+            Max Value: 10.76583480834961
+            Min Value: -2.488288640975952
             Value: true
           Axis: Z
           Channel Name: intensity
@@ -110,9 +112,9 @@ Visualization Manager:
           Enabled: true
           Invert Rainbow: false
           Max Color: 255; 255; 255
-          Max Intensity: 5495.75
+          Max Intensity: 2624.54541015625
           Min Color: 0; 0; 0
-          Min Intensity: 1
+          Min Intensity: 13
           Name: GlobalMap
           Position Transformer: XYZ
           Selectable: true
@@ -167,7 +169,7 @@ Visualization Manager:
             Reliability Policy: Reliable
             Value: /liorf/mapping/odometry
           Value: true
-      Enabled: true
+      Enabled: false
       Name: Mapping
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
@@ -182,6 +184,72 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /liorf/mapping/gps_constraints
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: RGB8
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /liorf/mapping/surf_debug_colored
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 255; 255
+      Color Transformer: FlatColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 2788
+      Min Color: 0; 0; 0
+      Min Intensity: 13
+      Name: PointCloud2
+      Position Transformer: XYZ
+      Selectable: true
+      Size (Pixels): 1
+      Size (m): 0.004000000189989805
+      Style: Points
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /liorf/mapping/map_local
+      Use Fixed Frame: true
+      Use rainbow: true
       Value: true
   Enabled: true
   Global Options:
@@ -226,7 +294,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 104.62234497070312
+      Distance: 193.3590850830078
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -241,10 +309,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.0403980016708374
+      Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 2.250396966934204
+      Yaw: 1.715396523475647
     Saved: ~
 Window Geometry:
   Displays:

@@ -387,17 +387,91 @@ void mapOptimization::publishFrames()
 {
     if (cloudKeyPoses3D->points.empty())
         return;
+
+    PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
+
     // publish key poses
     publishCloud(pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, mapFrameLocal);
     // Publish surrounding key frames
     publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, mapFrameLocal);
+
+    if (pubSurfDebugColored->get_subscription_count() != 0)
+    {
+        pcl::PointCloud<PointType>::Ptr transformedInput = transformPointCloud(laserCloudSurfLastDS, &thisPose6D);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr coloredCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
+
+        const int codeBound = laserCloudSurfLastDSNum < static_cast<int>(laserCloudSurfDebugCode.size())
+                                  ? laserCloudSurfLastDSNum
+                                  : static_cast<int>(laserCloudSurfDebugCode.size());
+        const int pointBound = codeBound < static_cast<int>(transformedInput->size())
+                                   ? codeBound
+                                   : static_cast<int>(transformedInput->size());
+
+        coloredCloud->reserve(pointBound);
+        for (int i = 0; i < pointBound; ++i)
+        {
+            pcl::PointXYZRGB point;
+            point.x = transformedInput->points[i].x;
+            point.y = transformedInput->points[i].y;
+            point.z = transformedInput->points[i].z;
+
+            switch (laserCloudSurfDebugCode[i])
+            {
+                case SURF_DEBUG_ACCEPTED:
+                    point.r = 0; point.g = 255; point.b = 0;      // green
+                    break;
+                case SURF_DEBUG_REJECTED_NEIGHBOR_COUNT:
+                    point.r = 255; point.g = 0; point.b = 0;      // red
+                    break;
+                case SURF_DEBUG_REJECTED_KNN_DISTANCE:
+                    point.r = 255; point.g = 165; point.b = 0;    // orange
+                    break;
+                case SURF_DEBUG_REJECTED_PLANE_INVALID:
+                    point.r = 255; point.g = 255; point.b = 0;    // yellow
+                    break;
+                case SURF_DEBUG_REJECTED_LOW_WEIGHT:
+                    point.r = 255; point.g = 0; point.b = 255;    // magenta
+                    break;
+                default:
+                    point.r = 128; point.g = 128; point.b = 128;  // gray (not optimized/unknown)
+                    break;
+            }
+
+            coloredCloud->push_back(point);
+        }
+
+        publishCloud(pubSurfDebugColored, coloredCloud, timeLaserInfoStamp, mapFrameLocal);
+
+        if (pubSurfDebugLegend->get_subscription_count() != 0)
+        {
+            std_msgs::msg::String legendMsg;
+            legendMsg.data =
+                "surf_debug_colored legend: "
+                "green=accepted, "
+                "red=rejected_neighbor_count, "
+                "orange=rejected_knn_distance, "
+                "yellow=rejected_plane_invalid, "
+                "magenta=rejected_low_weight, "
+                "gray=not_optimized";
+            RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, legendMsg.data);
+            pubSurfDebugLegend->publish(legendMsg);
+        }
+        
+    }
+
     // publish registered key frame
     if (pubRecentKeyFrame->get_subscription_count() != 0)
     {
         pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-        PointTypePose thisPose6D = trans2PointTypePose(transformTobeMapped);
         *cloudOut += *transformPointCloud(laserCloudSurfLastDS,    &thisPose6D);
         publishCloud(pubRecentKeyFrame, cloudOut, timeLaserInfoStamp, mapFrameLocal);
+    }
+    // publish matched surf features used in the final scan-to-map iteration
+    if (pubMatchedSurfFeatures->get_subscription_count() != 0)
+    {
+        pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
+        *cloudOut += *transformPointCloud(laserCloudOri, &thisPose6D);
+        publishCloud(pubMatchedSurfFeatures, cloudOut, timeLaserInfoStamp, mapFrameLocal);
     }
     // publish registered high-res raw cloud
     if (pubCloudRegisteredRaw->get_subscription_count() != 0)

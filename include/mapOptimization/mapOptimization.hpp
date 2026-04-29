@@ -136,6 +136,9 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubIcpKeyFrames;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubRecentKeyFrames;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubRecentKeyFrame;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubMatchedSurfFeatures;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubSurfDebugColored;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pubSurfDebugLegend;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudRegisteredRaw;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubLoopConstraintEdge;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubGpsConstraintViz;
@@ -210,6 +213,21 @@ public:
     std::vector<PointType> laserCloudOriSurfVec;
     std::vector<PointType> coeffSelSurfVec;
     std::vector<bool> laserCloudOriSurfFlag;
+    std::vector<uint8_t> laserCloudSurfKnnPassFlag;
+    std::vector<uint8_t> laserCloudSurfPlaneValidFlag;
+    std::vector<uint8_t> laserCloudSurfDebugCode;
+
+    static constexpr uint8_t SURF_DEBUG_ACCEPTED = 0;
+    static constexpr uint8_t SURF_DEBUG_REJECTED_NEIGHBOR_COUNT = 1;
+    static constexpr uint8_t SURF_DEBUG_REJECTED_KNN_DISTANCE = 2;
+    static constexpr uint8_t SURF_DEBUG_REJECTED_PLANE_INVALID = 3;
+    static constexpr uint8_t SURF_DEBUG_REJECTED_LOW_WEIGHT = 4;
+    static constexpr uint8_t SURF_DEBUG_NOT_OPTIMIZED = 5;
+
+    uint32_t surfStageInputCount = 0;
+    uint32_t surfStageKnnPassCount = 0;
+    uint32_t surfStagePlaneValidCount = 0;
+    uint32_t surfStageMatchedCount = 0;
 
     map<int, pair<pcl::PointCloud<PointType>, pcl::PointCloud<PointType>>> laserCloudMapContainer;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMap;

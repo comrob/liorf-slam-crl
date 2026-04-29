@@ -163,7 +163,30 @@ void mapOptimization::surfOptimization()
 {
     updatePointAssociateToMap();
 
-    #pragma omp parallel for num_threads(numberOfCores)
+    const size_t requiredSize = static_cast<size_t>(laserCloudSurfLastDSNum);
+    if (laserCloudOriSurfVec.size() < requiredSize)
+        laserCloudOriSurfVec.resize(requiredSize);
+    if (coeffSelSurfVec.size() < requiredSize)
+        coeffSelSurfVec.resize(requiredSize);
+    if (laserCloudOriSurfFlag.size() < requiredSize)
+        laserCloudOriSurfFlag.resize(requiredSize, false);
+    if (laserCloudSurfKnnPassFlag.size() < requiredSize)
+        laserCloudSurfKnnPassFlag.resize(requiredSize, 0);
+    if (laserCloudSurfPlaneValidFlag.size() < requiredSize)
+        laserCloudSurfPlaneValidFlag.resize(requiredSize, 0);
+    if (laserCloudSurfDebugCode.size() < requiredSize)
+        laserCloudSurfDebugCode.resize(requiredSize, SURF_DEBUG_NOT_OPTIMIZED);
+
+    surfStageInputCount = static_cast<uint32_t>(laserCloudSurfLastDSNum);
+    std::fill(laserCloudSurfKnnPassFlag.begin(), laserCloudSurfKnnPassFlag.end(), 0);
+    std::fill(laserCloudSurfPlaneValidFlag.begin(), laserCloudSurfPlaneValidFlag.end(), 0);
+    std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.end(), SURF_DEBUG_NOT_OPTIMIZED);
+
+    int knnPassCount = 0;
+    int planeValidCount = 0;
+    int matchedCount = 0;
+
+    #pragma omp parallel for num_threads(numberOfCores) reduction(+:knnPassCount,planeValidCount,matchedCount)
     for (int i = 0; i < laserCloudSurfLastDSNum; i++)
     {
         PointType pointOri, pointSel, coeff;
@@ -172,7 +195,11 @@ void mapOptimization::surfOptimization()
 
         pointOri = laserCloudSurfLastDS->points[i];
         pointAssociateToMap(&pointOri, &pointSel); 
-        kdtreeSurfFromMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
+
+        laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_NEIGHBOR_COUNT;
+        const int foundNeighbors = kdtreeSurfFromMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
+        if (foundNeighbors < 5)
+            continue;
 
         Eigen::Matrix<float, 5, 3> matA0;
         Eigen::Matrix<float, 5, 1> matB0;
@@ -182,52 +209,76 @@ void mapOptimization::surfOptimization()
         matB0.fill(-1);
         matX0.setZero();
 
-        if (pointSearchSqDis[4] < 1.0) {
-            for (int j = 0; j < 5; j++) {
-                matA0(j, 0) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].x;
-                matA0(j, 1) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].y;
-                matA0(j, 2) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].z;
-            }
+        const float knnGateDistanceSq = surfKnnMinDistance * surfKnnMinDistance;
 
-            matX0 = matA0.colPivHouseholderQr().solve(matB0);
+        if (pointSearchSqDis[4] >= knnGateDistanceSq)
+        {
+            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_KNN_DISTANCE;
+            continue;
+        }
 
-            float pa = matX0(0, 0);
-            float pb = matX0(1, 0);
-            float pc = matX0(2, 0);
-            float pd = 1;
+        laserCloudSurfKnnPassFlag[i] = 1;
+        knnPassCount++;
 
-            float ps = sqrt(pa * pa + pb * pb + pc * pc);
-            pa /= ps; pb /= ps; pc /= ps; pd /= ps;
+        for (int j = 0; j < 5; j++) {
+            matA0(j, 0) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].x;
+            matA0(j, 1) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].y;
+            matA0(j, 2) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].z;
+        }
 
-            bool planeValid = true;
-            for (int j = 0; j < 5; j++) {
-                if (fabs(pa * laserCloudSurfFromMapDS->points[pointSearchInd[j]].x +
-                         pb * laserCloudSurfFromMapDS->points[pointSearchInd[j]].y +
-                         pc * laserCloudSurfFromMapDS->points[pointSearchInd[j]].z + pd) > 0.2) {
-                    planeValid = false;
-                    break;
-                }
-            }
+        matX0 = matA0.colPivHouseholderQr().solve(matB0);
 
-            if (planeValid) {
-                float pd2 = pa * pointSel.x + pb * pointSel.y + pc * pointSel.z + pd;
+        float pa = matX0(0, 0);
+        float pb = matX0(1, 0);
+        float pc = matX0(2, 0);
+        float pd = 1;
 
-                float s = 1 - 0.9 * fabs(pd2) / sqrt(sqrt(pointOri.x * pointOri.x
-                        + pointOri.y * pointOri.y + pointOri.z * pointOri.z));
+        float ps = sqrt(pa * pa + pb * pb + pc * pc);
+        pa /= ps; pb /= ps; pc /= ps; pd /= ps;
 
-                coeff.x = s * pa;
-                coeff.y = s * pb;
-                coeff.z = s * pc;
-                coeff.intensity = s * pd2;
-
-                if (s > 0.1) {
-                    laserCloudOriSurfVec[i] = pointOri;
-                    coeffSelSurfVec[i] = coeff;
-                    laserCloudOriSurfFlag[i] = true;
-                }
+        bool planeValid = true;
+        for (int j = 0; j < 5; j++) {
+            if (fabs(pa * laserCloudSurfFromMapDS->points[pointSearchInd[j]].x +
+                     pb * laserCloudSurfFromMapDS->points[pointSearchInd[j]].y +
+                     pc * laserCloudSurfFromMapDS->points[pointSearchInd[j]].z + pd) > 0.2) {
+                planeValid = false;
+                break;
             }
         }
+
+        if (!planeValid)
+        {
+            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_PLANE_INVALID;
+            continue;
+        }
+
+        laserCloudSurfPlaneValidFlag[i] = 1;
+        planeValidCount++;
+
+        float pd2 = pa * pointSel.x + pb * pointSel.y + pc * pointSel.z + pd;
+
+        float s = 1 - 0.9 * fabs(pd2) / sqrt(sqrt(pointOri.x * pointOri.x
+                + pointOri.y * pointOri.y + pointOri.z * pointOri.z));
+
+        coeff.x = s * pa;
+        coeff.y = s * pb;
+        coeff.z = s * pc;
+        coeff.intensity = s * pd2;
+
+        if (s > 0.1) {
+            laserCloudSurfDebugCode[i] = SURF_DEBUG_ACCEPTED;
+            laserCloudOriSurfVec[i] = pointOri;
+            coeffSelSurfVec[i] = coeff;
+            laserCloudOriSurfFlag[i] = true;
+            matchedCount++;
+        } else {
+            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_LOW_WEIGHT;
+        }
     }
+
+    surfStageKnnPassCount = static_cast<uint32_t>(knnPassCount);
+    surfStagePlaneValidCount = static_cast<uint32_t>(planeValidCount);
+    surfStageMatchedCount = static_cast<uint32_t>(matchedCount);
 }
 
 void mapOptimization::combineOptimizationCoeffs()
@@ -385,6 +436,16 @@ void mapOptimization::scan2MapOptimization()
     if (cloudKeyPoses3D->points.empty())
         return;
 
+    surfStageInputCount = static_cast<uint32_t>(laserCloudSurfLastDSNum);
+    surfStageKnnPassCount = 0;
+    surfStagePlaneValidCount = 0;
+    surfStageMatchedCount = 0;
+
+    const size_t requiredSize = static_cast<size_t>(laserCloudSurfLastDSNum);
+    if (laserCloudSurfDebugCode.size() < requiredSize)
+        laserCloudSurfDebugCode.resize(requiredSize, SURF_DEBUG_NOT_OPTIMIZED);
+    std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.end(), SURF_DEBUG_NOT_OPTIMIZED);
+
     if (laserCloudSurfLastDSNum > 30)
     {
         if (kdtreeLocalMapDirty)
@@ -434,7 +495,11 @@ void mapOptimization::scan2MapOptimization()
             oss << "[SCAN2MAP_ITER] iter_used=" << iter_used
                 << " surf_total_ms=" << std::fixed << std::setprecision(3) << surf_ms_total
                 << " combine_total_ms=" << combine_ms_total
-                << " lm_total_ms=" << lm_ms_total;
+                << " lm_total_ms=" << lm_ms_total
+                << " surf_input=" << surfStageInputCount
+                << " surf_knn_pass=" << surfStageKnnPassCount
+                << " surf_plane_valid=" << surfStagePlaneValidCount
+                << " surf_matched=" << surfStageMatchedCount;
             diagnostics->logEventThrottle("scan2map_iter_summary", 1.0, oss.str());
         }
 

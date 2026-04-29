@@ -43,7 +43,8 @@ void mapOptimization::logLocalMapStats(const std::string &stage)
         << " cached_clouds=" << laserCloudMapContainer.size()
         << " current_scan_pts=" << laserCloudSurfLastDSNum
         << " keyposes=" << cloudKeyPoses3D->size()
-        << " radius=" << surroundingKeyframeSearchRadius
+        << " radius_search=" << surroundingKeyframeSearchRadius
+        << " radius_truncation=" << localMapTruncationRadius
         << " leaf=" << surroundingKeyframeMapLeafSize
         << " cache_max_age_s=" << transformed_cloud_cache_max_age_sec;
 
@@ -137,7 +138,7 @@ void mapOptimization::manageLocalMap()
         const float cx = transformTobeMapped[3];
         const float cy = transformTobeMapped[4];
         const float cz = transformTobeMapped[5];
-        const float radius2 = surroundingKeyframeSearchRadius * surroundingKeyframeSearchRadius;
+        const float radius2 = localMapTruncationRadius * localMapTruncationRadius;
         const size_t before_prune = voxelHashMap.size();
 
         TicToc t_incremental_prune;

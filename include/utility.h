@@ -173,6 +173,7 @@ public:
     // voxel filter paprams
     float mappingSurfLeafSize ;
     float surroundingKeyframeMapLeafSize;
+    float surfKnnMinDistance;
     float loopClosureICPSurfLeafSize ;
     bool useSorFilter;
     int sorMeanK;
@@ -190,6 +191,7 @@ public:
     float surroundingkeyframeAddingAngleThreshold; 
     float surroundingKeyframeDensity;
     float surroundingKeyframeSearchRadius;
+    float localMapTruncationRadius;
     
     // Loop closure
     bool  loopClosureEnableFlag;
@@ -397,6 +399,8 @@ public:
         get_parameter("mappingSurfLeafSize", mappingSurfLeafSize);
         declare_parameter<float>("surroundingKeyframeMapLeafSize", 0.2f);
         get_parameter("surroundingKeyframeMapLeafSize", surroundingKeyframeMapLeafSize);
+        declare_parameter<float>("surfKnnMinDistance", 1.0f);
+        get_parameter("surfKnnMinDistance", surfKnnMinDistance);
         declare_parameter<float>("z_tollerance", 1000.0f);
         get_parameter("z_tollerance", z_tollerance);
         declare_parameter<float>("rotation_tollerance", 1000.0f);
@@ -423,6 +427,8 @@ public:
         get_parameter("sorStddevMulThresh", sorStddevMulThresh);
         declare_parameter<float>("surroundingKeyframeSearchRadius", 50.0f);
         get_parameter("surroundingKeyframeSearchRadius", surroundingKeyframeSearchRadius);
+        declare_parameter<float>("localMapTruncationRadius", 50.0f);
+        get_parameter("localMapTruncationRadius", localMapTruncationRadius);
 
         declare_parameter<bool>("loopClosureEnableFlag", false);
         get_parameter("loopClosureEnableFlag", loopClosureEnableFlag);

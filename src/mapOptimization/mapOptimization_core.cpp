@@ -49,6 +49,9 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubGpsConstraintViz = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf/mapping/gps_constraints", QosPolicy(history_policy, reliability_policy));
     pubRecentKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/map_local", QosPolicy(history_policy, reliability_policy));
     pubRecentKeyFrame = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
+    pubMatchedSurfFeatures = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/matched_surface_features", QosPolicy(history_policy, reliability_policy));
+    pubSurfDebugColored = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/surf_debug_colored", QosPolicy(history_policy, reliability_policy));
+    pubSurfDebugLegend = create_publisher<std_msgs::msg::String>("liorf/mapping/surf_debug_legend", QosPolicy(history_policy, reliability_policy));
     pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
     pubSLAMInfo = create_publisher<liorf::msg::CloudInfo>("liorf/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
     pubGpsOdom = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/gps_odom", QosPolicy(history_policy, reliability_policy));
@@ -171,8 +174,14 @@ void mapOptimization::allocateMemory()
     laserCloudOriSurfVec.resize(N_SCAN * Horizon_SCAN);
     coeffSelSurfVec.resize(N_SCAN * Horizon_SCAN);
     laserCloudOriSurfFlag.resize(N_SCAN * Horizon_SCAN);
+    laserCloudSurfKnnPassFlag.resize(N_SCAN * Horizon_SCAN);
+    laserCloudSurfPlaneValidFlag.resize(N_SCAN * Horizon_SCAN);
+    laserCloudSurfDebugCode.resize(N_SCAN * Horizon_SCAN);
 
     std::fill(laserCloudOriSurfFlag.begin(), laserCloudOriSurfFlag.end(), false);
+    std::fill(laserCloudSurfKnnPassFlag.begin(), laserCloudSurfKnnPassFlag.end(), 0);
+    std::fill(laserCloudSurfPlaneValidFlag.begin(), laserCloudSurfPlaneValidFlag.end(), 0);
+    std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.end(), SURF_DEBUG_NOT_OPTIMIZED);
 
     laserCloudSurfFromMap.reset(new pcl::PointCloud<PointType>());
     laserCloudSurfFromMapDS.reset(new pcl::PointCloud<PointType>());
