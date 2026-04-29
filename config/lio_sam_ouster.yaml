@@ -17,7 +17,7 @@
     pointCloudTopic: "/ouster/points"               # Point cloud data
     imuTopic: "/ouster/imu"                         # IMU data
     odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
-    gpsTopic: "/gnss/septentrio/fix1"                   # GPS odometry topic from navsat, see module_navsat.launch file
+    gpsTopic: "/gnss/septentrio/fix"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
     # Frames
     lidarFrame: "os_lidar"
