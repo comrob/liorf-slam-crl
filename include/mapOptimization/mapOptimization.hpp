@@ -279,7 +279,8 @@ public:
     Eigen::Affine3f transPointAssociateToMap;
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
-    Eigen::Affine3f lastIncrementalDeltaPoseLocal;
+    Eigen::Affine3f lastIncrementalDeltaPoseLocal{Eigen::Affine3f::Identity()};
+    bool hasLastIncrementalDeltaPoseLocal{false};
 
     GeographicLib::LocalCartesian gps_trans_;
 

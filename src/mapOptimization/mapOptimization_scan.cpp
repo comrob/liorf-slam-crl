@@ -10,6 +10,7 @@ void mapOptimization::updateInitialGuess()
         const double predSpeed = (curTimeDiff > 0.0)
                                      ? (predNorm / curTimeDiff)
                                      : std::numeric_limits<double>::infinity();
+        const double wallNowSec = this->now().seconds();
 
         if (diagnostics)
             diagnostics->recordTranslationPrediction(predNorm);
@@ -21,6 +22,9 @@ void mapOptimization::updateInitialGuess()
                    << " branch=" << branch_name
                    << " delta_m=" << std::fixed << std::setprecision(3) << predNorm
                    << " limit_m=" << maxTranslationPrediction
+                     << " frame_stamp_s=" << std::fixed << std::setprecision(6) << timeLaserInfoCur
+                     << " last_frame_stamp_s=" << timeLastProcessing
+                     << " wall_now_s=" << wallNowSec
                    << " cur_dt_s=" << curTimeDiff
                    << " last_dt_s=" << lastTimeDiff;
             const std::string err_msg = err_ss.str();
@@ -38,6 +42,9 @@ void mapOptimization::updateInitialGuess()
                     << " speed_mps=" << std::fixed << std::setprecision(3) << predSpeed
                     << " min_speed_mps=" << minTranslationPredictionSpeed
                     << " delta_m=" << predNorm
+                    << " frame_stamp_s=" << std::fixed << std::setprecision(6) << timeLaserInfoCur
+                    << " last_frame_stamp_s=" << timeLastProcessing
+                    << " wall_now_s=" << wallNowSec
                     << " cur_dt_s=" << curTimeDiff
                     << " last_dt_s=" << lastTimeDiff;
             const std::string warn_msg = warn_ss.str();
@@ -46,6 +53,54 @@ void mapOptimization::updateInitialGuess()
             if (diagnostics)
                 diagnostics->publishWarning(warn_msg);
         }
+    };
+
+    const auto applyConstantVelocityTranslationPrediction = [this](Eigen::Affine3f &transIncre, const char *branch_name) {
+        constexpr double kMinLastDtSec = 1e-3;
+        constexpr double kMaxScale = 10.0;
+
+        if (!hasLastIncrementalDeltaPoseLocal || !std::isfinite(lastTimeDiff) || !std::isfinite(curTimeDiff) ||
+            lastTimeDiff < kMinLastDtSec || curTimeDiff <= 0.0)
+        {
+            transIncre.translation().setZero();
+            if (diagnostics)
+            {
+                const double wallNowSec = this->now().seconds();
+                std::ostringstream ss;
+                ss << "[TRANSLATION_PREDICTION_SKIPPED]"
+                   << " branch=" << branch_name
+                   << " reason=invalid_time_or_delta"
+                   << " has_last_delta=" << (hasLastIncrementalDeltaPoseLocal ? 1 : 0)
+                   << " frame_stamp_s=" << std::fixed << std::setprecision(6) << timeLaserInfoCur
+                   << " last_frame_stamp_s=" << timeLastProcessing
+                   << " wall_now_s=" << wallNowSec
+                   << " cur_dt_s=" << std::fixed << std::setprecision(6) << curTimeDiff
+                   << " last_dt_s=" << lastTimeDiff;
+                diagnostics->logEventThrottle("translation_prediction_skipped_invalid_time_or_delta", 1.0, ss.str());
+            }
+            return;
+        }
+
+        const double scaleRaw = curTimeDiff / lastTimeDiff;
+        const double scale = std::clamp(scaleRaw, 0.0, kMaxScale);
+
+        if (diagnostics && std::abs(scale - scaleRaw) > 1e-9)
+        {
+                const double wallNowSec = this->now().seconds();
+            std::ostringstream ss;
+            ss << "[TRANSLATION_PREDICTION_SCALE_CLAMPED]"
+               << " branch=" << branch_name
+               << " scale_raw=" << std::fixed << std::setprecision(3) << scaleRaw
+               << " scale_clamped=" << scale
+                    << " frame_stamp_s=" << std::fixed << std::setprecision(6) << timeLaserInfoCur
+                    << " last_frame_stamp_s=" << timeLastProcessing
+                    << " wall_now_s=" << wallNowSec
+               << " cur_dt_s=" << curTimeDiff
+               << " last_dt_s=" << lastTimeDiff;
+            diagnostics->logEventThrottle("translation_prediction_scale_clamped", 1.0, ss.str());
+        }
+
+        transIncre.translation() = lastIncrementalDeltaPoseLocal.translation() * static_cast<float>(scale);
     };
 
     static Eigen::Affine3f lastImuTransformation;
@@ -79,7 +134,7 @@ void mapOptimization::updateInitialGuess()
 
             if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
             {
-                transIncre.translation() = lastIncrementalDeltaPoseLocal.translation() * curTimeDiff / lastTimeDiff;
+                applyConstantVelocityTranslationPrediction(transIncre, "imu_preintegration");
                 clampTranslationPrediction(transIncre, "imu_preintegration");
                 if (diagnostics)
                 {
@@ -112,7 +167,7 @@ void mapOptimization::updateInitialGuess()
 
         if (translationPredictionSource == TranslationPredictionSource::CONSTANT_VELOCITY)
             {
-                transIncre.translation() = lastIncrementalDeltaPoseLocal.translation() * curTimeDiff / lastTimeDiff;
+                applyConstantVelocityTranslationPrediction(transIncre, "imu_incremental");
                 clampTranslationPrediction(transIncre, "imu_incremental");
                 if (diagnostics)
                 {

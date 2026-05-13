@@ -351,10 +351,13 @@ void mapOptimization::publishOdometry()
         lastIncreOdomPubFlag = true;
         laserOdomIncremental = laserOdometryROS;
         poseAcumulatedIncremental = trans2Affine3f(transformTobeMapped);
+        lastIncrementalDeltaPoseLocal = Eigen::Affine3f::Identity();
+        hasLastIncrementalDeltaPoseLocal = false;
     }
     else
     {
         lastIncrementalDeltaPoseLocal = incrementalOdometryAffineFront.inverse() * incrementalOdometryAffineBack;
+        hasLastIncrementalDeltaPoseLocal = true;
         poseAcumulatedIncremental = poseAcumulatedIncremental * lastIncrementalDeltaPoseLocal;
     }
 

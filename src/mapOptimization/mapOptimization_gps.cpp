@@ -66,8 +66,36 @@ void mapOptimization::initializeDatum(double lat, double lon, double alt, double
 
 void mapOptimization::gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gpsMsg)
 {
+    const double ros_stamp_sec = ROS_TIME(gpsMsg->header.stamp);
+    const double wall_now_sec = this->now().seconds();
+
     if (gpsMsg->status.status < 0)
+    {
+        if (diagnostics)
+        {
+            std::ostringstream ss;
+            ss << "[GPS_INPUT_REJECTED] reason=invalid_status"
+               << " ros_stamp_s=" << std::fixed << std::setprecision(6) << ros_stamp_sec
+               << " wall_now_s=" << wall_now_sec
+               << " status=" << (int)gpsMsg->status.status;
+            diagnostics->logEventThrottle("gps_input_rejected_status", 1.0, ss.str());
+        }
         return;
+    }
+
+    if (diagnostics)
+    {
+        std::ostringstream gps_input_ss;
+        gps_input_ss << "[GPS_INPUT]"
+                     << " ros_stamp_s=" << std::fixed << std::setprecision(6) << ros_stamp_sec
+                     << " wall_now_s=" << wall_now_sec
+                     << " lat=" << std::fixed << std::setprecision(9) << gpsMsg->latitude
+                     << " lon=" << std::fixed << std::setprecision(9) << gpsMsg->longitude
+                     << " alt=" << std::fixed << std::setprecision(3) << gpsMsg->altitude
+                     << " status=" << (int)gpsMsg->status.status
+                     << " cov_h=" << std::fixed << std::setprecision(3) << gpsMsg->position_covariance[0];
+        diagnostics->logEventThrottle("gps_input_raw", 0.0, gps_input_ss.str());
+    }
 
     if (save_dense_gps_trajectory)
     {
@@ -93,6 +121,20 @@ void mapOptimization::gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gp
     gpsReceivedEnuQueue.emplace_back(trans_local_[0], trans_local_[1], trans_local_[2]);
     if (gpsReceivedEnuQueue.size() > kMaxGpsVizPoints)
         gpsReceivedEnuQueue.pop_front();
+
+    if (diagnostics)
+    {
+        std::ostringstream gps_enu_ss;
+        gps_enu_ss << "[GPS_ENU_CONVERTED]"
+                   << " ros_stamp_s=" << std::fixed << std::setprecision(6) << ros_stamp_sec
+                   << " wall_now_s=" << wall_now_sec
+                   << " enu_x=" << std::fixed << std::setprecision(3) << trans_local_[0]
+                   << " enu_y=" << std::fixed << std::setprecision(3) << trans_local_[1]
+                   << " enu_z=" << std::fixed << std::setprecision(3) << trans_local_[2]
+                   << " first_gps=" << (first_gps ? 1 : 0)
+                   << " anchor_ready=" << (gpsAnchorReady() ? 1 : 0);
+        diagnostics->logEventThrottle("gps_enu_converted", 0.0, gps_enu_ss.str());
+    }
 
     nav_msgs::msg::Odometry gps_odom;
     gps_odom.header = gpsMsg->header;
@@ -249,41 +291,92 @@ void mapOptimization::addGPSFactor()
     {
         const double gps_stamp = ROS_TIME(gpsQueue.front().header.stamp);
         const double gps_eligible_time = gps_stamp + gps_processing_delay_sec;
+        const double wall_now_sec = this->now().seconds();
+
+        nav_msgs::msg::Odometry thisGPS = gpsQueue.front();
+        float gps_x = thisGPS.pose.pose.position.x;
+        float gps_y = thisGPS.pose.pose.position.y;
+        float gps_z = thisGPS.pose.pose.position.z;
+        float noise_x = thisGPS.pose.covariance[0];
+        float noise_y = thisGPS.pose.covariance[7];
+        float noise_z = thisGPS.pose.covariance[14];
 
         if (gps_eligible_time < timeLaserInfoCur - 0.2)
         {
             // message too old
+            if (diagnostics)
+            {
+                std::ostringstream ss;
+                ss << "[GPS_REJECTED] reason=too_old"
+                   << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
+                   << " wall_now_s=" << wall_now_sec
+                   << " eligible_s=" << gps_eligible_time
+                   << " lidar_s=" << timeLaserInfoCur
+                   << " dt_s=" << (gps_eligible_time - timeLaserInfoCur)
+                   << " enu_xyz=(" << gps_x << "," << gps_y << "," << gps_z << ")";
+                diagnostics->logEventThrottle("gps_rejected_too_old", 1.0, ss.str());
+            }
             gpsQueue.pop_front();
         }
         else if (gps_eligible_time > timeLaserInfoCur + 0.2)
         {
             // message not yet eligible for delayed processing
+            if (diagnostics)
+            {
+                std::ostringstream ss;
+                ss << "[GPS_PENDING] reason=not_yet_eligible"
+                   << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
+                   << " wall_now_s=" << wall_now_sec
+                   << " eligible_s=" << gps_eligible_time
+                   << " lidar_s=" << timeLaserInfoCur
+                   << " dt_s=" << (gps_eligible_time - timeLaserInfoCur);
+                diagnostics->logEventThrottle("gps_pending_not_yet_eligible", 1.0, ss.str());
+            }
             break;
         }
         else
         {
-            nav_msgs::msg::Odometry thisGPS = gpsQueue.front();
             gpsQueue.pop_front();
 
-            // GPS too noisy, skip
-            float noise_x = thisGPS.pose.covariance[0];
-            float noise_y = thisGPS.pose.covariance[7];
-            float noise_z = thisGPS.pose.covariance[14];
-            if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold)
-                continue;
-
-            float gps_x = thisGPS.pose.pose.position.x;
-            float gps_y = thisGPS.pose.pose.position.y;
-            float gps_z = thisGPS.pose.pose.position.z;
             if (!useGpsElevation)
             {
                 gps_z = transformTobeMapped[5];
                 noise_z = 0.01;
             }
 
+            // GPS too noisy, skip
+            if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold)
+            {
+                if (diagnostics)
+                {
+                    std::ostringstream ss;
+                    ss << "[GPS_REJECTED] reason=high_noise"
+                       << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
+                       << " wall_now_s=" << wall_now_sec
+                       << " noise_x=" << std::fixed << std::setprecision(3) << noise_x
+                       << " noise_y=" << std::fixed << std::setprecision(3) << noise_y
+                       << " noise_z=" << std::fixed << std::setprecision(3) << noise_z
+                       << " threshold=" << gpsCovThreshold
+                       << " enu_xyz=(" << gps_x << "," << gps_y << "," << gps_z << ")";
+                    diagnostics->logEventThrottle("gps_rejected_high_noise", 1.0, ss.str());
+                }
+                continue;
+            }
+
             // GPS not properly initialized (0,0,0)
             if (abs(gps_x) < 1e-6 && abs(gps_y) < 1e-6)
+            {
+                if (diagnostics)
+                {
+                    std::ostringstream ss;
+                    ss << "[GPS_REJECTED] reason=uninitialized"
+                       << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
+                       << " wall_now_s=" << wall_now_sec
+                       << " enu_xyz=(" << gps_x << "," << gps_y << "," << gps_z << ")";
+                    diagnostics->logEventThrottle("gps_rejected_uninitialized", 1.0, ss.str());
+                }
                 continue;
+            }
 
             // Add GPS every a few meters
             PointType curGPSPoint;
@@ -291,9 +384,20 @@ void mapOptimization::addGPSFactor()
             curGPSPoint.y = gps_y;
             curGPSPoint.z = gps_z;
             if (common_lib_->pointDistance(curGPSPoint, lastGPSPoint) < 5.0)
+            {
+                if (diagnostics)
+                {
+                    std::ostringstream ss;
+                    ss << "[GPS_REJECTED] reason=spatial_sparsity"
+                       << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
+                       << " wall_now_s=" << wall_now_sec
+                       << " dist_m=" << std::fixed << std::setprecision(3) << common_lib_->pointDistance(curGPSPoint, lastGPSPoint)
+                       << " min_dist_m=5.0"
+                       << " enu_xyz=(" << gps_x << "," << gps_y << "," << gps_z << ")";
+                    diagnostics->logEventThrottle("gps_rejected_sparsity", 1.0, ss.str());
+                }
                 continue;
-            else
-                lastGPSPoint = curGPSPoint;
+            }
 
             // 1. Initialize T_GL if this is the first GPS fusion
             if (!gtsam_anchor_inserted) {
@@ -356,6 +460,21 @@ void mapOptimization::addGPSFactor()
 
             if (best_time_diff > kMaxGpsLidarConstraintDtSec)
             {
+                if (diagnostics)
+                {
+                    std::ostringstream ss;
+                    ss << "[GPS_REJECTED] reason=time_alignment"
+                       << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_time
+                       << " wall_now_s=" << wall_now_sec
+                       << " keyframe_idx=" << best_keyframe_idx
+                       << " gps_t=" << gps_time
+                       << " keyframe_t=" << best_keyframe_time
+                       << " dt_s=" << best_time_diff
+                       << " max_dt_s=" << kMaxGpsLidarConstraintDtSec
+                       << " enu_xyz=(" << gps_x << "," << gps_y << "," << gps_z << ")"
+                       << " cov_xyz=(" << noise_x << "," << noise_y << "," << noise_z << ")";
+                    diagnostics->logEventThrottle("gps_rejected_time_alignment", 1.0, ss.str());
+                }
                 RCLCPP_WARN_THROTTLE(
                     get_logger(),
                     *get_clock(),
@@ -390,10 +509,14 @@ void mapOptimization::addGPSFactor()
             gpsConstraintOss << "[GPS_CONSTRAINT_ADDED]"
                              << " idx=" << lidar_key
                              << " accepted=" << gpsFactorsAccepted
-                             << " gps_t=" << std::fixed << std::setprecision(6) << gps_time
+                             << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_time
+                             << " wall_now_s=" << wall_now_sec
+                             << " keyframe_idx=" << best_keyframe_idx
+                             << " gps_t=" << gps_time
                              << " keyframe_t=" << best_keyframe_time
                              << " dt=" << best_time_diff
-                             << " gps_xyz=(" << measured_gps.x() << "," << measured_gps.y() << "," << measured_gps.z() << ")";
+                             << " gps_xyz=(" << measured_gps.x() << "," << measured_gps.y() << "," << measured_gps.z() << ")"
+                             << " cov_xyz=(" << noise_x << "," << noise_y << "," << noise_z << ")";
 
             RCLCPP_INFO_STREAM(get_logger(), gpsConstraintOss.str());
             if (diagnostics)

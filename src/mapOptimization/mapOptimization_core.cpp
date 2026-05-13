@@ -193,6 +193,9 @@ void mapOptimization::allocateMemory()
     }
 
     matP = cv::Mat(6, 6, CV_32F, cv::Scalar::all(0));
+
+    lastIncrementalDeltaPoseLocal = Eigen::Affine3f::Identity();
+    hasLastIncrementalDeltaPoseLocal = false;
 }
 
 void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedPtr msgIn)
@@ -238,7 +241,19 @@ void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedP
     std::lock_guard<std::mutex> lock(mtx);
 
     curTimeDiff = timeLaserInfoCur - timeLastProcessing;
-    if (curTimeDiff >= mappingProcessInterval)
+    if (curTimeDiff <= 0.0)
+    {
+        if (diagnostics)
+        {
+            std::ostringstream oss;
+            oss << "[LIDAR_FRAME_SKIP] reason=non_positive_dt"
+                << " dt_s=" << std::fixed << std::setprecision(6) << curTimeDiff
+                << " stamp_s=" << timeLaserInfoCur
+                << " last_processing_s=" << timeLastProcessing;
+            diagnostics->logEventThrottle("lidar_frame_skip_non_positive_dt", 1.0, oss.str());
+        }
+    }
+    else if (curTimeDiff >= mappingProcessInterval)
     {
         if (diagnostics)
             diagnostics->recordTimeDelta(curTimeDiff);

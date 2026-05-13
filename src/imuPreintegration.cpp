@@ -1,5 +1,7 @@
 #include "utility.h"
 
+#include <cmath>
+
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/geometry/Pose3.h>
 #include <gtsam/slam/PriorFactor.h>
@@ -249,6 +251,7 @@ public:
         std::lock_guard<std::mutex> lock(mtx);
 
         double currentCorrectionTime = ROS_TIME(odomMsg->header.stamp);
+        const double wallNowSec = this->now().seconds();
 
         // make sure we have imu data to integrate
         if (imuQueOpt.empty())
@@ -263,6 +266,67 @@ public:
         float r_w = odomMsg->pose.pose.orientation.w;
         bool degenerate = (int)odomMsg->pose.covariance[0] == 1 ? true : false;
         gtsam::Pose3 lidarPose = gtsam::Pose3(gtsam::Rot3::Quaternion(r_w, r_x, r_y, r_z), gtsam::Point3(p_x, p_y, p_z));
+
+        const auto logOptimizationFailure = [this, currentCorrectionTime, wallNowSec](const std::string &stage, const std::exception &ex) {
+            std::ostringstream ss;
+            ss << "[IMU_PREINTEGRATION_EXCEPTION]"
+               << " stage=" << stage
+               << " ros_stamp_s=" << std::fixed << std::setprecision(6) << currentCorrectionTime
+               << " wall_now_s=" << wallNowSec
+               << " imu_queue_opt=" << imuQueOpt.size()
+               << " imu_queue_imu=" << imuQueImu.size()
+               << " last_imu_t_opt=" << lastImuT_opt
+               << " last_imu_t_imu=" << lastImuT_imu
+               << " key=" << key
+               << " what=" << ex.what();
+            RCLCPP_ERROR_STREAM(get_logger(), ss.str());
+
+            // Log preintegration state
+            if (imuIntegratorOpt_)
+            {
+                double preint_dt = imuIntegratorOpt_->deltaTij();
+                gtsam::Vector3 preint_dv = imuIntegratorOpt_->deltaVij();
+                gtsam::Vector3 preint_dp = imuIntegratorOpt_->deltaPij();
+                bool has_nan_inf = std::isnan(preint_dt) || std::isinf(preint_dt) ||
+                                   std::isnan(preint_dv.norm()) || std::isinf(preint_dv.norm()) ||
+                                   std::isnan(preint_dp.norm()) || std::isinf(preint_dp.norm());
+                std::ostringstream preint_ss;
+                preint_ss << "[IMU_PREINT_STATE]"
+                          << " dt_s=" << std::fixed << std::setprecision(6) << preint_dt
+                          << " dv=" << preint_dv.transpose()
+                          << " dp=" << preint_dp.transpose()
+                          << " has_nan_inf=" << (has_nan_inf ? "YES" : "NO");
+                RCLCPP_ERROR_STREAM(get_logger(), preint_ss.str());
+            }
+
+            // Log recent IMU measurements (last 3)
+            {
+                std::ostringstream imu_ss;
+                imu_ss << "[RECENT_IMU_MEASUREMENTS]";
+                int count = 0;
+                for (auto it = imuQueOpt.rbegin(); it != imuQueOpt.rend() && count < 3; ++it, ++count)
+                {
+                    double t = ROS_TIME(it->header.stamp);
+                    imu_ss << " [" << count << "]=" << std::fixed << std::setprecision(3)
+                           << t << ":ax=" << it->linear_acceleration.x
+                           << ":ay=" << it->linear_acceleration.y
+                           << ":az=" << it->linear_acceleration.z
+                           << ":gx=" << it->angular_velocity.x
+                           << ":gy=" << it->angular_velocity.y
+                           << ":gz=" << it->angular_velocity.z;
+                }
+                RCLCPP_ERROR_STREAM(get_logger(), imu_ss.str());
+            }
+
+            // Log factor graph state
+            {
+                std::ostringstream graph_ss;
+                graph_ss << "[FACTOR_GRAPH_STATE]"
+                         << " num_factors=" << graphFactors.nrFactors()
+                         << " num_values=" << graphValues.size();
+                RCLCPP_ERROR_STREAM(get_logger(), graph_ss.str());
+            }
+        };
 
 
         // 0. initialize system
@@ -298,7 +362,16 @@ public:
             graphValues.insert(V(0), prevVel_);
             graphValues.insert(B(0), prevBias_);
             // optimize once
-            optimizer.update(graphFactors, graphValues);
+            try
+            {
+                optimizer.update(graphFactors, graphValues);
+            }
+            catch (const std::exception &ex)
+            {
+                logOptimizationFailure("initialize:update", ex);
+                resetParams();
+                return;
+            }
             graphFactors.resize(0);
             graphValues.clear();
 
@@ -343,6 +416,9 @@ public:
 
 
         // 1. integrate imu data and optimize
+        int integratedImuCount = 0;
+        double firstIntegratedImuStamp = -1.0;
+        double lastIntegratedImuStamp = -1.0;
         while (!imuQueOpt.empty())
         {
             // pop and integrate imu data that is between two optimizations
@@ -354,6 +430,11 @@ public:
                 imuIntegratorOpt_->integrateMeasurement(
                         gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
                         gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
+
+                if (integratedImuCount == 0)
+                    firstIntegratedImuStamp = imuTime;
+                lastIntegratedImuStamp = imuTime;
+                ++integratedImuCount;
                 
                 lastImuT_opt = imuTime;
                 imuQueOpt.pop_front();
@@ -361,6 +442,27 @@ public:
             else
                 break;
         }
+
+        if (integratedImuCount == 0)
+        {
+            double nextImuStamp = imuQueOpt.empty() ? -1.0 : ROS_TIME(imuQueOpt.front().header.stamp);
+            std::ostringstream ss;
+            ss << "[IMU_PREINTEGRATION_SKIPPED_NO_IMU_IN_WINDOW]"
+               << " ros_stamp_s=" << std::fixed << std::setprecision(6) << currentCorrectionTime
+               << " wall_now_s=" << wallNowSec
+               << " key=" << key
+               << " imu_queue_opt=" << imuQueOpt.size()
+               << " last_imu_t_opt=" << lastImuT_opt
+               << " next_imu_stamp_s=" << nextImuStamp
+               << " correction_minus_next_imu_s="
+               << ((nextImuStamp < 0.0) ? -1.0 : (currentCorrectionTime - nextImuStamp))
+               << " integrated_imu_count=" << integratedImuCount
+               << " first_used_imu_stamp_s=" << firstIntegratedImuStamp
+               << " last_used_imu_stamp_s=" << lastIntegratedImuStamp;
+            RCLCPP_WARN_STREAM(get_logger(), ss.str());
+            return;
+        }
+
         // add imu factor to graph
         const gtsam::PreintegratedImuMeasurements& preint_imu = dynamic_cast<const gtsam::PreintegratedImuMeasurements&>(*imuIntegratorOpt_);
         gtsam::ImuFactor imu_factor(X(key - 1), V(key - 1), X(key), V(key), B(key - 1), preint_imu);
@@ -378,12 +480,31 @@ public:
         graphValues.insert(V(key), propState_.v());
         graphValues.insert(B(key), prevBias_);
         // optimize
-        optimizer.update(graphFactors, graphValues);
-        optimizer.update();
+        try
+        {
+            optimizer.update(graphFactors, graphValues);
+            optimizer.update();
+        }
+        catch (const std::exception &ex)
+        {
+            logOptimizationFailure("optimize:update", ex);
+            resetParams();
+            return;
+        }
         graphFactors.resize(0);
         graphValues.clear();
         // Overwrite the beginning of the preintegration for the next step.
-        gtsam::Values result = optimizer.calculateEstimate();
+        gtsam::Values result;
+        try
+        {
+            result = optimizer.calculateEstimate();
+        }
+        catch (const std::exception &ex)
+        {
+            logOptimizationFailure("optimize:calculateEstimate", ex);
+            resetParams();
+            return;
+        }
         prevPose_  = result.at<gtsam::Pose3>(X(key));
         prevVel_   = result.at<gtsam::Vector3>(V(key));
         prevState_ = gtsam::NavState(prevPose_, prevVel_);
@@ -420,8 +541,27 @@ public:
                 double imuTime = ROS_TIME(thisImu->header.stamp);
                 double dt = (lastImuQT < 0) ? (1.0 / imuRate) :(imuTime - lastImuQT);
 
-                imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
-                                                        gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
+                try
+                {
+                    imuIntegratorImu_->integrateMeasurement(gtsam::Vector3(thisImu->linear_acceleration.x, thisImu->linear_acceleration.y, thisImu->linear_acceleration.z),
+                                                            gtsam::Vector3(thisImu->angular_velocity.x,    thisImu->angular_velocity.y,    thisImu->angular_velocity.z), dt);
+                }
+                catch (const std::exception &ex)
+                {
+                    std::ostringstream ss;
+                    ss << "[IMU_PREINTEGRATION_EXCEPTION]"
+                       << " stage=repropagate:integrateMeasurement"
+                       << " ros_stamp_s=" << std::fixed << std::setprecision(6) << currentCorrectionTime
+                       << " wall_now_s=" << wallNowSec
+                       << " imu_stamp_s=" << imuTime
+                       << " dt_s=" << dt
+                       << " queue_index=" << i
+                       << " queue_size=" << imuQueImu.size()
+                       << " what=" << ex.what();
+                    RCLCPP_ERROR_STREAM(get_logger(), ss.str());
+                    resetParams();
+                    return;
+                }
                 lastImuQT = imuTime;
             }
         }
