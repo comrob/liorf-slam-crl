@@ -36,6 +36,9 @@
     poseCovThreshold: 25.0                      # m^2, threshold for using GPS data
     gps_processing_delay_sec: 1.0               # process GPS constraints only after this ROS-time delay from GPS stamp
     gps_covariance_inflation_m: 2.0             # extra GPS factor std-dev [m] added as variance inflation (m^2) on XYZ
+    gps_reject_on_invalid_status: false         # if true, reject GPS measurements with status < 0; if false, accept them anyway
+    gps_keyframe_search_window: 10              # number of recent keyframes to search for GPS alignment (larger = more lenient)
+    gps_max_constraint_dt_sec: 0.30             # max time difference [s] between GPS and closest keyframe (smaller = more strict)
     
     force_initial_gps: true
     manual_gps_origin: [50.0763, 14.41, 252.6]   # LLA GPS origin for manual georeference initialization (if `force_initial_gps` enabled)

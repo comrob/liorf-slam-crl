@@ -133,6 +133,7 @@ public:
     bool force_initial_gps;
     std::vector<double> manual_gps_origin;
     double manual_global_heading;
+    bool gps_reject_on_invalid_status;
 
     // Save pcd
     bool savePCD;
@@ -208,6 +209,10 @@ public:
     bool drop_stale_lidar_frames;
     double max_lidar_processing_lag_sec;
 
+    // GPS-LiDAR alignment tuning
+    int gps_keyframe_search_window;
+    double gps_max_constraint_dt_sec;
+
     // global map visualization radius
     float globalMapVisualizationSearchRadius;
     float globalMapVisualizationPoseDensity;
@@ -279,6 +284,8 @@ public:
         get_parameter("manual_gps_origin", manual_gps_origin);
         declare_parameter("manual_global_heading", 0.0);
         get_parameter("manual_global_heading", manual_global_heading);
+        declare_parameter<bool>("gps_reject_on_invalid_status", false);
+        get_parameter("gps_reject_on_invalid_status", gps_reject_on_invalid_status);
 
         declare_parameter<bool>("savePCD", false);
         get_parameter("savePCD", savePCD);
@@ -456,6 +463,11 @@ public:
         get_parameter("drop_stale_lidar_frames", drop_stale_lidar_frames);
         declare_parameter<double>("max_lidar_processing_lag_sec", 0.5);
         get_parameter("max_lidar_processing_lag_sec", max_lidar_processing_lag_sec);
+
+        declare_parameter<int>("gps_keyframe_search_window", 10);
+        get_parameter("gps_keyframe_search_window", gps_keyframe_search_window);
+        declare_parameter<double>("gps_max_constraint_dt_sec", 0.30);
+        get_parameter("gps_max_constraint_dt_sec", gps_max_constraint_dt_sec);
 
 
        declare_parameter<float>("globalMapVisualizationSearchRadius", 1e3f);

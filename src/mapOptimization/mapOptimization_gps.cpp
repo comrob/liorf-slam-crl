@@ -69,7 +69,7 @@ void mapOptimization::gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gp
     const double ros_stamp_sec = ROS_TIME(gpsMsg->header.stamp);
     const double wall_now_sec = this->now().seconds();
 
-    if (gpsMsg->status.status < 0)
+    if (gps_reject_on_invalid_status && gpsMsg->status.status < 0)
     {
         if (diagnostics)
         {
@@ -227,7 +227,7 @@ void mapOptimization::visualizeGpsConstraints()
 
             const double keyframe_time = cloudKeyPoses6D->points[lidar_key].time;
             const double assoc_time_diff = std::abs(keyframe_time - gps_time);
-            if (assoc_time_diff > kMaxGpsLidarConstraintDtSec)
+            if (assoc_time_diff > gps_max_constraint_dt_sec)
             {
                 RCLCPP_WARN_THROTTLE(
                     get_logger(),
@@ -237,7 +237,7 @@ void mapOptimization::visualizeGpsConstraints()
                     assoc_time_diff,
                     gps_time,
                 keyframe_time,
-                kMaxGpsLidarConstraintDtSec);
+                gps_max_constraint_dt_sec);
             }
 
             const auto &lidar_local = cloudKeyPoses6D->points[lidar_key];
@@ -445,7 +445,7 @@ void mapOptimization::addGPSFactor()
             double best_keyframe_time = timeLaserInfoCur;
             double best_time_diff = std::abs(best_keyframe_time - gps_time);
 
-            const int search_start_idx = std::max(0, static_cast<int>(cloudKeyPoses6D->size()) - kGpsKeyframeSearchWindow);
+            const int search_start_idx = std::max(0, static_cast<int>(cloudKeyPoses6D->size()) - gps_keyframe_search_window);
             for (int i = search_start_idx; i < static_cast<int>(cloudKeyPoses6D->size()); ++i)
             {
                 const double keyframe_time = cloudKeyPoses6D->points[i].time;
@@ -458,7 +458,37 @@ void mapOptimization::addGPSFactor()
                 }
             }
 
-            if (best_time_diff > kMaxGpsLidarConstraintDtSec)
+            // Diagnostic: Log keyframe timing pattern if enabled
+            if (diagnostics && best_time_diff > gps_max_constraint_dt_sec)
+            {
+                int num_keyframes_checked = std::min((int)gps_keyframe_search_window, (int)cloudKeyPoses6D->size());
+                double oldest_keyframe_time = (search_start_idx < (int)cloudKeyPoses6D->size()) ? 
+                    cloudKeyPoses6D->points[search_start_idx].time : -1.0;
+                double newest_keyframe_time = cloudKeyPoses6D->size() > 0 ? 
+                    cloudKeyPoses6D->points[cloudKeyPoses6D->size()-1].time : -1.0;
+                double keyframe_time_span = (newest_keyframe_time > 0 && oldest_keyframe_time > 0) ? 
+                    (newest_keyframe_time - oldest_keyframe_time) : -1.0;
+                
+                std::ostringstream diag_ss;
+                diag_ss << "[GPS_TIME_ALIGNMENT_DIAGNOSTIC]"
+                       << " gps_t=" << std::fixed << std::setprecision(6) << gps_time
+                       << " total_keyframes=" << cloudKeyPoses6D->size()
+                       << " search_window=" << gps_keyframe_search_window
+                       << " keyframes_checked=" << num_keyframes_checked
+                       << " oldest_kf_t=" << oldest_keyframe_time
+                       << " newest_kf_t=" << newest_keyframe_time
+                       << " kf_span_s=" << keyframe_time_span
+                       << " best_match_idx=" << best_keyframe_idx
+                       << " best_match_t=" << best_keyframe_time
+                       << " best_dt_s=" << best_time_diff
+                       << " threshold_s=" << gps_max_constraint_dt_sec
+                       << " (suggests: " << (keyframe_time_span > 0 ? 
+                           (keyframe_time_span > best_time_diff * 2 ? "sparse_keyframes" : "timestamp_sync_issue")
+                           : "unknown") << ")";
+                diagnostics->logEvent(diag_ss.str());
+            }
+
+            if (best_time_diff > gps_max_constraint_dt_sec)
             {
                 if (diagnostics)
                 {
@@ -470,7 +500,7 @@ void mapOptimization::addGPSFactor()
                        << " gps_t=" << gps_time
                        << " keyframe_t=" << best_keyframe_time
                        << " dt_s=" << best_time_diff
-                       << " max_dt_s=" << kMaxGpsLidarConstraintDtSec
+                       << " max_dt_s=" << gps_max_constraint_dt_sec
                        << " enu_xyz=(" << gps_x << "," << gps_y << "," << gps_z << ")"
                        << " cov_xyz=(" << noise_x << "," << noise_y << "," << noise_z << ")";
                     diagnostics->logEventThrottle("gps_rejected_time_alignment", 1.0, ss.str());
@@ -483,7 +513,7 @@ void mapOptimization::addGPSFactor()
                     best_time_diff,
                     gps_time,
                     best_keyframe_time,
-                    kMaxGpsLidarConstraintDtSec);
+                    gps_max_constraint_dt_sec);
 
                 if (diagnostics)
                 {
@@ -493,7 +523,7 @@ void mapOptimization::addGPSFactor()
                                          << " gps_t=" << std::fixed << std::setprecision(6) << gps_time
                                          << " keyframe_t=" << best_keyframe_time
                                          << " dt=" << best_time_diff
-                                         << " max_dt=" << kMaxGpsLidarConstraintDtSec;
+                                         << " max_dt=" << gps_max_constraint_dt_sec;
                     diagnostics->logEvent(skippedConstraintOss.str());
                 }
                 continue;
@@ -523,6 +553,7 @@ void mapOptimization::addGPSFactor()
                 diagnostics->logEvent(gpsConstraintOss.str());
 
             gpsLidarAssociationQueue.emplace_back(lidar_key, std::make_pair(measured_gps, gps_time));
+            const size_t kMaxGpsVizPoints = 2000;
             if (gpsLidarAssociationQueue.size() > kMaxGpsVizPoints)
                 gpsLidarAssociationQueue.pop_front();
 

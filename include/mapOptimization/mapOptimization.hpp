@@ -193,8 +193,6 @@ public:
     std::mutex gpsHistoryMutex;
     std::mutex densePoseHistoryMutex;
     static constexpr size_t kMaxGpsVizPoints = 2000;
-    static constexpr int kGpsKeyframeSearchWindow = 10;
-    static constexpr double kMaxGpsLidarConstraintDtSec = 0.30;
     liorf::msg::CloudInfo cloudInfo;
 
     vector<pcl::PointCloud<PointType>::Ptr> surfCloudKeyFrames;
