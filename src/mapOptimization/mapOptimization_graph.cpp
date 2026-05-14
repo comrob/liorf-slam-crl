@@ -1,5 +1,86 @@
 #include "mapOptimization/mapOptimization.hpp"
 
+#include <cctype>
+#include <gtsam/linear/linearExceptions.h>
+
+namespace
+{
+std::string formatGtsamKey(const gtsam::Key key)
+{
+    constexpr uint64_t kIndexMask = (uint64_t{1} << 56) - 1;
+    const uint8_t chr = static_cast<uint8_t>((key >> 56) & 0xFF);
+    const uint64_t index = key & kIndexMask;
+
+    std::ostringstream oss;
+    if (chr == 0)
+    {
+        oss << "pose_idx=" << key << " (plain integer key)";
+        return oss.str();
+    }
+
+    if (std::isprint(chr))
+    {
+        oss << "symbol=" << static_cast<char>(chr) << index << " (raw_key=" << key << ")";
+        return oss.str();
+    }
+
+    oss << "symbol_byte=" << static_cast<int>(chr) << ",index=" << index << " (raw_key=" << key << ")";
+    return oss.str();
+}
+
+std::string summarizePendingFactors(const gtsam::NonlinearFactorGraph &graph, const size_t max_factors)
+{
+    std::ostringstream oss;
+    const size_t total = graph.size();
+    const size_t begin = (total > max_factors) ? (total - max_factors) : 0;
+    oss << "pending_factors_total=" << total << " showing_last=" << (total - begin);
+
+    for (size_t i = begin; i < total; ++i)
+    {
+        const auto &factor = graph.at(i);
+        if (!factor)
+        {
+            oss << " | f" << i << "=<null>";
+            continue;
+        }
+
+        oss << " | f" << i << " keys=[";
+        const auto &keys = factor->keys();
+        for (size_t k = 0; k < keys.size(); ++k)
+        {
+            if (k > 0)
+                oss << ", ";
+            oss << formatGtsamKey(keys[k]);
+        }
+        oss << "]";
+    }
+
+    return oss.str();
+}
+
+std::string summarizeInitialEstimateKeys(const gtsam::Values &values, const size_t max_keys)
+{
+    std::ostringstream oss;
+    oss << "initial_estimate_count=" << values.size() << " keys=[";
+
+    size_t printed = 0;
+    for (auto it = values.begin(); it != values.end(); ++it)
+    {
+        if (printed > 0)
+            oss << ", ";
+        if (printed >= max_keys)
+        {
+            oss << "...";
+            break;
+        }
+        oss << formatGtsamKey(it->key);
+        ++printed;
+    }
+    oss << "]";
+    return oss.str();
+}
+} // namespace
+
 using gtsam::BetweenFactor;
 using gtsam::Pose3;
 using gtsam::PriorFactor;
@@ -67,16 +148,72 @@ bool mapOptimization::saveKeyFramesAndFactor()
     // gtSAMgraph.print("GTSAM Graph:\n");
 
     // update iSAM
-    isam->update(gtSAMgraph, initialEstimate);
-    isam->update();
-
-    if (aLoopIsClosed == true)
+    try
     {
+        isam->update(gtSAMgraph, initialEstimate);
         isam->update();
-        isam->update();
-        isam->update();
-        isam->update();
-        isam->update();
+
+        if (aLoopIsClosed == true)
+        {
+            isam->update();
+            isam->update();
+            isam->update();
+            isam->update();
+            isam->update();
+        }
+    }
+    catch (const gtsam::IndeterminantLinearSystemException &e)
+    {
+        const size_t latest_pose_candidate = cloudKeyPoses3D->size();
+        std::ostringstream err_ss;
+        err_ss << "[ISAM_UPDATE_FAIL] type=IndeterminantLinearSystemException"
+               << " msg=\"" << e.what() << "\""
+               << " ros_stamp_s=" << std::fixed << std::setprecision(6) << timeLaserInfoCur
+               << " clock_now_s=" << this->now().seconds()
+               << " latest_pose_candidate=" << latest_pose_candidate
+               << " cloud_keyposes_3d_size=" << cloudKeyPoses3D->size()
+               << " cloud_keyposes_6d_size=" << cloudKeyPoses6D->size()
+               << " gps_queue_size=" << gpsQueue.size()
+               << " gps_factors_accepted=" << gpsFactorsAccepted;
+
+        RCLCPP_ERROR_STREAM(get_logger(), err_ss.str());
+        RCLCPP_ERROR_STREAM(get_logger(), "[ISAM_UPDATE_FAIL_CONTEXT] " << summarizePendingFactors(gtSAMgraph, 10));
+        RCLCPP_ERROR_STREAM(get_logger(), "[ISAM_UPDATE_FAIL_CONTEXT] " << summarizeInitialEstimateKeys(initialEstimate, 20));
+
+        if (diagnostics)
+        {
+            diagnostics->logEvent(err_ss.str());
+            diagnostics->logEvent("[ISAM_UPDATE_FAIL_CONTEXT] " + summarizePendingFactors(gtSAMgraph, 10));
+            diagnostics->logEvent("[ISAM_UPDATE_FAIL_CONTEXT] " + summarizeInitialEstimateKeys(initialEstimate, 20));
+        }
+
+        gtSAMgraph.resize(0);
+        initialEstimate.clear();
+        aLoopIsClosed = false;
+        return false;
+    }
+    catch (const std::exception &e)
+    {
+        std::ostringstream err_ss;
+        err_ss << "[ISAM_UPDATE_FAIL] type=std::exception"
+               << " msg=\"" << e.what() << "\""
+               << " ros_stamp_s=" << std::fixed << std::setprecision(6) << timeLaserInfoCur
+               << " clock_now_s=" << this->now().seconds();
+        RCLCPP_ERROR_STREAM(get_logger(), err_ss.str());
+        RCLCPP_ERROR_STREAM(get_logger(), "[ISAM_UPDATE_FAIL_CONTEXT] " << summarizePendingFactors(gtSAMgraph, 10));
+        RCLCPP_ERROR_STREAM(get_logger(), "[ISAM_UPDATE_FAIL_CONTEXT] " << summarizeInitialEstimateKeys(initialEstimate, 20));
+
+        if (diagnostics)
+        {
+            diagnostics->logEvent(err_ss.str());
+            diagnostics->logEvent("[ISAM_UPDATE_FAIL_CONTEXT] " + summarizePendingFactors(gtSAMgraph, 10));
+            diagnostics->logEvent("[ISAM_UPDATE_FAIL_CONTEXT] " + summarizeInitialEstimateKeys(initialEstimate, 20));
+        }
+
+        gtSAMgraph.resize(0);
+        initialEstimate.clear();
+        aLoopIsClosed = false;
+        return false;
     }
 
     gtSAMgraph.resize(0);

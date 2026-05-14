@@ -1,5 +1,7 @@
 #include "mapOptimization/mapOptimization.hpp"
 
+#include <cmath>
+
 using gtsam::BetweenFactor;
 using gtsam::Point3;
 using gtsam::Pose3;
@@ -67,7 +69,7 @@ void mapOptimization::initializeDatum(double lat, double lon, double alt, double
 void mapOptimization::gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gpsMsg)
 {
     const double ros_stamp_sec = ROS_TIME(gpsMsg->header.stamp);
-    const double wall_now_sec = this->now().seconds();
+    const double clock_now_sec = this->now().seconds();
 
     if (gps_reject_on_invalid_status && gpsMsg->status.status < 0)
     {
@@ -76,9 +78,25 @@ void mapOptimization::gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gp
             std::ostringstream ss;
             ss << "[GPS_INPUT_REJECTED] reason=invalid_status"
                << " ros_stamp_s=" << std::fixed << std::setprecision(6) << ros_stamp_sec
-               << " wall_now_s=" << wall_now_sec
+               << " clock_now_s=" << clock_now_sec
                << " status=" << (int)gpsMsg->status.status;
             diagnostics->logEventThrottle("gps_input_rejected_status", 1.0, ss.str());
+        }
+        return;
+    }
+
+    if (!std::isfinite(gpsMsg->latitude) || !std::isfinite(gpsMsg->longitude) || !std::isfinite(gpsMsg->altitude))
+    {
+        if (diagnostics)
+        {
+            std::ostringstream ss;
+            ss << "[GPS_INPUT_REJECTED] reason=non_finite_lla"
+               << " ros_stamp_s=" << std::fixed << std::setprecision(6) << ros_stamp_sec
+               << " clock_now_s=" << clock_now_sec
+               << " lat=" << gpsMsg->latitude
+               << " lon=" << gpsMsg->longitude
+               << " alt=" << gpsMsg->altitude;
+            diagnostics->logEventThrottle("gps_input_rejected_non_finite_lla", 1.0, ss.str());
         }
         return;
     }
@@ -88,7 +106,7 @@ void mapOptimization::gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gp
         std::ostringstream gps_input_ss;
         gps_input_ss << "[GPS_INPUT]"
                      << " ros_stamp_s=" << std::fixed << std::setprecision(6) << ros_stamp_sec
-                     << " wall_now_s=" << wall_now_sec
+                     << " clock_now_s=" << clock_now_sec
                      << " lat=" << std::fixed << std::setprecision(9) << gpsMsg->latitude
                      << " lon=" << std::fixed << std::setprecision(9) << gpsMsg->longitude
                      << " alt=" << std::fixed << std::setprecision(3) << gpsMsg->altitude
@@ -118,6 +136,22 @@ void mapOptimization::gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gp
 
     gps_trans_.Forward(gpsMsg->latitude, gpsMsg->longitude, gpsMsg->altitude, trans_local_[0], trans_local_[1], trans_local_[2]);
 
+    if (!std::isfinite(trans_local_[0]) || !std::isfinite(trans_local_[1]) || !std::isfinite(trans_local_[2]))
+    {
+        if (diagnostics)
+        {
+            std::ostringstream ss;
+            ss << "[GPS_INPUT_REJECTED] reason=non_finite_enu"
+               << " ros_stamp_s=" << std::fixed << std::setprecision(6) << ros_stamp_sec
+               << " clock_now_s=" << clock_now_sec
+               << " enu_x=" << trans_local_[0]
+               << " enu_y=" << trans_local_[1]
+               << " enu_z=" << trans_local_[2];
+            diagnostics->logEventThrottle("gps_input_rejected_non_finite_enu", 1.0, ss.str());
+        }
+        return;
+    }
+
     gpsReceivedEnuQueue.emplace_back(trans_local_[0], trans_local_[1], trans_local_[2]);
     if (gpsReceivedEnuQueue.size() > kMaxGpsVizPoints)
         gpsReceivedEnuQueue.pop_front();
@@ -127,7 +161,7 @@ void mapOptimization::gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gp
         std::ostringstream gps_enu_ss;
         gps_enu_ss << "[GPS_ENU_CONVERTED]"
                    << " ros_stamp_s=" << std::fixed << std::setprecision(6) << ros_stamp_sec
-                   << " wall_now_s=" << wall_now_sec
+                   << " clock_now_s=" << clock_now_sec
                    << " enu_x=" << std::fixed << std::setprecision(3) << trans_local_[0]
                    << " enu_y=" << std::fixed << std::setprecision(3) << trans_local_[1]
                    << " enu_z=" << std::fixed << std::setprecision(3) << trans_local_[2]
@@ -291,7 +325,7 @@ void mapOptimization::addGPSFactor()
     {
         const double gps_stamp = ROS_TIME(gpsQueue.front().header.stamp);
         const double gps_eligible_time = gps_stamp + gps_processing_delay_sec;
-        const double wall_now_sec = this->now().seconds();
+        const double clock_now_sec = this->now().seconds();
 
         nav_msgs::msg::Odometry thisGPS = gpsQueue.front();
         float gps_x = thisGPS.pose.pose.position.x;
@@ -309,7 +343,7 @@ void mapOptimization::addGPSFactor()
                 std::ostringstream ss;
                 ss << "[GPS_REJECTED] reason=too_old"
                    << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
-                   << " wall_now_s=" << wall_now_sec
+                         << " clock_now_s=" << clock_now_sec
                    << " eligible_s=" << gps_eligible_time
                    << " lidar_s=" << timeLaserInfoCur
                    << " dt_s=" << (gps_eligible_time - timeLaserInfoCur)
@@ -326,7 +360,7 @@ void mapOptimization::addGPSFactor()
                 std::ostringstream ss;
                 ss << "[GPS_PENDING] reason=not_yet_eligible"
                    << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
-                   << " wall_now_s=" << wall_now_sec
+                         << " clock_now_s=" << clock_now_sec
                    << " eligible_s=" << gps_eligible_time
                    << " lidar_s=" << timeLaserInfoCur
                    << " dt_s=" << (gps_eligible_time - timeLaserInfoCur);
@@ -344,6 +378,22 @@ void mapOptimization::addGPSFactor()
                 noise_z = 0.01;
             }
 
+            if (!std::isfinite(gps_x) || !std::isfinite(gps_y) || !std::isfinite(gps_z) ||
+                !std::isfinite(noise_x) || !std::isfinite(noise_y) || !std::isfinite(noise_z))
+            {
+                if (diagnostics)
+                {
+                    std::ostringstream ss;
+                    ss << "[GPS_REJECTED] reason=non_finite_measurement"
+                       << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
+                       << " clock_now_s=" << clock_now_sec
+                       << " gps_xyz=(" << gps_x << "," << gps_y << "," << gps_z << ")"
+                       << " cov_xyz=(" << noise_x << "," << noise_y << "," << noise_z << ")";
+                    diagnostics->logEventThrottle("gps_rejected_non_finite_measurement", 1.0, ss.str());
+                }
+                continue;
+            }
+
             // GPS too noisy, skip
             if (noise_x > gpsCovThreshold || noise_y > gpsCovThreshold)
             {
@@ -352,7 +402,7 @@ void mapOptimization::addGPSFactor()
                     std::ostringstream ss;
                     ss << "[GPS_REJECTED] reason=high_noise"
                        << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
-                       << " wall_now_s=" << wall_now_sec
+                              << " clock_now_s=" << clock_now_sec
                        << " noise_x=" << std::fixed << std::setprecision(3) << noise_x
                        << " noise_y=" << std::fixed << std::setprecision(3) << noise_y
                        << " noise_z=" << std::fixed << std::setprecision(3) << noise_z
@@ -371,7 +421,7 @@ void mapOptimization::addGPSFactor()
                     std::ostringstream ss;
                     ss << "[GPS_REJECTED] reason=uninitialized"
                        << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
-                       << " wall_now_s=" << wall_now_sec
+                              << " clock_now_s=" << clock_now_sec
                        << " enu_xyz=(" << gps_x << "," << gps_y << "," << gps_z << ")";
                     diagnostics->logEventThrottle("gps_rejected_uninitialized", 1.0, ss.str());
                 }
@@ -390,7 +440,7 @@ void mapOptimization::addGPSFactor()
                     std::ostringstream ss;
                     ss << "[GPS_REJECTED] reason=spatial_sparsity"
                        << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_stamp
-                       << " wall_now_s=" << wall_now_sec
+                              << " clock_now_s=" << clock_now_sec
                        << " dist_m=" << std::fixed << std::setprecision(3) << common_lib_->pointDistance(curGPSPoint, lastGPSPoint)
                        << " min_dist_m=5.0"
                        << " enu_xyz=(" << gps_x << "," << gps_y << "," << gps_z << ")";
@@ -495,7 +545,7 @@ void mapOptimization::addGPSFactor()
                     std::ostringstream ss;
                     ss << "[GPS_REJECTED] reason=time_alignment"
                        << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_time
-                       << " wall_now_s=" << wall_now_sec
+                              << " clock_now_s=" << clock_now_sec
                        << " keyframe_idx=" << best_keyframe_idx
                        << " gps_t=" << gps_time
                        << " keyframe_t=" << best_keyframe_time
@@ -537,10 +587,11 @@ void mapOptimization::addGPSFactor()
 
             std::ostringstream gpsConstraintOss;
             gpsConstraintOss << "[GPS_CONSTRAINT_ADDED]"
-                             << " idx=" << lidar_key
+                             << " pose_idx=" << lidar_key
+                             << " factor_keys=(T0," << lidar_key << ")"
                              << " accepted=" << gpsFactorsAccepted
                              << " ros_stamp_s=" << std::fixed << std::setprecision(6) << gps_time
-                             << " wall_now_s=" << wall_now_sec
+                             << " clock_now_s=" << clock_now_sec
                              << " keyframe_idx=" << best_keyframe_idx
                              << " gps_t=" << gps_time
                              << " keyframe_t=" << best_keyframe_time
