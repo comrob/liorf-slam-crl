@@ -17,6 +17,14 @@ float32 initialguessroll
 float32 initialguesspitch
 float32 initialguessyaw
 
+# Deskew / turn-quality summary
+bool scan_admission_ok
+float32 scan_max_angular_speed
+float32 scan_roll_span
+float32 scan_pitch_span
+float32 scan_yaw_span
+float32 scan_duration
+
 # Point cloud messages
 sensor_msgs/PointCloud2 cloud_deskewed  # original cloud deskewed
 sensor_msgs/PointCloud2 cloud_corner    # extracted corner feature

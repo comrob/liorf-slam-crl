@@ -269,6 +269,19 @@ bool mapOptimization::saveKeyFramesAndFactor()
 
     // save key frame cloud
     surfCloudKeyFrames.push_back(thisSurfKeyFrame);
+    keyframeScanAdmissible.push_back(cloudInfo.scan_admission_ok ? 1 : 0);
+
+    if (!cloudInfo.scan_admission_ok && diagnostics)
+    {
+        std::ostringstream oss;
+        oss << "[KEYFRAME_LOCAL_MAP_SKIP]"
+            << " keyframe_idx=" << (cloudKeyPoses3D->size() - 1)
+            << " max_angular_speed_rad_s=" << cloudInfo.scan_max_angular_speed
+            << " roll_span_rad=" << cloudInfo.scan_roll_span
+            << " pitch_span_rad=" << cloudInfo.scan_pitch_span
+            << " yaw_span_rad=" << cloudInfo.scan_yaw_span;
+        diagnostics->logEventThrottle("keyframe_local_map_skip", 1.0, oss.str());
+    }
 
     // The following code is copy from sc-lio-sam
     // Scan Context loop detector - giseop

@@ -102,6 +102,12 @@ private:
     float odomIncreY;
     float odomIncreZ;
 
+    double scanMaxAngularSpeed;
+    float scanRollSpan;
+    float scanPitchSpan;
+    float scanYawSpan;
+    float scanDuration;
+
     liorf::msg::CloudInfo cloudInfo;
     double timeScanCur;
     double timeScanEnd;
@@ -154,6 +160,17 @@ public:
         imuPointerCur = 0;
         firstPointFlag = true;
         odomDeskewFlag = false;
+        scanMaxAngularSpeed = 0.0;
+        scanRollSpan = 0.0f;
+        scanPitchSpan = 0.0f;
+        scanYawSpan = 0.0f;
+        scanDuration = 0.0f;
+        cloudInfo.scan_admission_ok = true;
+        cloudInfo.scan_max_angular_speed = 0.0f;
+        cloudInfo.scan_roll_span = 0.0f;
+        cloudInfo.scan_pitch_span = 0.0f;
+        cloudInfo.scan_yaw_span = 0.0f;
+        cloudInfo.scan_duration = 0.0f;
 
         for (int i = 0; i < queueLength; ++i)
         {
@@ -355,7 +372,14 @@ public:
         // make sure IMU data available for the scan
         if (imuQueue.empty() || ROS_TIME(imuQueue.front().header.stamp) > timeScanCur || ROS_TIME(imuQueue.back().header.stamp) < timeScanEnd)
         {
-            RCLCPP_DEBUG(get_logger(), "Waiting for IMU data ...");
+            RCLCPP_WARN_STREAM(
+                get_logger(),
+                "[DESKEW_SKIP] reason=imu_window_unavailable"
+                << " scan_start_s=" << std::fixed << std::setprecision(6) << timeScanCur
+                << " scan_end_s=" << timeScanEnd
+                << " imu_queue_size=" << imuQueue.size()
+                << " imu_front_s=" << (imuQueue.empty() ? -1.0 : ROS_TIME(imuQueue.front().header.stamp))
+                << " imu_back_s=" << (imuQueue.empty() ? -1.0 : ROS_TIME(imuQueue.back().header.stamp)));
             return false;
         }
 
@@ -363,12 +387,28 @@ public:
 
         odomDeskewInfo();
 
+        const bool hasTimeField = (deskewFlag == 1);
+        if (!hasTimeField)
+        {
+            RCLCPP_WARN_STREAM(
+                get_logger(),
+                "[DESKEW_WARN] reason=missing_point_time_field"
+                << " scan_start_s=" << std::fixed << std::setprecision(6) << timeScanCur
+                << " scan_end_s=" << timeScanEnd
+                << " imu_available=" << (cloudInfo.imuavailable ? 1 : 0)
+                << " odom_available=" << (cloudInfo.odomavailable ? 1 : 0));
+        }
+
         return true;
     }
 
     void imuDeskewInfo()
     {
         cloudInfo.imuavailable = false;
+        scanMaxAngularSpeed = 0.0;
+        scanRollSpan = 0.0f;
+        scanPitchSpan = 0.0f;
+        scanYawSpan = 0.0f;
 
         while (!imuQueue.empty())
         {
@@ -409,6 +449,9 @@ public:
             // get angular velocity
             double angular_x, angular_y, angular_z;
             imuAngular2rosAngular(&thisImuMsg, &angular_x, &angular_y, &angular_z);
+            const double angular_speed = std::sqrt(angular_x * angular_x + angular_y * angular_y + angular_z * angular_z);
+            if (angular_speed > scanMaxAngularSpeed)
+                scanMaxAngularSpeed = angular_speed;
 
             // integrate rotation
             double timeDiff = currentImuTime - imuTime[imuPointerCur-1];
@@ -423,6 +466,46 @@ public:
 
         if (imuPointerCur <= 0)
             return;
+
+        double minRotX = imuRotX[0], maxRotX = imuRotX[0];
+        double minRotY = imuRotY[0], maxRotY = imuRotY[0];
+        double minRotZ = imuRotZ[0], maxRotZ = imuRotZ[0];
+        for (int i = 1; i <= imuPointerCur; ++i)
+        {
+            minRotX = std::min(minRotX, imuRotX[i]);
+            maxRotX = std::max(maxRotX, imuRotX[i]);
+            minRotY = std::min(minRotY, imuRotY[i]);
+            maxRotY = std::max(maxRotY, imuRotY[i]);
+            minRotZ = std::min(minRotZ, imuRotZ[i]);
+            maxRotZ = std::max(maxRotZ, imuRotZ[i]);
+        }
+
+        scanRollSpan = maxRotX - minRotX;
+        scanPitchSpan = maxRotY - minRotY;
+        scanYawSpan = maxRotZ - minRotZ;
+
+        const bool motionRejected = reject_fast_turn_scans &&
+                                    (scanMaxAngularSpeed > fast_turn_max_angular_speed_rad_s);
+        cloudInfo.scan_admission_ok = !motionRejected;
+        cloudInfo.scan_max_angular_speed = static_cast<float>(scanMaxAngularSpeed);
+        cloudInfo.scan_roll_span = scanRollSpan;
+        cloudInfo.scan_pitch_span = scanPitchSpan;
+        cloudInfo.scan_yaw_span = scanYawSpan;
+        cloudInfo.scan_duration = static_cast<float>(timeScanEnd - timeScanCur);
+
+        if (motionRejected)
+        {
+            RCLCPP_WARN_STREAM(
+                get_logger(),
+                "[DESKEW_GATE] action=reject_scan"
+                << " scan_start_s=" << std::fixed << std::setprecision(6) << timeScanCur
+                << " scan_end_s=" << timeScanEnd
+                << " max_angular_speed_rad_s=" << scanMaxAngularSpeed
+                << " roll_span_rad=" << scanRollSpan
+                << " pitch_span_rad=" << scanPitchSpan
+                << " yaw_span_rad=" << scanYawSpan
+                << " max_angular_speed_limit_rad_s=" << fast_turn_max_angular_speed_rad_s);
+        }
 
         cloudInfo.imuavailable = true;
     }
@@ -493,7 +576,14 @@ public:
         }
 
         if (int(round(startOdomMsg.pose.covariance[0])) != int(round(endOdomMsg.pose.covariance[0])))
+        {
+            RCLCPP_WARN_STREAM(
+                get_logger(),
+                "[DESKEW_SKIP] reason=odom_covariance_mismatch"
+                << " scan_start_s=" << std::fixed << std::setprecision(6) << timeScanCur
+                << " scan_end_s=" << timeScanEnd);
             return;
+        }
 
         Eigen::Affine3f transBegin = pcl::getTransformation(startOdomMsg.pose.pose.position.x, startOdomMsg.pose.pose.position.y, startOdomMsg.pose.pose.position.z, roll, pitch, yaw);
 
@@ -619,6 +709,7 @@ public:
     void publishClouds()
     {
         cloudInfo.header = cloudHeader;
+        cloudInfo.scan_duration = static_cast<float>(timeScanEnd - timeScanCur);
         cloudInfo.cloud_deskewed  = publishCloud(pubExtractedCloud, fullCloud, cloudHeader.stamp, lidarFrame);
         pubLaserCloudInfo->publish(cloudInfo);
     }

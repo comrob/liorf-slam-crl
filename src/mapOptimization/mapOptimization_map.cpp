@@ -188,6 +188,19 @@ void mapOptimization::updateRollingMap()
     if (require_map_rebuild || laserCloudSurfLastDS->empty())
         return;
 
+    if (!cloudInfo.scan_admission_ok)
+    {
+        if (diagnostics)
+        {
+            std::ostringstream oss;
+            oss << "[ROLLING_MAP_SKIP] reason=fast_turn"
+                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+                << " max_angular_speed_rad_s=" << cloudInfo.scan_max_angular_speed;
+            diagnostics->logEventThrottle("rolling_map_skip_fast_turn", 1.0, oss.str());
+        }
+        return;
+    }
+
     PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
     TicToc t_transformCurrentScan;
     pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
@@ -327,6 +340,8 @@ void mapOptimization::publishGlobalMap()
         if (common_lib_->pointDistance(globalMapKeyPosesDS->points[i], cloudKeyPoses3D->back()) > globalMapVisualizationSearchRadius)
             continue;
         int thisKeyInd = (int)globalMapKeyPosesDS->points[i].intensity;
+        if (thisKeyInd >= 0 && thisKeyInd < static_cast<int>(keyframeScanAdmissible.size()) && !keyframeScanAdmissible[thisKeyInd])
+            continue;
         *globalMapKeyFrames += *transformPointCloud(surfCloudKeyFrames[thisKeyInd],    &cloudKeyPoses6D->points[thisKeyInd]);
     }
     // downsample visualized points
@@ -432,6 +447,8 @@ void mapOptimization::extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtrac
             continue;
 
         int thisKeyInd = (int)cloudToExtract->points[i].intensity;
+        if (thisKeyInd >= 0 && thisKeyInd < static_cast<int>(keyframeScanAdmissible.size()) && !keyframeScanAdmissible[thisKeyInd])
+            continue;
         if (laserCloudMapContainer.find(thisKeyInd) != laserCloudMapContainer.end()) 
         {
             // transformed cloud available

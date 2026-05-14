@@ -13,6 +13,9 @@
     translationPredictionSource: constant_velocity
     maxTranslationPrediction: 5.0
     minTranslationPredictionSpeed: 0.0
+    reject_fast_turn_scans: true
+    fast_turn_max_angular_speed_rad_s: 0.5
+    
     # Topics
     pointCloudTopic: "/ouster/points"               # Point cloud data
     imuTopic: "/ouster/imu"                         # IMU data

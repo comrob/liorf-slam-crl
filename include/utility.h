@@ -146,6 +146,8 @@ public:
     TranslationPredictionSource translationPredictionSource;
     double maxTranslationPrediction;
     double minTranslationPredictionSpeed;
+    bool reject_fast_turn_scans;
+    double fast_turn_max_angular_speed_rad_s;
 
     int N_SCAN;
     int Horizon_SCAN;
@@ -353,6 +355,11 @@ public:
         get_parameter("maxTranslationPrediction", maxTranslationPrediction);
         declare_parameter<double>("minTranslationPredictionSpeed", 0.0);
         get_parameter("minTranslationPredictionSpeed", minTranslationPredictionSpeed);
+        declare_parameter<bool>("reject_fast_turn_scans", false);
+        get_parameter("reject_fast_turn_scans", reject_fast_turn_scans);
+        declare_parameter<double>("fast_turn_max_angular_speed_rad_s", 3.0);
+        get_parameter("fast_turn_max_angular_speed_rad_s", fast_turn_max_angular_speed_rad_s);
+
 
         declare_parameter<int>("N_SCAN", 16);
         get_parameter("N_SCAN", N_SCAN);
