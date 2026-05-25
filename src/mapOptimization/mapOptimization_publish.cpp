@@ -1,12 +1,5 @@
 #include "mapOptimization/mapOptimization.hpp"
 
-void mapOptimization::pointAssociateToMap(PointType const * const pi, PointType * const po)
-{
-    po->x = transPointAssociateToMap(0,0) * pi->x + transPointAssociateToMap(0,1) * pi->y + transPointAssociateToMap(0,2) * pi->z + transPointAssociateToMap(0,3);
-    po->y = transPointAssociateToMap(1,0) * pi->x + transPointAssociateToMap(1,1) * pi->y + transPointAssociateToMap(1,2) * pi->z + transPointAssociateToMap(1,3);
-    po->z = transPointAssociateToMap(2,0) * pi->x + transPointAssociateToMap(2,1) * pi->y + transPointAssociateToMap(2,2) * pi->z + transPointAssociateToMap(2,3);
-    po->intensity = pi->intensity;
-}
 
 pcl::PointCloud<PointType>::Ptr mapOptimization::transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
 {
@@ -114,7 +107,8 @@ Eigen::Affine3f mapOptimization::affineFromTf(const tf2::Transform &transform) c
 void mapOptimization::updatePath(const PointTypePose& pose_in)
 {
     geometry_msgs::msg::PoseStamped pose_stamped;
-    rclcpp::Time t(static_cast<uint32_t>(pose_in.time * 1e9));
+    rclcpp::Time t(static_cast<int64_t>(pose_in.time * 1e9));
+    
     pose_stamped.header.stamp = t;
     pose_stamped.header.frame_id = mapFrameLocal;
     pose_stamped.pose.position.x = pose_in.x;
@@ -403,9 +397,9 @@ void mapOptimization::publishFrames()
         pcl::PointCloud<PointType>::Ptr transformedInput = transformPointCloud(laserCloudSurfLastDS, &thisPose6D);
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr coloredCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
-        const int codeBound = laserCloudSurfLastDSNum < static_cast<int>(laserCloudSurfDebugCode.size())
+        const int codeBound = laserCloudSurfLastDSNum < static_cast<int>(scanAligner->laserCloudSurfDebugCode.size())
                                   ? laserCloudSurfLastDSNum
-                                  : static_cast<int>(laserCloudSurfDebugCode.size());
+                                  : static_cast<int>(scanAligner->laserCloudSurfDebugCode.size());
         const int pointBound = codeBound < static_cast<int>(transformedInput->size())
                                    ? codeBound
                                    : static_cast<int>(transformedInput->size());
@@ -418,21 +412,21 @@ void mapOptimization::publishFrames()
             point.y = transformedInput->points[i].y;
             point.z = transformedInput->points[i].z;
 
-            switch (laserCloudSurfDebugCode[i])
+            switch (scanAligner->laserCloudSurfDebugCode[i])
             {
-                case SURF_DEBUG_ACCEPTED:
+                case ScanAligner::SURF_DEBUG_ACCEPTED:
                     point.r = 0; point.g = 255; point.b = 0;      // green
                     break;
-                case SURF_DEBUG_REJECTED_NEIGHBOR_COUNT:
+                case ScanAligner::SURF_DEBUG_REJECTED_NEIGHBOR_COUNT:
                     point.r = 255; point.g = 0; point.b = 0;      // red
                     break;
-                case SURF_DEBUG_REJECTED_KNN_DISTANCE:
+                case ScanAligner::SURF_DEBUG_REJECTED_KNN_DISTANCE:
                     point.r = 255; point.g = 165; point.b = 0;    // orange
                     break;
-                case SURF_DEBUG_REJECTED_PLANE_INVALID:
+                case ScanAligner::SURF_DEBUG_REJECTED_PLANE_INVALID:
                     point.r = 255; point.g = 255; point.b = 0;    // yellow
                     break;
-                case SURF_DEBUG_REJECTED_LOW_WEIGHT:
+                case ScanAligner::SURF_DEBUG_REJECTED_LOW_WEIGHT:
                     point.r = 255; point.g = 0; point.b = 255;    // magenta
                     break;
                 default:
@@ -473,7 +467,7 @@ void mapOptimization::publishFrames()
     if (pubMatchedSurfFeatures->get_subscription_count() != 0)
     {
         pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-        *cloudOut += *transformPointCloud(laserCloudOri, &thisPose6D);
+        *cloudOut += *transformPointCloud(scanAligner->getLaserCloudOri(), &thisPose6D);
         publishCloud(pubMatchedSurfFeatures, cloudOut, timeLaserInfoStamp, mapFrameLocal);
     }
     // publish registered high-res raw cloud
@@ -491,24 +485,6 @@ void mapOptimization::publishFrames()
         globalPath.header.stamp = timeLaserInfoStamp;
         globalPath.header.frame_id = mapFrameLocal;
         pubPath->publish(globalPath);
-    }
-    // publish SLAM infomation for 3rd-party usage
-    if (pubSLAMInfo->get_subscription_count() != 0)
-    {
-        // if (lastSLAMInfoPubSize != cloudKeyPoses6D->size())
-        // {
-        //     liorf::msg::CloudInfo slamInfo;
-        //     slamInfo.header.stamp = timeLaserInfoStamp;
-        //     pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-        //     *cloudOut += *laserCloudSurfLastDS;
-        //     slamInfo.key_frame_cloud = publishCloud(rclcpp::Publisher(), cloudOut, timeLaserInfoStamp, lidarFrame);
-        //     slamInfo.key_frame_poses = publishCloud(rclcpp::Publisher(), cloudKeyPoses6D, timeLaserInfoStamp, odometryFrame);
-        //     pcl::PointCloud<PointType>::Ptr localMapOut(new pcl::PointCloud<PointType>());
-        //     *localMapOut += *laserCloudSurfFromMapDS;
-        //     slamInfo.key_frame_map = publishCloud(rclcpp::Publisher(), localMapOut, timeLaserInfoStamp, odometryFrame);
-        //     pubSLAMInfo->publish(slamInfo);
-        //     lastSLAMInfoPubSize = cloudKeyPoses6D->size();
-        // }
     }
 }
 

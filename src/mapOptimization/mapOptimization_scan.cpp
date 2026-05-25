@@ -209,297 +209,11 @@ void mapOptimization::downsampleCurrentScan()
     laserCloudSurfLastDSNum = laserCloudSurfLastDS->size();
 }
 
-void mapOptimization::updatePointAssociateToMap()
-{
-    transPointAssociateToMap = trans2Affine3f(transformTobeMapped);
-}
-
-void mapOptimization::surfOptimization()
-{
-    updatePointAssociateToMap();
-
-    const size_t requiredSize = static_cast<size_t>(laserCloudSurfLastDSNum);
-    if (laserCloudOriSurfVec.size() < requiredSize)
-        laserCloudOriSurfVec.resize(requiredSize);
-    if (coeffSelSurfVec.size() < requiredSize)
-        coeffSelSurfVec.resize(requiredSize);
-    if (laserCloudOriSurfFlag.size() < requiredSize)
-        laserCloudOriSurfFlag.resize(requiredSize, false);
-    if (laserCloudSurfKnnPassFlag.size() < requiredSize)
-        laserCloudSurfKnnPassFlag.resize(requiredSize, 0);
-    if (laserCloudSurfPlaneValidFlag.size() < requiredSize)
-        laserCloudSurfPlaneValidFlag.resize(requiredSize, 0);
-    if (laserCloudSurfDebugCode.size() < requiredSize)
-        laserCloudSurfDebugCode.resize(requiredSize, SURF_DEBUG_NOT_OPTIMIZED);
-
-    surfStageInputCount = static_cast<uint32_t>(laserCloudSurfLastDSNum);
-    std::fill(laserCloudSurfKnnPassFlag.begin(), laserCloudSurfKnnPassFlag.end(), 0);
-    std::fill(laserCloudSurfPlaneValidFlag.begin(), laserCloudSurfPlaneValidFlag.end(), 0);
-    std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.end(), SURF_DEBUG_NOT_OPTIMIZED);
-
-    int knnPassCount = 0;
-    int planeValidCount = 0;
-    int matchedCount = 0;
-
-    #pragma omp parallel for num_threads(numberOfCores) reduction(+:knnPassCount,planeValidCount,matchedCount)
-    for (int i = 0; i < laserCloudSurfLastDSNum; i++)
-    {
-        PointType pointOri, pointSel, coeff;
-        std::vector<int> pointSearchInd;
-        std::vector<float> pointSearchSqDis;
-
-        pointOri = laserCloudSurfLastDS->points[i];
-        pointAssociateToMap(&pointOri, &pointSel); 
-
-        laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_NEIGHBOR_COUNT;
-        const int foundNeighbors = kdtreeSurfFromMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
-        if (foundNeighbors < 5)
-            continue;
-
-        Eigen::Matrix<float, 5, 3> matA0;
-        Eigen::Matrix<float, 5, 1> matB0;
-        Eigen::Vector3f matX0;
-
-        matA0.setZero();
-        matB0.fill(-1);
-        matX0.setZero();
-
-        const float knnGateDistanceSq = surfKnnMinDistance * surfKnnMinDistance;
-
-        if (pointSearchSqDis[4] >= knnGateDistanceSq)
-        {
-            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_KNN_DISTANCE;
-            continue;
-        }
-
-        laserCloudSurfKnnPassFlag[i] = 1;
-        knnPassCount++;
-
-        for (int j = 0; j < 5; j++) {
-            matA0(j, 0) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].x;
-            matA0(j, 1) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].y;
-            matA0(j, 2) = laserCloudSurfFromMapDS->points[pointSearchInd[j]].z;
-        }
-
-        matX0 = matA0.colPivHouseholderQr().solve(matB0);
-
-        float pa = matX0(0, 0);
-        float pb = matX0(1, 0);
-        float pc = matX0(2, 0);
-        float pd = 1;
-
-        float ps = sqrt(pa * pa + pb * pb + pc * pc);
-        pa /= ps; pb /= ps; pc /= ps; pd /= ps;
-
-        bool planeValid = true;
-        for (int j = 0; j < 5; j++) {
-            if (fabs(pa * laserCloudSurfFromMapDS->points[pointSearchInd[j]].x +
-                     pb * laserCloudSurfFromMapDS->points[pointSearchInd[j]].y +
-                     pc * laserCloudSurfFromMapDS->points[pointSearchInd[j]].z + pd) > 0.2) {
-                planeValid = false;
-                break;
-            }
-        }
-
-        if (!planeValid)
-        {
-            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_PLANE_INVALID;
-            continue;
-        }
-
-        laserCloudSurfPlaneValidFlag[i] = 1;
-        planeValidCount++;
-
-        float pd2 = pa * pointSel.x + pb * pointSel.y + pc * pointSel.z + pd;
-
-        float s = 1 - 0.9 * fabs(pd2) / sqrt(sqrt(pointOri.x * pointOri.x
-                + pointOri.y * pointOri.y + pointOri.z * pointOri.z));
-
-        coeff.x = s * pa;
-        coeff.y = s * pb;
-        coeff.z = s * pc;
-        coeff.intensity = s * pd2;
-
-        if (s > 0.1) {
-            laserCloudSurfDebugCode[i] = SURF_DEBUG_ACCEPTED;
-            laserCloudOriSurfVec[i] = pointOri;
-            coeffSelSurfVec[i] = coeff;
-            laserCloudOriSurfFlag[i] = true;
-            matchedCount++;
-        } else {
-            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_LOW_WEIGHT;
-        }
-    }
-
-    surfStageKnnPassCount = static_cast<uint32_t>(knnPassCount);
-    surfStagePlaneValidCount = static_cast<uint32_t>(planeValidCount);
-    surfStageMatchedCount = static_cast<uint32_t>(matchedCount);
-}
-
-void mapOptimization::combineOptimizationCoeffs()
-{
-    // combine surf coeffs
-    for (int i = 0; i < laserCloudSurfLastDSNum; ++i){
-        if (laserCloudOriSurfFlag[i] == true){
-            laserCloudOri->push_back(laserCloudOriSurfVec[i]);
-            coeffSel->push_back(coeffSelSurfVec[i]);
-        }
-    }
-    // reset flag for next iteration
-    std::fill(laserCloudOriSurfFlag.begin(), laserCloudOriSurfFlag.end(), false);
-}
-
-bool mapOptimization::LMOptimization(int iterCount)
-{
-    // This optimization is from the original loam_velodyne by Ji Zhang, need to cope with coordinate transformation
-    // lidar <- camera      ---     camera <- lidar
-    // x = z                ---     x = y
-    // y = x                ---     y = z
-    // z = y                ---     z = x
-    // roll = yaw           ---     roll = pitch
-    // pitch = roll         ---     pitch = yaw
-    // yaw = pitch          ---     yaw = roll
-
-    // lidar -> camera
-    float srx = sin(transformTobeMapped[2]);
-    float crx = cos(transformTobeMapped[2]);
-    float sry = sin(transformTobeMapped[1]);
-    float cry = cos(transformTobeMapped[1]);
-    float srz = sin(transformTobeMapped[0]);
-    float crz = cos(transformTobeMapped[0]);
-
-    int laserCloudSelNum = laserCloudOri->size();
-    if (laserCloudSelNum < 50) {
-        return false;
-    }
-
-    cv::Mat matA(laserCloudSelNum, 6, CV_32F, cv::Scalar::all(0));
-    cv::Mat matAt(6, laserCloudSelNum, CV_32F, cv::Scalar::all(0));
-    cv::Mat matAtA(6, 6, CV_32F, cv::Scalar::all(0));
-    cv::Mat matB(laserCloudSelNum, 1, CV_32F, cv::Scalar::all(0));
-    cv::Mat matAtB(6, 1, CV_32F, cv::Scalar::all(0));
-    cv::Mat matX(6, 1, CV_32F, cv::Scalar::all(0));
-
-    PointType pointOri, coeff;
-
-    for (int i = 0; i < laserCloudSelNum; i++) {
-        // lidar -> camera
-        pointOri.x = laserCloudOri->points[i].x;
-        pointOri.y = laserCloudOri->points[i].y;
-        pointOri.z = laserCloudOri->points[i].z;
-        // lidar -> camera
-        coeff.x = coeffSel->points[i].x;
-        coeff.y = coeffSel->points[i].y;
-        coeff.z = coeffSel->points[i].z;
-        coeff.intensity = coeffSel->points[i].intensity;
-        // in camera
-/*             float arx = (crx*sry*srz*pointOri.x + crx*crz*sry*pointOri.y - srx*sry*pointOri.z) * coeff.x
-                  + (-srx*srz*pointOri.x - crz*srx*pointOri.y - crx*pointOri.z) * coeff.y
-                  + (crx*cry*srz*pointOri.x + crx*cry*crz*pointOri.y - cry*srx*pointOri.z) * coeff.z;
-
-        float ary = ((cry*srx*srz - crz*sry)*pointOri.x 
-                  + (sry*srz + cry*crz*srx)*pointOri.y + crx*cry*pointOri.z) * coeff.x
-                  + ((-cry*crz - srx*sry*srz)*pointOri.x 
-                  + (cry*srz - crz*srx*sry)*pointOri.y - crx*sry*pointOri.z) * coeff.z;
-
-        float arz = ((crz*srx*sry - cry*srz)*pointOri.x + (-cry*crz-srx*sry*srz)*pointOri.y)*coeff.x
-                  + (crx*crz*pointOri.x - crx*srz*pointOri.y) * coeff.y
-                  + ((sry*srz + cry*crz*srx)*pointOri.x + (crz*sry-cry*srx*srz)*pointOri.y)*coeff.z;
-         */
-
-        float arx = (-srx * cry * pointOri.x - (srx * sry * srz + crx * crz) * pointOri.y + (crx * srz - srx * sry * crz) * pointOri.z) * coeff.x
-                  + (crx * cry * pointOri.x - (srx * crz - crx * sry * srz) * pointOri.y + (crx * sry * crz + srx * srz) * pointOri.z) * coeff.y;
-
-        float ary = (-crx * sry * pointOri.x + crx * cry * srz * pointOri.y + crx * cry * crz * pointOri.z) * coeff.x
-                  + (-srx * sry * pointOri.x + srx * sry * srz * pointOri.y + srx * cry * crz * pointOri.z) * coeff.y
-                  + (-cry * pointOri.x - sry * srz * pointOri.y - sry * crz * pointOri.z) * coeff.z;
-
-        float arz = ((crx * sry * crz + srx * srz) * pointOri.y + (srx * crz - crx * sry * srz) * pointOri.z) * coeff.x
-                  + ((-crx * srz + srx * sry * crz) * pointOri.y + (-srx * sry * srz - crx * crz) * pointOri.z) * coeff.y
-                  + (cry * crz * pointOri.y - cry * srz * pointOri.z) * coeff.z;
-          
-        // camera -> lidar
-        matA.at<float>(i, 0) = arz;
-        matA.at<float>(i, 1) = ary;
-        matA.at<float>(i, 2) = arx;
-        matA.at<float>(i, 3) = coeff.x;
-        matA.at<float>(i, 4) = coeff.y;
-        matA.at<float>(i, 5) = coeff.z;
-        matB.at<float>(i, 0) = -coeff.intensity;
-    }
-
-    cv::transpose(matA, matAt);
-    matAtA = matAt * matA;
-    matAtB = matAt * matB;
-    cv::solve(matAtA, matAtB, matX, cv::DECOMP_QR);
-
-    if (iterCount == 0) {
-
-        cv::Mat matE(1, 6, CV_32F, cv::Scalar::all(0));
-        cv::Mat matV(6, 6, CV_32F, cv::Scalar::all(0));
-        cv::Mat matV2(6, 6, CV_32F, cv::Scalar::all(0));
-
-        cv::eigen(matAtA, matE, matV);
-        matV.copyTo(matV2);
-
-        isDegenerate = false;
-        float eignThre[6] = {100, 100, 100, 100, 100, 100};
-        for (int i = 5; i >= 0; i--) {
-            if (matE.at<float>(0, i) < eignThre[i]) {
-                for (int j = 0; j < 6; j++) {
-                    matV2.at<float>(i, j) = 0;
-                }
-                isDegenerate = true;
-            } else {
-                break;
-            }
-        }
-        matP = matV.inv() * matV2;
-    }
-
-    if (isDegenerate)
-    {
-        cv::Mat matX2(6, 1, CV_32F, cv::Scalar::all(0));
-        matX.copyTo(matX2);
-        matX = matP * matX2;
-    }
-
-    transformTobeMapped[0] += matX.at<float>(0, 0);
-    transformTobeMapped[1] += matX.at<float>(1, 0);
-    transformTobeMapped[2] += matX.at<float>(2, 0);
-    transformTobeMapped[3] += matX.at<float>(3, 0);
-    transformTobeMapped[4] += matX.at<float>(4, 0);
-    transformTobeMapped[5] += matX.at<float>(5, 0);
-
-    float deltaR = sqrt(
-                        pow(pcl::rad2deg(matX.at<float>(0, 0)), 2) +
-                        pow(pcl::rad2deg(matX.at<float>(1, 0)), 2) +
-                        pow(pcl::rad2deg(matX.at<float>(2, 0)), 2));
-    float deltaT = sqrt(
-                        pow(matX.at<float>(3, 0) * 100, 2) +
-                        pow(matX.at<float>(4, 0) * 100, 2) +
-                        pow(matX.at<float>(5, 0) * 100, 2));
-
-    if (deltaR < 0.05 && deltaT < 0.05) {
-        return true; // converged
-    }
-    return false; // keep optimizing
-}
 
 void mapOptimization::scan2MapOptimization()
 {
     if (cloudKeyPoses3D->points.empty())
         return;
-
-    surfStageInputCount = static_cast<uint32_t>(laserCloudSurfLastDSNum);
-    surfStageKnnPassCount = 0;
-    surfStagePlaneValidCount = 0;
-    surfStageMatchedCount = 0;
-
-    const size_t requiredSize = static_cast<size_t>(laserCloudSurfLastDSNum);
-    if (laserCloudSurfDebugCode.size() < requiredSize)
-        laserCloudSurfDebugCode.resize(requiredSize, SURF_DEBUG_NOT_OPTIMIZED);
-    std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.end(), SURF_DEBUG_NOT_OPTIMIZED);
 
     if (laserCloudSurfLastDSNum > 30)
     {
@@ -512,49 +226,26 @@ void mapOptimization::scan2MapOptimization()
                 diagnostics->recordSlice("scan2MapOptimization.setInputCloud", t_setInputCloud.toc());
         }
 
-        double surf_ms_total = 0.0;
-        double combine_ms_total = 0.0;
-        double lm_ms_total = 0.0;
-        int iter_used = 0;
+        scanAligner->setMap(laserCloudSurfFromMapDS, kdtreeSurfFromMap);
 
-        for (int iterCount = 0; iterCount < 30; iterCount++)
-        {
-            iter_used++;
-            laserCloudOri->clear();
-            coeffSel->clear();
-
-            TicToc t_surfOptimization;
-            surfOptimization();
-            surf_ms_total += t_surfOptimization.toc();
-
-            TicToc t_combineOptimizationCoeffs;
-            combineOptimizationCoeffs();
-            combine_ms_total += t_combineOptimizationCoeffs.toc();
-
-            TicToc t_lmOptimization;
-            if (LMOptimization(iterCount) == true)
-            {
-                lm_ms_total += t_lmOptimization.toc();
-                break;              
-            }
-            lm_ms_total += t_lmOptimization.toc();
-        }
+        AlignmentMetrics metrics = scanAligner->align(laserCloudSurfLastDS, transformTobeMapped);
+        this->isDegenerate = metrics.is_degenerate;
 
         if (diagnostics)
         {
-            diagnostics->recordSlice("scan2MapOptimization.surfOptimization.total", surf_ms_total);
-            diagnostics->recordSlice("scan2MapOptimization.combineOptimizationCoeffs.total", combine_ms_total);
-            diagnostics->recordSlice("scan2MapOptimization.LMOptimization.total", lm_ms_total);
+            diagnostics->recordSlice("scan2MapOptimization.surfOptimization.total", metrics.surf_optimization_ms);
+            diagnostics->recordSlice("scan2MapOptimization.combineOptimizationCoeffs.total", metrics.combine_ms);
+            diagnostics->recordSlice("scan2MapOptimization.LMOptimization.total", metrics.lm_optimization_ms);
 
             std::ostringstream oss;
-            oss << "[SCAN2MAP_ITER] iter_used=" << iter_used
-                << " surf_total_ms=" << std::fixed << std::setprecision(3) << surf_ms_total
-                << " combine_total_ms=" << combine_ms_total
-                << " lm_total_ms=" << lm_ms_total
-                << " surf_input=" << surfStageInputCount
-                << " surf_knn_pass=" << surfStageKnnPassCount
-                << " surf_plane_valid=" << surfStagePlaneValidCount
-                << " surf_matched=" << surfStageMatchedCount;
+            oss << "[SCAN2MAP_ITER] iter_used=" << metrics.iterations
+                << " surf_total_ms=" << std::fixed << std::setprecision(3) << metrics.surf_optimization_ms
+                << " combine_total_ms=" << metrics.combine_ms
+                << " lm_total_ms=" << metrics.lm_optimization_ms
+                << " surf_input=" << metrics.surf_input_count
+                << " surf_knn_pass=" << metrics.surf_knn_pass_count
+                << " surf_plane_valid=" << metrics.surf_plane_valid_count
+                << " surf_matched=" << metrics.surf_matched_count;
             diagnostics->logEventThrottle("scan2map_iter_summary", 1.0, oss.str());
         }
 

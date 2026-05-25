@@ -165,23 +165,10 @@ void mapOptimization::allocateMemory()
     kdtreeSurroundingKeyPoses.reset(new pcl::KdTreeFLANN<PointType>());
     kdtreeHistoryKeyPoses.reset(new pcl::KdTreeFLANN<PointType>());
 
-    laserCloudSurfLast.reset(new pcl::PointCloud<PointType>()); // surf feature set from odoOptimization
-    laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>()); // downsampled surf featuer set from odoOptimization
+    laserCloudSurfLast.reset(new pcl::PointCloud<PointType>()); 
+    laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>()); 
 
-    laserCloudOri.reset(new pcl::PointCloud<PointType>());
-    coeffSel.reset(new pcl::PointCloud<PointType>());
-
-    laserCloudOriSurfVec.resize(N_SCAN * Horizon_SCAN);
-    coeffSelSurfVec.resize(N_SCAN * Horizon_SCAN);
-    laserCloudOriSurfFlag.resize(N_SCAN * Horizon_SCAN);
-    laserCloudSurfKnnPassFlag.resize(N_SCAN * Horizon_SCAN);
-    laserCloudSurfPlaneValidFlag.resize(N_SCAN * Horizon_SCAN);
-    laserCloudSurfDebugCode.resize(N_SCAN * Horizon_SCAN);
-
-    std::fill(laserCloudOriSurfFlag.begin(), laserCloudOriSurfFlag.end(), false);
-    std::fill(laserCloudSurfKnnPassFlag.begin(), laserCloudSurfKnnPassFlag.end(), 0);
-    std::fill(laserCloudSurfPlaneValidFlag.begin(), laserCloudSurfPlaneValidFlag.end(), 0);
-    std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.end(), SURF_DEBUG_NOT_OPTIMIZED);
+    scanAligner = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
 
     laserCloudSurfFromMap.reset(new pcl::PointCloud<PointType>());
     laserCloudSurfFromMapDS.reset(new pcl::PointCloud<PointType>());
@@ -191,8 +178,6 @@ void mapOptimization::allocateMemory()
     for (int i = 0; i < 6; ++i){
         transformTobeMapped[i] = 0;
     }
-
-    matP = cv::Mat(6, 6, CV_32F, cv::Scalar::all(0));
 
     lastIncrementalDeltaPoseLocal = Eigen::Affine3f::Identity();
     hasLastIncrementalDeltaPoseLocal = false;

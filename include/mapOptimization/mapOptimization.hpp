@@ -31,6 +31,8 @@
 
 #include "Scancontext.h"
 #include "tictoc.h"
+#include "scanAlignment/ScanAligner.hpp"
+
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -113,6 +115,7 @@ class mapOptimization : public ParamServer
 {
 public:
     MapExporter map_exporter_;
+    std::shared_ptr<ScanAligner> scanAligner;
 
     gtsam::NonlinearFactorGraph gtSAMgraph;
     gtsam::Values initialEstimate;
@@ -206,28 +209,6 @@ public:
     pcl::PointCloud<PointType>::Ptr laserCloudSurfLast;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfLastDS;
 
-    pcl::PointCloud<PointType>::Ptr laserCloudOri;
-    pcl::PointCloud<PointType>::Ptr coeffSel;
-
-    std::vector<PointType> laserCloudOriSurfVec;
-    std::vector<PointType> coeffSelSurfVec;
-    std::vector<bool> laserCloudOriSurfFlag;
-    std::vector<uint8_t> laserCloudSurfKnnPassFlag;
-    std::vector<uint8_t> laserCloudSurfPlaneValidFlag;
-    std::vector<uint8_t> laserCloudSurfDebugCode;
-
-    static constexpr uint8_t SURF_DEBUG_ACCEPTED = 0;
-    static constexpr uint8_t SURF_DEBUG_REJECTED_NEIGHBOR_COUNT = 1;
-    static constexpr uint8_t SURF_DEBUG_REJECTED_KNN_DISTANCE = 2;
-    static constexpr uint8_t SURF_DEBUG_REJECTED_PLANE_INVALID = 3;
-    static constexpr uint8_t SURF_DEBUG_REJECTED_LOW_WEIGHT = 4;
-    static constexpr uint8_t SURF_DEBUG_NOT_OPTIMIZED = 5;
-
-    uint32_t surfStageInputCount = 0;
-    uint32_t surfStageKnnPassCount = 0;
-    uint32_t surfStagePlaneValidCount = 0;
-    uint32_t surfStageMatchedCount = 0;
-
     map<int, pair<pcl::PointCloud<PointType>, pcl::PointCloud<PointType>>> laserCloudMapContainer;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMap;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMapDS;
@@ -261,7 +242,6 @@ public:
     std::mutex mtxLoopInfo;
 
     bool isDegenerate = false;
-    cv::Mat matP;
 
     int laserCloudSurfFromMapDSNum = 0;
     int laserCloudSurfLastDSNum = 0;
@@ -275,7 +255,6 @@ public:
 
     nav_msgs::msg::Path globalPath;
 
-    Eigen::Affine3f transPointAssociateToMap;
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
     Eigen::Affine3f lastIncrementalDeltaPoseLocal{Eigen::Affine3f::Identity()};
@@ -303,7 +282,7 @@ public:
     void initializeDatum(double lat, double lon, double alt, double heading_deg);
     void gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gpsMsg);
 
-    void pointAssociateToMap(PointType const *const pi, PointType *const po);
+    // void pointAssociateToMap(PointType const *const pi, PointType *const po);
     pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose *transformIn);
     gtsam::Pose3 pclPointTogtsamPose3(PointTypePose thisPoint);
     gtsam::Pose3 trans2gtsamPose(float transformIn[]);
@@ -340,10 +319,6 @@ public:
     void extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtract);
     void extractSurroundingKeyFrames();
     void downsampleCurrentScan();
-    void updatePointAssociateToMap();
-    void surfOptimization();
-    void combineOptimizationCoeffs();
-    bool LMOptimization(int iterCount);
     void scan2MapOptimization();
     void transformUpdate();
     float constraintTransformation(float value, float limit);
