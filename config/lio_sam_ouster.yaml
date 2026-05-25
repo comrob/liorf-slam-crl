@@ -15,16 +15,18 @@
     minTranslationPredictionSpeed: 0.0
     reject_fast_turn_scans: true
     fast_turn_max_angular_speed_rad_s: 0.5
+
+    enableDegeneracyDetection: true
     
     # Topics
-    pointCloudTopic: "/ouster/points"               # Point cloud data
-    imuTopic: "/ouster/imu"                         # IMU data
+    pointCloudTopic: "/os1/points"               # Point cloud data
+    imuTopic: "/os1/imu"                         # IMU data
     odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
     gpsTopic: "/gnss/septentrio/fix"                   # GPS odometry topic from navsat, see module_navsat.launch file
 
     # Frames
-    lidarFrame: "os_lidar"
-    baselinkFrame: "os_sensor"
+    lidarFrame: "os1/os_lidar"
+    baselinkFrame: "os1/os_sensor"
     odometryFrame: "odom"
     mapFrameLocal: "map"
     mapFrameEnu: "map_enu"

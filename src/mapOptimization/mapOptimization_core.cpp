@@ -62,6 +62,8 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubBaselinkGpsEnuOdometry = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_gps_enu_odometry", QosPolicy(history_policy, reliability_policy));
     pubBaselinkGpsNedOdometry = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_gps_ned_odometry", QosPolicy(history_policy, reliability_policy));
 
+    pubDegeneracyMarkers = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_directions", 1);
+
     pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
     origin_publish_timer = this->create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::timerCallbackPublishOrigin, this));
 
@@ -168,7 +170,11 @@ void mapOptimization::allocateMemory()
     laserCloudSurfLast.reset(new pcl::PointCloud<PointType>()); 
     laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>()); 
 
-    scanAligner = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
+    scanAlignerPrimary = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
+    scanAlignerDegeneracy = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
+    
+    DegeneracyParams dParams; // Optionally bind these to your ParamServer variables
+    degeneracyDetector = std::make_shared<DegeneracyDetector>(dParams);
 
     laserCloudSurfFromMap.reset(new pcl::PointCloud<PointType>());
     laserCloudSurfFromMapDS.reset(new pcl::PointCloud<PointType>());

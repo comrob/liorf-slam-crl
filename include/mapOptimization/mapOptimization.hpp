@@ -32,6 +32,7 @@
 #include "Scancontext.h"
 #include "tictoc.h"
 #include "scanAlignment/ScanAligner.hpp"
+#include "degeneracyDetection/DegeneracyDetector.hpp"
 
 #include <fstream>
 #include <iomanip>
@@ -115,7 +116,9 @@ class mapOptimization : public ParamServer
 {
 public:
     MapExporter map_exporter_;
-    std::shared_ptr<ScanAligner> scanAligner;
+    std::shared_ptr<ScanAligner> scanAlignerPrimary;
+    std::shared_ptr<ScanAligner> scanAlignerDegeneracy;
+    std::shared_ptr<DegeneracyDetector> degeneracyDetector;
 
     gtsam::NonlinearFactorGraph gtSAMgraph;
     gtsam::Values initialEstimate;
@@ -153,6 +156,8 @@ public:
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubLidarGpsNedPose;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubBaselinkGpsEnuOdometry;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubBaselinkGpsNedOdometry;
+
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyMarkers;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
     bool T_EL_initialized = false;
@@ -302,6 +307,7 @@ public:
     bool saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req, std::shared_ptr<liorf::srv::SaveMap::Response> res);
     void visualizeGlobalMapThread();
     void publishGlobalMap();
+    void publishDegeneracyMarkers(const std::vector<TwistVector> &twists, const rclcpp::Time &stamp);
 
     void loopClosureThread();
     void loopInfoHandler(const std_msgs::msg::Float64MultiArray::SharedPtr loopMsg);

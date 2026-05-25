@@ -97,6 +97,7 @@ add_executable(${PROJECT_NAME}_mapOptmization
   src/mapOptimization/mapOptimization_loop.cpp
   src/mapOptimization/mapOptimization_publish.cpp
   src/scanAlignment/ScanAligner.cpp
+  src/degeneracyDetection/DegeneracyDetector.cpp
   ${common_lib}
   include/Scancontext.cpp)
 target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})

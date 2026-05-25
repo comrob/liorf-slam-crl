@@ -220,6 +220,8 @@ public:
     float globalMapVisualizationPoseDensity;
     float globalMapVisualizationLeafSize;
 
+    bool enableDegeneracyDetection;
+
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {   
         declare_parameter<string>("history_policy", "history_keep_last");
@@ -297,6 +299,9 @@ public:
         get_parameter("save_dense_gps_trajectory", save_dense_gps_trajectory);
         declare_parameter<bool>("save_dense_odom_trajectory", true);
         get_parameter("save_dense_odom_trajectory", save_dense_odom_trajectory);
+
+        // degeneracy detection and handling
+        declare_parameter<bool>("enableDegeneracyDetection", false);
 
         std::string sensorStr;
         declare_parameter<string>("sensor", " ");

@@ -226,10 +226,48 @@ void mapOptimization::scan2MapOptimization()
                 diagnostics->recordSlice("scan2MapOptimization.setInputCloud", t_setInputCloud.toc());
         }
 
-        scanAligner->setMap(laserCloudSurfFromMapDS, kdtreeSurfFromMap);
-
-        AlignmentMetrics metrics = scanAligner->align(laserCloudSurfLastDS, transformTobeMapped);
+        scanAlignerPrimary->setMap(laserCloudSurfFromMapDS, kdtreeSurfFromMap);
+        AlignmentMetrics metrics = scanAlignerPrimary->align(laserCloudSurfLastDS, transformTobeMapped);
         this->isDegenerate = metrics.is_degenerate;
+
+        // 2. Degeneracy Pipeline
+        if (enableDegeneracyDetection) // Define this in ParamServer
+        {
+            scanAlignerDegeneracy->setMap(laserCloudSurfFromMapDS, kdtreeSurfFromMap);
+            degeneracyDetector->evalDegeneracyPerturbation(
+                transformTobeMapped,
+                laserCloudSurfLastDS,
+                laserCloudSurfFromMapDS,
+                scanAlignerDegeneracy);
+
+            auto detectedTwists = degeneracyDetector->getTwistsPerturbationsDegeneracy();
+            
+            publishDegeneracyMarkers(detectedTwists, timeLaserInfoStamp);
+
+            if (!detectedTwists.empty())
+            {
+                RCLCPP_WARN_STREAM(get_logger(), "Degeneracy Detected!\n" << degeneracyDetector->getDegeneracyDirectionsString());
+                
+                auto basis = degeneracyDetector->extractBasisFromTwists(detectedTwists, laserCloudSurfLastDS);
+                
+                // 3. Hessian-Nullspace Correction
+                Eigen::Matrix4f poseOptimizedMat = pcl::getTransformation(
+                    transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5],
+                    transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]).matrix();
+                    
+                Eigen::Matrix4f posePredictedMat = incrementalOdometryAffineFront.matrix();
+                
+                TwistVector diffTwist = matrixToTwist(poseOptimizedMat.inverse() * posePredictedMat);
+                TwistVector projectedTwist = projectOntoBasis(diffTwist, basis);
+                
+                Eigen::Matrix4f finalCorrectedPose = poseOptimizedMat * expMap(projectedTwist);
+                
+                // Re-extract Euler angles into the main state vector
+                pcl::getTranslationAndEulerAngles(Eigen::Affine3f(finalCorrectedPose), 
+                    transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5],
+                    transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
+            }
+        }
 
         if (diagnostics)
         {

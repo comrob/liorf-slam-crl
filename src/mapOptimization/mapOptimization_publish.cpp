@@ -108,7 +108,7 @@ void mapOptimization::updatePath(const PointTypePose& pose_in)
 {
     geometry_msgs::msg::PoseStamped pose_stamped;
     rclcpp::Time t(static_cast<int64_t>(pose_in.time * 1e9));
-    
+
     pose_stamped.header.stamp = t;
     pose_stamped.header.frame_id = mapFrameLocal;
     pose_stamped.pose.position.x = pose_in.x;
@@ -397,9 +397,9 @@ void mapOptimization::publishFrames()
         pcl::PointCloud<PointType>::Ptr transformedInput = transformPointCloud(laserCloudSurfLastDS, &thisPose6D);
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr coloredCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
-        const int codeBound = laserCloudSurfLastDSNum < static_cast<int>(scanAligner->laserCloudSurfDebugCode.size())
+        const int codeBound = laserCloudSurfLastDSNum < static_cast<int>(scanAlignerPrimary->laserCloudSurfDebugCode.size())
                                   ? laserCloudSurfLastDSNum
-                                  : static_cast<int>(scanAligner->laserCloudSurfDebugCode.size());
+                                  : static_cast<int>(scanAlignerPrimary->laserCloudSurfDebugCode.size());
         const int pointBound = codeBound < static_cast<int>(transformedInput->size())
                                    ? codeBound
                                    : static_cast<int>(transformedInput->size());
@@ -412,7 +412,7 @@ void mapOptimization::publishFrames()
             point.y = transformedInput->points[i].y;
             point.z = transformedInput->points[i].z;
 
-            switch (scanAligner->laserCloudSurfDebugCode[i])
+            switch (scanAlignerPrimary->laserCloudSurfDebugCode[i])
             {
                 case ScanAligner::SURF_DEBUG_ACCEPTED:
                     point.r = 0; point.g = 255; point.b = 0;      // green
@@ -467,7 +467,7 @@ void mapOptimization::publishFrames()
     if (pubMatchedSurfFeatures->get_subscription_count() != 0)
     {
         pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-        *cloudOut += *transformPointCloud(scanAligner->getLaserCloudOri(), &thisPose6D);
+        *cloudOut += *transformPointCloud(scanAlignerPrimary->getLaserCloudOri(), &thisPose6D);
         publishCloud(pubMatchedSurfFeatures, cloudOut, timeLaserInfoStamp, mapFrameLocal);
     }
     // publish registered high-res raw cloud
@@ -486,6 +486,115 @@ void mapOptimization::publishFrames()
         globalPath.header.frame_id = mapFrameLocal;
         pubPath->publish(globalPath);
     }
+}
+
+void mapOptimization::publishDegeneracyMarkers(const std::vector<TwistVector> &twists, const rclcpp::Time &stamp)
+{
+    if (pubDegeneracyMarkers->get_subscription_count() == 0)
+        return;
+
+    visualization_msgs::msg::MarkerArray markerArray;
+
+    // 1. Create a "Delete All" marker to clear previous frames' degeneracies
+    visualization_msgs::msg::Marker deleteAllMarker;
+    deleteAllMarker.action = visualization_msgs::msg::Marker::DELETEALL;
+    markerArray.markers.push_back(deleteAllMarker);
+
+    if (twists.empty()) {
+        pubDegeneracyMarkers->publish(markerArray);
+        return;
+    }
+
+    // 2. Get the current global pose to anchor and rotate the markers
+    Eigen::Affine3f currentPose = trans2Affine3f(transformTobeMapped);
+    Eigen::Vector3f robotPosition = currentPose.translation();
+    Eigen::Matrix3f robotRotation = currentPose.rotation();
+
+    int marker_id = 0;
+    const float visualization_scale = 5.0f; // Scale up the arrows so they are easy to see in RViz
+
+    for (size_t i = 0; i < twists.size(); ++i)
+    {
+        TwistVector twist = twists[i];
+        Eigen::Vector3f localTranslation = twist.segment<3>(0);
+        Eigen::Vector3f localRotationAxis = twist.segment<3>(3);
+
+        // --- Translation Marker (Red) ---
+        if (localTranslation.norm() > 1e-4f)
+        {
+            Eigen::Vector3f globalTranslationDir = robotRotation * localTranslation.normalized();
+            
+            visualization_msgs::msg::Marker transMarker;
+            transMarker.header.frame_id = mapFrameLocal; // or odometryFrame
+            transMarker.header.stamp = stamp;
+            transMarker.ns = "degeneracy_translation";
+            transMarker.id = marker_id++;
+            transMarker.type = visualization_msgs::msg::Marker::ARROW;
+            transMarker.action = visualization_msgs::msg::Marker::ADD;
+            
+            transMarker.scale.x = 0.2; // Shaft diameter
+            transMarker.scale.y = 0.4; // Head diameter
+            transMarker.scale.z = 0.0; // Head length (0 = default)
+            
+            transMarker.color.r = 1.0f;
+            transMarker.color.g = 0.0f;
+            transMarker.color.b = 0.0f;
+            transMarker.color.a = 0.8f;
+
+            geometry_msgs::msg::Point start_point, end_point;
+            start_point.x = robotPosition.x();
+            start_point.y = robotPosition.y();
+            start_point.z = robotPosition.z();
+
+            end_point.x = robotPosition.x() + (globalTranslationDir.x() * visualization_scale);
+            end_point.y = robotPosition.y() + (globalTranslationDir.y() * visualization_scale);
+            end_point.z = robotPosition.z() + (globalTranslationDir.z() * visualization_scale);
+
+            transMarker.points.push_back(start_point);
+            transMarker.points.push_back(end_point);
+            
+            markerArray.markers.push_back(transMarker);
+        }
+
+        // --- Rotation Axis Marker (Yellow) ---
+        if (localRotationAxis.norm() > 1e-4f)
+        {
+            Eigen::Vector3f globalRotationDir = robotRotation * localRotationAxis.normalized();
+            
+            visualization_msgs::msg::Marker rotMarker;
+            rotMarker.header.frame_id = mapFrameLocal; // or odometryFrame
+            rotMarker.header.stamp = stamp;
+            rotMarker.ns = "degeneracy_rotation";
+            rotMarker.id = marker_id++;
+            rotMarker.type = visualization_msgs::msg::Marker::ARROW;
+            rotMarker.action = visualization_msgs::msg::Marker::ADD;
+            
+            rotMarker.scale.x = 0.2; 
+            rotMarker.scale.y = 0.4; 
+            rotMarker.scale.z = 0.0; 
+            
+            rotMarker.color.r = 1.0f;
+            rotMarker.color.g = 1.0f;
+            rotMarker.color.b = 0.0f;
+            rotMarker.color.a = 0.8f;
+
+            geometry_msgs::msg::Point start_point, end_point;
+            start_point.x = robotPosition.x();
+            start_point.y = robotPosition.y();
+            start_point.z = robotPosition.z();
+
+            end_point.x = robotPosition.x() + (globalRotationDir.x() * visualization_scale);
+            end_point.y = robotPosition.y() + (globalRotationDir.y() * visualization_scale);
+            end_point.z = robotPosition.z() + (globalRotationDir.z() * visualization_scale);
+
+            rotMarker.points.push_back(start_point);
+            rotMarker.points.push_back(end_point);
+            
+            markerArray.markers.push_back(rotMarker);
+        }
+    }
+
+    pubDegeneracyMarkers->publish(markerArray);
 }
 
 
