@@ -22,6 +22,9 @@
     useGpsElevation: true                      # if GPS elevation is bad, set to "false"
     gpsCovThreshold: 2.0                        # m^2, threshold for using GPS data
     poseCovThreshold: 25.0                      # m^2, threshold for using GPS data
+    gps_reject_on_invalid_status: false         # if true, reject GPS measurements with status < 0; if false, accept them anyway
+    gps_keyframe_search_window: 10              # number of recent keyframes to search for GPS alignment (larger = more lenient)
+    gps_max_constraint_dt_sec: 0.30             # max time difference [s] between GPS and closest keyframe (smaller = more strict)
     
     # Export settings
     savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3

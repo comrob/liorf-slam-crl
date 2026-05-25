@@ -64,7 +64,7 @@ using namespace std;
 typedef pcl::PointXYZI PointType;
 
 // <!-- liorf_localization_yjz_lucky_boy -->
-std::shared_ptr<CommonLib::common_lib> common_lib_;
+inline std::shared_ptr<CommonLib::common_lib> common_lib_;
 
 enum class SensorType { VELODYNE, OUSTER, LIVOX, ROBOSENSE, MULRAN};
 
@@ -95,6 +95,13 @@ public:
 
     string history_policy;
     string reliability_policy;
+    bool diagnostics_write_files_master;
+    bool diagnostics_write_timing_stats;
+    bool diagnostics_write_event;
+    bool diagnostics_write_warnings;
+    bool diagnostics_write_telemetry;
+    bool diagnostics_write_time_deltas;
+    bool diagnostics_write_frame_metrics;
 
     std::string robot_id;
 
@@ -126,6 +133,7 @@ public:
     bool force_initial_gps;
     std::vector<double> manual_gps_origin;
     double manual_global_heading;
+    bool gps_reject_on_invalid_status;
 
     // Save pcd
     bool savePCD;
@@ -136,6 +144,10 @@ public:
     // Lidar Sensor Configuration
     SensorType sensor;
     TranslationPredictionSource translationPredictionSource;
+    double maxTranslationPrediction;
+    double minTranslationPredictionSpeed;
+    bool reject_fast_turn_scans;
+    double fast_turn_max_angular_speed_rad_s;
 
     int N_SCAN;
     int Horizon_SCAN;
@@ -164,6 +176,7 @@ public:
     // voxel filter paprams
     float mappingSurfLeafSize ;
     float surroundingKeyframeMapLeafSize;
+    float surfKnnMinDistance;
     float loopClosureICPSurfLeafSize ;
     bool useSorFilter;
     int sorMeanK;
@@ -181,6 +194,7 @@ public:
     float surroundingkeyframeAddingAngleThreshold; 
     float surroundingKeyframeDensity;
     float surroundingKeyframeSearchRadius;
+    float localMapTruncationRadius;
     
     // Loop closure
     bool  loopClosureEnableFlag;
@@ -197,6 +211,10 @@ public:
     bool drop_stale_lidar_frames;
     double max_lidar_processing_lag_sec;
 
+    // GPS-LiDAR alignment tuning
+    int gps_keyframe_search_window;
+    double gps_max_constraint_dt_sec;
+
     // global map visualization radius
     float globalMapVisualizationSearchRadius;
     float globalMapVisualizationPoseDensity;
@@ -208,6 +226,20 @@ public:
         get_parameter("history_policy", history_policy);
         declare_parameter<string>("reliability_policy", "reliability_reliable");
         get_parameter("reliability_policy", reliability_policy);
+        declare_parameter<bool>("diagnostics_write_files_master", true);
+        get_parameter("diagnostics_write_files_master", diagnostics_write_files_master);
+        declare_parameter<bool>("diagnostics_write_timing_stats", true);
+        get_parameter("diagnostics_write_timing_stats", diagnostics_write_timing_stats);
+        declare_parameter<bool>("diagnostics_write_event", true);
+        get_parameter("diagnostics_write_event", diagnostics_write_event);
+        declare_parameter<bool>("diagnostics_write_warnings", true);
+        get_parameter("diagnostics_write_warnings", diagnostics_write_warnings);
+        declare_parameter<bool>("diagnostics_write_telemetry", true);
+        get_parameter("diagnostics_write_telemetry", diagnostics_write_telemetry);
+        declare_parameter<bool>("diagnostics_write_time_deltas", true);
+        get_parameter("diagnostics_write_time_deltas", diagnostics_write_time_deltas);
+        declare_parameter<bool>("diagnostics_write_frame_metrics", true);
+        get_parameter("diagnostics_write_frame_metrics", diagnostics_write_frame_metrics);
 
         declare_parameter<string>("pointCloudTopic", "/points_raw");
         get_parameter("pointCloudTopic", pointCloudTopic);
@@ -254,6 +286,8 @@ public:
         get_parameter("manual_gps_origin", manual_gps_origin);
         declare_parameter("manual_global_heading", 0.0);
         get_parameter("manual_global_heading", manual_global_heading);
+        declare_parameter<bool>("gps_reject_on_invalid_status", false);
+        get_parameter("gps_reject_on_invalid_status", gps_reject_on_invalid_status);
 
         declare_parameter<bool>("savePCD", false);
         get_parameter("savePCD", savePCD);
@@ -317,6 +351,16 @@ public:
         std::string translationPredictionSourceStr = TranslationPredictionSourceToString(translationPredictionSource);
         RCLCPP_INFO_STREAM(this->get_logger(), "Translation Prediction Source: " << translationPredictionSourceStr);
 
+        declare_parameter<double>("maxTranslationPrediction", 5.0);
+        get_parameter("maxTranslationPrediction", maxTranslationPrediction);
+        declare_parameter<double>("minTranslationPredictionSpeed", 0.0);
+        get_parameter("minTranslationPredictionSpeed", minTranslationPredictionSpeed);
+        declare_parameter<bool>("reject_fast_turn_scans", false);
+        get_parameter("reject_fast_turn_scans", reject_fast_turn_scans);
+        declare_parameter<double>("fast_turn_max_angular_speed_rad_s", 3.0);
+        get_parameter("fast_turn_max_angular_speed_rad_s", fast_turn_max_angular_speed_rad_s);
+
+
         declare_parameter<int>("N_SCAN", 16);
         get_parameter("N_SCAN", N_SCAN);
         declare_parameter<int>("Horizon_SCAN", 1800);
@@ -369,6 +413,8 @@ public:
         get_parameter("mappingSurfLeafSize", mappingSurfLeafSize);
         declare_parameter<float>("surroundingKeyframeMapLeafSize", 0.2f);
         get_parameter("surroundingKeyframeMapLeafSize", surroundingKeyframeMapLeafSize);
+        declare_parameter<float>("surfKnnMinDistance", 1.0f);
+        get_parameter("surfKnnMinDistance", surfKnnMinDistance);
         declare_parameter<float>("z_tollerance", 1000.0f);
         get_parameter("z_tollerance", z_tollerance);
         declare_parameter<float>("rotation_tollerance", 1000.0f);
@@ -395,6 +441,8 @@ public:
         get_parameter("sorStddevMulThresh", sorStddevMulThresh);
         declare_parameter<float>("surroundingKeyframeSearchRadius", 50.0f);
         get_parameter("surroundingKeyframeSearchRadius", surroundingKeyframeSearchRadius);
+        declare_parameter<float>("localMapTruncationRadius", 50.0f);
+        get_parameter("localMapTruncationRadius", localMapTruncationRadius);
 
         declare_parameter<bool>("loopClosureEnableFlag", false);
         get_parameter("loopClosureEnableFlag", loopClosureEnableFlag);
@@ -422,6 +470,11 @@ public:
         get_parameter("drop_stale_lidar_frames", drop_stale_lidar_frames);
         declare_parameter<double>("max_lidar_processing_lag_sec", 0.5);
         get_parameter("max_lidar_processing_lag_sec", max_lidar_processing_lag_sec);
+
+        declare_parameter<int>("gps_keyframe_search_window", 10);
+        get_parameter("gps_keyframe_search_window", gps_keyframe_search_window);
+        declare_parameter<double>("gps_max_constraint_dt_sec", 0.30);
+        get_parameter("gps_max_constraint_dt_sec", gps_max_constraint_dt_sec);
 
 
        declare_parameter<float>("globalMapVisualizationSearchRadius", 1e3f);
@@ -521,9 +574,9 @@ void imuRPY2rosRPY(sensor_msgs::msg::Imu *thisImuMsg, T *rosRoll, T *rosPitch, T
     *rosYaw = imuYaw;
 }
 
-rclcpp::QoS QosPolicy(const string &history_policy, const string &reliability_policy)
+inline rclcpp::QoS QosPolicy(const string &history_policy, const string &reliability_policy)
 {
-    rmw_qos_profile_t qos_profile;
+    rmw_qos_profile_t qos_profile = rmw_qos_profile_default;
     if (history_policy == "history_keep_last")
         qos_profile.history = rmw_qos_history_policy_t::RMW_QOS_POLICY_HISTORY_KEEP_LAST;
     else if (history_policy == "history_keep_all")

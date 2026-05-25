@@ -2,7 +2,20 @@
   ros__parameters:
     history_policy: "history_keep_last"
     reliability_policy: "reliability_reliable"
+    diagnostics_write_files_master: true
+    diagnostics_write_timing_stats: true
+    diagnostics_write_event: true
+    diagnostics_write_warnings: true
+    diagnostics_write_telemetry: true
+    diagnostics_write_time_deltas: true
+    diagnostics_write_frame_metrics: true
+    
     translationPredictionSource: constant_velocity
+    maxTranslationPrediction: 5.0
+    minTranslationPredictionSpeed: 0.0
+    reject_fast_turn_scans: true
+    fast_turn_max_angular_speed_rad_s: 0.5
+    
     # Topics
     pointCloudTopic: "/ouster/points"               # Point cloud data
     imuTopic: "/ouster/imu"                         # IMU data
@@ -26,6 +39,9 @@
     poseCovThreshold: 25.0                      # m^2, threshold for using GPS data
     gps_processing_delay_sec: 1.0               # process GPS constraints only after this ROS-time delay from GPS stamp
     gps_covariance_inflation_m: 2.0             # extra GPS factor std-dev [m] added as variance inflation (m^2) on XYZ
+    gps_reject_on_invalid_status: false         # if true, reject GPS measurements with status < 0; if false, accept them anyway
+    gps_keyframe_search_window: 10              # number of recent keyframes to search for GPS alignment (larger = more lenient)
+    gps_max_constraint_dt_sec: 0.30             # max time difference [s] between GPS and closest keyframe (smaller = more strict)
     
     force_initial_gps: true
     manual_gps_origin: [50.0763, 14.41, 252.6]   # LLA GPS origin for manual georeference initialization (if `force_initial_gps` enabled)
@@ -69,6 +85,7 @@
 
     # voxel filter paprams
     mappingSurfLeafSize: 0.2                      # default: 0.4 - outdoor, 0.2 - indoor
+    surfKnnMinDistance: 5.0                       # meters, max allowed distance to 5th kNN neighbor for surf matching
     useSorFilter: false                           # enable Statistical Outlier Removal on current scan surf cloud
     sorMeanK: 5                                   # number of neighbors to analyze in SoR
     sorStddevMulThresh: 1.0                       # SoR standard deviation multiplier
@@ -85,20 +102,21 @@
     surroundingkeyframeAddingDistThreshold: 1.0   # meters, regulate keyframe adding threshold
     surroundingkeyframeAddingAngleThreshold: 0.2  # radians, regulate keyframe adding threshold
     surroundingKeyframeDensity: 2.0               # meters, downsample surrounding keyframe poses   
-    surroundingKeyframeSearchRadius: 50.0         # meters, within n meters scan-to-map optimization (when loop closure disabled)
-    surroundingKeyframeMapLeafSize: 0.5           # downsample local map point cloud
+    surroundingKeyframeSearchRadius: 50.0         # meters, radius for keyframe neighbor search
+    localMapTruncationRadius: 150.0               # meters, radius for voxel map pruning (local map truncation)
+    surroundingKeyframeMapLeafSize: 0.3           # downsample local map point cloud
 
     # Loop closure
     loopClosureEnableFlag: true
-    loopClosureFrequency: 1.0                     # Hz, regulate loop closure constraint add frequency
+    loopClosureFrequency: 0.1                     # Hz, regulate loop closure constraint add frequency
     surroundingKeyframeSize: 50                   # submap size (when loop closure enabled)
     historyKeyframeSearchRadius: 15.0             # meters, key frame that is within n meters from current pose will be considerd for loop closure
-    historyKeyframeSearchTimeDiff: 30.0           # seconds, key frame that is n seconds older will be considered for loop closure
-    historyKeyframeSearchNum: 25                  # number of hostory key frames will be fused into a submap for loop closure
+    historyKeyframeSearchTimeDiff: 200.0          # seconds, key frame that is n seconds older will be considered for loop closure
+    historyKeyframeSearchNum: 25                  # number of history key frames will be fused into a submap for loop closure
     loopClosureICPSurfLeafSize: 0.5               # downsample icp point cloud  
     historyKeyframeFitnessScore: 0.3              # icp threshold, the smaller the better alignment
     rebuild_on_loop_closure: true                 # trigger rolling local-map rebuild when loop constraints are added
-    rebuild_on_gps_jump: true                     # trigger rolling local-map rebuild on accepted GPS factor (time-gated)
+    rebuild_on_gps_jump: false                     # trigger rolling local-map rebuild on accepted GPS factor (time-gated)
     transformed_cloud_cache_max_age_sec: 0.5      # keep transformed keyframe cloud cache only for the last N seconds
     cloud_info_queue_depth: 5                     # CloudInfo subscriber queue depth (smaller -> less backlog, more frame drops)
     drop_stale_lidar_frames: true                 # drop LiDAR frames that are already too old when callback runs

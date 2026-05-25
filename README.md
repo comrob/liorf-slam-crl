@@ -94,8 +94,8 @@ sudo ldconfig
 ## 4) Build this repository
 
 ```bash
-mkdir -p ~/liorf-ros2/src
-cd ~/liorf-ros2/src
+mkdir -p ~/liorf_ws/src
+cd ~/liorf_ws/src
 git clone <YOUR_FORK_OR_THIS_REPO_URL> liorf
 cd ..
 
@@ -103,6 +103,18 @@ source /opt/ros/jazzy/setup.bash
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
 ```
+
+### Developer code structure (mapOptimization)
+
+The `mapOptimization` node is split across multiple files under `src/mapOptimization/` with shared declarations in `include/mapOptimization/mapOptimization.hpp`.
+
+- `src/mapOptimization/mapOptimization_core.cpp`: constructor, memory setup, LiDAR callback orchestration
+- `src/mapOptimization/mapOptimization_map.cpp`: local/global map representation, extraction/cache, save-map service wiring
+- `src/mapOptimization/mapOptimization_scan.cpp`: scan-to-map alignment and optimization
+- `src/mapOptimization/mapOptimization_gps.cpp`: GPS datum/anchor/factor fusion and GPS outputs
+- `src/mapOptimization/mapOptimization_loop.cpp`: loop closure logic and loop visualization
+- `src/mapOptimization/mapOptimization_publish.cpp`: TF, odometry, and frame publications + geometry helpers
+- `src/mapOptimization/main.cpp`: executable entry point
 
 ---
 
@@ -134,15 +146,15 @@ echo $RMW_IMPLEMENTATION
 ## 6) Run
 
 ```bash
-cd ~/liorf-ros2
+cd ~/liorf_ws
 source install/setup.bash
-ros2 launch liorf run_lio_sam_default.launch.py
+ros2 launch liorf liorf.launch.py
 ```
 
 In another terminal (same environment), play a bag:
 
 ```bash
-cd ~/liorf-ros2
+cd ~/liorf_ws
 source install/setup.bash
 ros2 bag play <path_to_ros2_bag>
 ```
@@ -164,13 +176,19 @@ Launch argument behavior is override-only: if `use_sim_time` is not specified in
 
 Diagnostics logging also maintains a stable symlink:
 
-- `~/.ros/liorf_logs/latest` -> newest `run_YYYYMMDD_HHMMSS` directory
 
 After a run, plot `timing_stats.csv` from diagnostics logs:
 
 ```bash
 python3 scripts/plot_time_slicing_stats.py
 ```
+
+Diagnostics telemetry is also persisted as `telemetry.csv` in each run directory, including:
+
+- `time_since_last_lidar_s`
+- `time_since_last_gps_s`
+
+
 
 By default, the script reads the latest run (via `~/.ros/liorf_logs/latest` when available), saves the PNG plot, and displays it.
 

@@ -5,6 +5,10 @@ set(CMAKE_BUILD_TYPE "Release")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -pthread")
 
+option(LIORF_SUPPRESS_GNU_ARRAY_BOUNDS_WARNINGS
+  "Suppress known GCC -Warray-bounds false positives in mapOptmization Release builds"
+  ON)
+
 include(cmake/rosidl_get_typesupport_target.cmake)
 
 find_package(ament_cmake REQUIRED)
@@ -28,6 +32,7 @@ find_package(tf2_ros REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(PCL REQUIRED)
 find_package(GTSAM REQUIRED)
+find_package(fastcdr REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(OpenMP REQUIRED)
 find_package(Boost REQUIRED COMPONENTS timer)
@@ -69,24 +74,44 @@ file(GLOB common_lib "lib/*.cpp")
 ###########
 # <!-- liorf_yjz_lucky_boy -->
 # Range Image Projection
+add_library(${PROJECT_NAME}_diagnostics src/liorf_diagnostics.cpp)
+ament_target_dependencies(${PROJECT_NAME}_diagnostics rclcpp std_msgs)
+target_link_libraries(${PROJECT_NAME}_diagnostics fastcdr)
+
 add_executable(${PROJECT_NAME}_imageProjection src/imageProjection.cpp ${common_lib})
 ament_target_dependencies(${PROJECT_NAME}_imageProjection ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_imageProjection "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+target_link_libraries(${PROJECT_NAME}_imageProjection ${PROJECT_NAME}_diagnostics "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 
 # # Mapping Optimization
 add_library(${PROJECT_NAME}_mapExporter src/export/MapExporter.cpp)
 ament_target_dependencies(${PROJECT_NAME}_mapExporter ${ros2_lib})
 target_link_libraries(${PROJECT_NAME}_mapExporter "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
-add_executable(${PROJECT_NAME}_mapOptmization src/mapOptmization.cpp ${common_lib} include/Scancontext.cpp)
+add_executable(${PROJECT_NAME}_mapOptmization
+  src/mapOptimization/main.cpp
+  src/mapOptimization/mapOptimization_core.cpp
+  src/mapOptimization/mapOptimization_map.cpp
+  src/mapOptimization/mapOptimization_scan.cpp
+  src/mapOptimization/mapOptimization_graph.cpp
+  src/mapOptimization/mapOptimization_gps.cpp
+  src/mapOptimization/mapOptimization_loop.cpp
+  src/mapOptimization/mapOptimization_publish.cpp
+  src/scanAlignment/ScanAligner.cpp
+  ${common_lib}
+  include/Scancontext.cpp)
 target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+   AND CMAKE_BUILD_TYPE STREQUAL "Release"
+   AND LIORF_SUPPRESS_GNU_ARRAY_BOUNDS_WARNINGS)
+  target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE -Wno-array-bounds)
+endif()
 ament_target_dependencies(${PROJECT_NAME}_mapOptmization ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_mapOptmization ${PROJECT_NAME}_mapExporter Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_mapOptmization ${PROJECT_NAME}_diagnostics ${PROJECT_NAME}_mapExporter Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
 
 # # IMU Preintegration
 add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp ${common_lib})
 ament_target_dependencies(${PROJECT_NAME}_imuPreintegration ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_imuPreintegration Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_imuPreintegration ${PROJECT_NAME}_diagnostics Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
 install(
   DIRECTORY launch config rviz scripts
@@ -95,6 +120,7 @@ install(
 
 install(
   TARGETS 
+  ${PROJECT_NAME}_diagnostics
 	${PROJECT_NAME}_imageProjection
 	${PROJECT_NAME}_imuPreintegration
 	${PROJECT_NAME}_mapOptmization

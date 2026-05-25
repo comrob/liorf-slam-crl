@@ -35,6 +35,7 @@
   <build_depend>pcl_conversions</build_depend>
   <build_depend>cv_bridge</build_depend>
   <build_depend>Boost</build_depend>
+  <build_depend>fastcdr</build_depend>
 
   <exec_depend>Boost</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
@@ -58,6 +59,7 @@
   <exec_depend>GTSAM</exec_depend>
   <exec_depend>Eigen</exec_depend>
   <exec_depend>pcl_conversions</exec_depend>
+  <exec_depend>fastcdr</exec_depend>
   
   <member_of_group>rosidl_interface_packages</member_of_group>
 
