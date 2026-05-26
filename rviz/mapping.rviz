@@ -289,6 +289,18 @@ Visualization Manager:
             Reliability Policy: Reliable
             Value: /liorf/mapping/degeneracy_pca
           Value: true
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: degPaths
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/degeneracy_paths
+          Value: true
       Enabled: true
       Name: degDetection
   Enabled: true
@@ -334,25 +346,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 40.22036361694336
+      Distance: 62.070186614990234
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -129.68983459472656
-        Y: -34.77253341674805
-        Z: 13.704949378967285
+        X: -42.487125396728516
+        Y: -15.405146598815918
+        Z: 7.388947010040283
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5647962093353271
+      Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz_default_plugins)
-      Yaw: 1.975399136543274
+      Yaw: 1.8453986644744873
     Saved: ~
 Window Geometry:
   Displays:

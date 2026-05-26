@@ -160,6 +160,7 @@ public:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyRaw;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyPCA;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyBasis;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyPaths;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
     bool T_EL_initialized = false;
@@ -253,6 +254,8 @@ public:
     int laserCloudSurfFromMapDSNum = 0;
     int laserCloudSurfLastDSNum = 0;
 
+    int temporal_filter_state = 0;
+
     bool aLoopIsClosed = false;
     map<int, int> loopIndexContainer;
     vector<pair<int, int>> loopIndexQueue;
@@ -316,6 +319,12 @@ public:
         const rclcpp::Time& stamp,
         float r_trans, float g_trans, float b_trans,
         float r_rot, float g_rot, float b_rot);
+
+    void publishDegeneracyPaths(
+        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub,
+        const std::string& ns,
+        const std::vector<TwistVector>& twists,
+        const rclcpp::Time& stamp);
 
     void loopClosureThread();
     void loopInfoHandler(const std_msgs::msg::Float64MultiArray::SharedPtr loopMsg);

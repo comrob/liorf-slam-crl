@@ -204,7 +204,7 @@ std::vector<TwistVector> scaleBasis(const std::vector<TwistVector> &basis,
         TwistVector scaled_twist = basis_i * perturbation_amount / median_point_velocity;
         basis_scaled.push_back(scaled_twist);
     }
-    return orthonormalizeBasis(basis_scaled);
+    return basis_scaled;
 }
 
 std::pair<int, std::vector<TwistVector>> computeSubspaceBasis(

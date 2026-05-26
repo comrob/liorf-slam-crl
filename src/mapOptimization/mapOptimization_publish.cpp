@@ -1,5 +1,5 @@
 #include "mapOptimization/mapOptimization.hpp"
-
+#include "degeneracyDetection/TwistManipulation.hpp"
 
 pcl::PointCloud<PointType>::Ptr mapOptimization::transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
 {
@@ -564,3 +564,105 @@ void mapOptimization::publishTwistMarkers(
     pub->publish(markerArray);
 }
 
+
+void mapOptimization::publishDegeneracyPaths(
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub,
+    const std::string& ns,
+    const std::vector<TwistVector>& twists,
+    const rclcpp::Time& stamp)
+{
+    if (pub->get_subscription_count() == 0) return;
+
+    visualization_msgs::msg::MarkerArray markerArray;
+    visualization_msgs::msg::Marker deleteAllMarker;
+    deleteAllMarker.action = visualization_msgs::msg::Marker::DELETEALL;
+    markerArray.markers.push_back(deleteAllMarker);
+
+    if (twists.empty()) {
+        pub->publish(markerArray);
+        return;
+    }
+
+    Eigen::Matrix4f currentPose = trans2Affine3f(transformTobeMapped).matrix();
+    
+    int marker_id = 0;
+    
+    std::vector<std::vector<float>> colors = {
+        {1.0f, 0.0f, 0.0f}, // red
+        {0.0f, 1.0f, 0.0f}, // green
+        {0.0f, 0.0f, 1.0f}, // blue
+        {1.0f, 1.0f, 0.0f}, // yellow
+        {0.0f, 1.0f, 1.0f}, // cyan
+        {1.0f, 0.0f, 1.0f}  // magenta
+    };
+
+    for (size_t i = 0; i < twists.size(); ++i) {
+        const auto& twist = twists[i];
+        const auto& color = colors[i % colors.size()];
+
+        Eigen::Vector3f v = twist.head<3>();
+        Eigen::Vector3f omega = twist.tail<3>();
+        
+        float v_norm = v.norm();
+        float omega_norm = omega.norm();
+        
+        float target_trans = 2.0f; // 2 meters
+        float target_rot = 36.0f * M_PI / 180.0f; // 36 degrees
+        
+        float w_step_trans = (v_norm > 1e-4f) ? target_trans / v_norm : 1e6f;
+        float w_step_rot = (omega_norm > 1e-4f) ? target_rot / omega_norm : 1e6f;
+        float w_step = std::min(w_step_trans, w_step_rot);
+        if (w_step > 1e5f) w_step = 1.0f;
+
+        visualization_msgs::msg::Marker pathMarker;
+        pathMarker.header.frame_id = mapFrameLocal;
+        pathMarker.header.stamp = stamp;
+        pathMarker.ns = ns + "_path_line_" + std::to_string(i);
+        pathMarker.id = marker_id++;
+        pathMarker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+        pathMarker.action = visualization_msgs::msg::Marker::ADD;
+        pathMarker.scale.x = 0.1; // Thicker line
+        pathMarker.color.r = color[0]; pathMarker.color.g = color[1]; pathMarker.color.b = color[2]; pathMarker.color.a = 0.8f;
+        
+        const int steps = 5; // 5 steps each side = 10 total segments
+        
+        for (int step = -steps; step <= steps; ++step) {
+            float w = static_cast<float>(step) * w_step;
+            
+            Eigen::Matrix4f deltaT = expMap(w * twist);
+            Eigen::Matrix4f pose_w = currentPose * deltaT;
+            
+            geometry_msgs::msg::Point pt;
+            pt.x = pose_w(0, 3);
+            pt.y = pose_w(1, 3);
+            pt.z = pose_w(2, 3);
+            pathMarker.points.push_back(pt);
+            
+            visualization_msgs::msg::Marker poseMarker;
+            poseMarker.header.frame_id = mapFrameLocal;
+            poseMarker.header.stamp = stamp;
+            poseMarker.ns = ns + "_pose_" + std::to_string(i);
+            poseMarker.id = marker_id++;
+            poseMarker.type = visualization_msgs::msg::Marker::ARROW; 
+            poseMarker.action = visualization_msgs::msg::Marker::ADD;
+            poseMarker.pose.position.x = pose_w(0, 3);
+            poseMarker.pose.position.y = pose_w(1, 3);
+            poseMarker.pose.position.z = pose_w(2, 3);
+            
+            Eigen::Quaternionf q(pose_w.block<3, 3>(0, 0));
+            poseMarker.pose.orientation.x = q.x();
+            poseMarker.pose.orientation.y = q.y();
+            poseMarker.pose.orientation.z = q.z();
+            poseMarker.pose.orientation.w = q.w();
+            
+            // For arrows: scale.x is length, scale.y is width, scale.z is height
+            poseMarker.scale.x = 1.0; poseMarker.scale.y = 0.2; poseMarker.scale.z = 0.2;
+            poseMarker.color.r = color[0]; poseMarker.color.g = color[1]; poseMarker.color.b = color[2]; poseMarker.color.a = 0.8f;
+            
+            markerArray.markers.push_back(poseMarker);
+        }
+        markerArray.markers.push_back(pathMarker);
+    }
+    
+    pub->publish(markerArray);
+}

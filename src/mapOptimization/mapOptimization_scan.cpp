@@ -254,6 +254,7 @@ void mapOptimization::scan2MapOptimization()
                                     0.0, 0.5, 1.0,   0.0, 1.0, 1.0); // Blue/Cyan
                 publishTwistMarkers(pubDegeneracyBasis, "basis", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp, 
                                     0.0, 1.0, 0.0,   1.0, 0.0, 1.0); // Green/Magenta
+                publishDegeneracyPaths(pubDegeneracyPaths, "paths", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp);
 
                 // 3. Log all three stages independently
                 if (diagnostics) {
@@ -287,6 +288,7 @@ void mapOptimization::scan2MapOptimization()
                 publishTwistMarkers(pubDegeneracyRaw, "raw", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
                 publishTwistMarkers(pubDegeneracyPCA, "pca", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
                 publishTwistMarkers(pubDegeneracyBasis, "basis", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
+                publishDegeneracyPaths(pubDegeneracyPaths, "paths", {}, timeLaserInfoStamp);
                 
                 // FIX: Log healthy operation to your CSV/JSON
                 if (diagnostics) {

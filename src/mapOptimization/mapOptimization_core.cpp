@@ -65,6 +65,7 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubDegeneracyRaw = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_raw", 1);
     pubDegeneracyPCA = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_pca", 1);
     pubDegeneracyBasis = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_basis", 1);
+    pubDegeneracyPaths = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_paths", 1);
 
     pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
     origin_publish_timer = this->create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::timerCallbackPublishOrigin, this));
@@ -182,6 +183,8 @@ void mapOptimization::allocateMemory()
     laserCloudSurfFromMapDS.reset(new pcl::PointCloud<PointType>());
 
     kdtreeSurfFromMap.reset(new pcl::KdTreeFLANN<PointType>());
+
+    temporal_filter_state = 0;
 
     for (int i = 0; i < 6; ++i){
         transformTobeMapped[i] = 0;
