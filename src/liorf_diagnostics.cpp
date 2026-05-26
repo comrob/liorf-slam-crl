@@ -44,6 +44,13 @@ LiorfDiagnostics::LiorfDiagnostics(
         time_deltas_csv_.open((run_dir_ / "time_deltas.csv").string(), std::ios::out);
     if (write_files_master_ && write_frame_metrics_)
         frame_metrics_csv_.open((run_dir_ / "frame_metrics.csv").string(), std::ios::out);
+    
+    if (write_files_master_ && write_telemetry_) // Or a new write_degeneracy flag
+    {
+        degeneracy_metrics_csv_.open((run_dir_ / "degeneracy_metrics.csv").string(), std::ios::out);
+        if (degeneracy_metrics_csv_.is_open())
+            degeneracy_metrics_csv_ << "stamp_sec,module_name,is_degenerate,twists\n";
+    }
 
     if (timing_stats_.is_open())
         timing_stats_ << "stamp_sec,stage,elapsed_ms\n";
@@ -62,6 +69,7 @@ LiorfDiagnostics::LiorfDiagnostics(
     event_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/event", qos);
     warnings_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/warnings", qos);
     frame_metrics_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/frame_metrics", qos);
+    degeneracy_metrics_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/degeneracy_metrics", qos);
 
     const double hz = std::max(0.1, publish_hz);
     const auto period_ms = std::chrono::milliseconds(static_cast<int>(1000.0 / hz));
@@ -268,6 +276,48 @@ void LiorfDiagnostics::recordFrameMetrics(double stamp_sec,
         ss << "}";
         msg.data = ss.str();
         frame_metrics_pub_->publish(msg);
+    }
+}
+
+void LiorfDiagnostics::recordDegeneracyTelemetry(
+    double stamp_sec, 
+    const std::string &module_name, 
+    bool is_degenerate, 
+    const std::vector<Eigen::Matrix<float, 6, 1>> &twists)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // 1. Write to CSV
+    if (degeneracy_metrics_csv_.is_open()) {
+        degeneracy_metrics_csv_ << std::fixed << std::setprecision(6) << stamp_sec << ","
+                                << module_name << "," << (is_degenerate ? "1" : "0") << ",\"";
+        for (size_t i = 0; i < twists.size(); ++i) {
+            for (int j = 0; j < 6; ++j) {
+                degeneracy_metrics_csv_ << std::setprecision(4) << twists[i](j) << (j < 5 ? "|" : "");
+            }
+            if (i < twists.size() - 1) degeneracy_metrics_csv_ << ";";
+        }
+        degeneracy_metrics_csv_ << "\"\n";
+    }
+
+    // 2. Publish JSON via ROS2
+    if (degeneracy_metrics_pub_) {
+        std_msgs::msg::String msg;
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(6) << "{\"stamp_sec\":" << stamp_sec 
+           << ",\"module\":\"" << module_name << "\",\"is_degenerate\":" << (is_degenerate ? "true" : "false") << ",\"twists\":[";
+           
+        for (size_t i = 0; i < twists.size(); ++i) {
+            ss << "[";
+            for (int j = 0; j < 6; ++j) {
+                ss << std::setprecision(4) << twists[i](j) << (j < 5 ? "," : "");
+            }
+            ss << "]";
+            if (i < twists.size() - 1) ss << ",";
+        }
+        ss << "]}";
+        msg.data = ss.str();
+        degeneracy_metrics_pub_->publish(msg);
     }
 }
 

@@ -241,16 +241,31 @@ void mapOptimization::scan2MapOptimization()
                 scanAlignerDegeneracy);
 
             auto detectedTwists = degeneracyDetector->getTwistsPerturbationsDegeneracy();
-            
-            publishDegeneracyMarkers(detectedTwists, timeLaserInfoStamp);
-
+        
             if (!detectedTwists.empty())
             {
-                RCLCPP_WARN_STREAM(get_logger(), "Degeneracy Detected!\n" << degeneracyDetector->getDegeneracyDirectionsString());
+                // 1. Calculate the math
+                auto final_basis = degeneracyDetector->extractBasisFromTwists(detectedTwists, laserCloudSurfLastDS);
                 
-                auto basis = degeneracyDetector->extractBasisFromTwists(detectedTwists, laserCloudSurfLastDS);
-                
-                // 3. Hessian-Nullspace Correction
+                // 2. Publish the three RViz Layers
+                publishTwistMarkers(pubDegeneracyRaw, "raw", degeneracyDetector->getRawTwists(), timeLaserInfoStamp, 
+                                    1.0, 0.0, 0.0,   1.0, 1.0, 0.0); // Red/Yellow
+                publishTwistMarkers(pubDegeneracyPCA, "pca", degeneracyDetector->getPcaBasis(), timeLaserInfoStamp, 
+                                    0.0, 0.5, 1.0,   0.0, 1.0, 1.0); // Blue/Cyan
+                publishTwistMarkers(pubDegeneracyBasis, "basis", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp, 
+                                    0.0, 1.0, 0.0,   1.0, 0.0, 1.0); // Green/Magenta
+
+                // 3. Log all three stages independently
+                if (diagnostics) {
+                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Raw", true, degeneracyDetector->getRawTwists());
+                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_PCA", true, degeneracyDetector->getPcaBasis());
+                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Basis", true, final_basis);
+                }
+
+                // FIX: Print only the final basis to the terminal
+                RCLCPP_WARN_STREAM(get_logger(), "Degeneracy Detected!\n" << degeneracyDetector->getFinalBasisString());
+                 
+                // 4. Hessian-Nullspace Correction
                 Eigen::Matrix4f poseOptimizedMat = pcl::getTransformation(
                     transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5],
                     transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]).matrix();
@@ -258,14 +273,28 @@ void mapOptimization::scan2MapOptimization()
                 Eigen::Matrix4f posePredictedMat = incrementalOdometryAffineFront.matrix();
                 
                 TwistVector diffTwist = matrixToTwist(poseOptimizedMat.inverse() * posePredictedMat);
-                TwistVector projectedTwist = projectOntoBasis(diffTwist, basis);
+                TwistVector projectedTwist = projectOntoBasis(diffTwist, final_basis);
                 
                 Eigen::Matrix4f finalCorrectedPose = poseOptimizedMat * expMap(projectedTwist);
                 
-                // Re-extract Euler angles into the main state vector
                 pcl::getTranslationAndEulerAngles(Eigen::Affine3f(finalCorrectedPose), 
                     transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5],
                     transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
+            }
+            else 
+            {
+                // FIX: Clear RViz when the environment is healthy!
+                publishTwistMarkers(pubDegeneracyRaw, "raw", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
+                publishTwistMarkers(pubDegeneracyPCA, "pca", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
+                publishTwistMarkers(pubDegeneracyBasis, "basis", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
+                
+                // FIX: Log healthy operation to your CSV/JSON
+                if (diagnostics) {
+                    std::vector<TwistVector> empty_twists;
+                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Raw", false, empty_twists);
+                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_PCA", false, empty_twists);
+                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Basis", false, empty_twists);
+                }
             }
         }
 

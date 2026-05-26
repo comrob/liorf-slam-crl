@@ -157,7 +157,9 @@ public:
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubBaselinkGpsEnuOdometry;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubBaselinkGpsNedOdometry;
 
-    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyMarkers;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyRaw;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyPCA;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyBasis;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
     bool T_EL_initialized = false;
@@ -307,7 +309,13 @@ public:
     bool saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req, std::shared_ptr<liorf::srv::SaveMap::Response> res);
     void visualizeGlobalMapThread();
     void publishGlobalMap();
-    void publishDegeneracyMarkers(const std::vector<TwistVector> &twists, const rclcpp::Time &stamp);
+    void publishTwistMarkers(
+        rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub,
+        const std::string& ns,
+        const std::vector<TwistVector>& twists,
+        const rclcpp::Time& stamp,
+        float r_trans, float g_trans, float b_trans,
+        float r_rot, float g_rot, float b_rot);
 
     void loopClosureThread();
     void loopInfoHandler(const std_msgs::msg::Float64MultiArray::SharedPtr loopMsg);

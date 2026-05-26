@@ -62,7 +62,9 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubBaselinkGpsEnuOdometry = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_gps_enu_odometry", QosPolicy(history_policy, reliability_policy));
     pubBaselinkGpsNedOdometry = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_gps_ned_odometry", QosPolicy(history_policy, reliability_policy));
 
-    pubDegeneracyMarkers = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_directions", 1);
+    pubDegeneracyRaw = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_raw", 1);
+    pubDegeneracyPCA = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_pca", 1);
+    pubDegeneracyBasis = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_basis", 1);
 
     pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
     origin_publish_timer = this->create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::timerCallbackPublishOrigin, this));

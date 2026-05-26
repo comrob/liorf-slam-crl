@@ -488,113 +488,79 @@ void mapOptimization::publishFrames()
     }
 }
 
-void mapOptimization::publishDegeneracyMarkers(const std::vector<TwistVector> &twists, const rclcpp::Time &stamp)
+void mapOptimization::publishTwistMarkers(
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub,
+    const std::string& ns,
+    const std::vector<TwistVector>& twists,
+    const rclcpp::Time& stamp,
+    float r_trans, float g_trans, float b_trans,
+    float r_rot, float g_rot, float b_rot)
 {
-    if (pubDegeneracyMarkers->get_subscription_count() == 0)
-        return;
+    if (pub->get_subscription_count() == 0) return;
 
     visualization_msgs::msg::MarkerArray markerArray;
-
-    // 1. Create a "Delete All" marker to clear previous frames' degeneracies
     visualization_msgs::msg::Marker deleteAllMarker;
     deleteAllMarker.action = visualization_msgs::msg::Marker::DELETEALL;
     markerArray.markers.push_back(deleteAllMarker);
 
     if (twists.empty()) {
-        pubDegeneracyMarkers->publish(markerArray);
+        pub->publish(markerArray);
         return;
     }
 
-    // 2. Get the current global pose to anchor and rotate the markers
     Eigen::Affine3f currentPose = trans2Affine3f(transformTobeMapped);
-    Eigen::Vector3f robotPosition = currentPose.translation();
-    Eigen::Matrix3f robotRotation = currentPose.rotation();
+    Eigen::Vector3f robotPos = currentPose.translation();
+    Eigen::Matrix3f robotRot = currentPose.rotation();
 
     int marker_id = 0;
-    const float visualization_scale = 5.0f; // Scale up the arrows so they are easy to see in RViz
+    const float scale = 5.0f;
 
-    for (size_t i = 0; i < twists.size(); ++i)
-    {
-        TwistVector twist = twists[i];
-        Eigen::Vector3f localTranslation = twist.segment<3>(0);
-        Eigen::Vector3f localRotationAxis = twist.segment<3>(3);
+    for (const auto& twist : twists) {
+        Eigen::Vector3f localTrans = twist.segment<3>(0);
+        Eigen::Vector3f localRot = twist.segment<3>(3);
 
-        // --- Translation Marker (Red) ---
-        if (localTranslation.norm() > 1e-4f)
-        {
-            Eigen::Vector3f globalTranslationDir = robotRotation * localTranslation.normalized();
+        if (localTrans.norm() > 1e-4f) {
+            Eigen::Vector3f globalDir = robotRot * localTrans.normalized();
+            visualization_msgs::msg::Marker m;
+            m.header.frame_id = mapFrameLocal;
+            m.header.stamp = stamp;
+            m.ns = ns + "_trans";
+            m.id = marker_id++;
+            m.type = visualization_msgs::msg::Marker::ARROW;
+            m.action = visualization_msgs::msg::Marker::ADD;
+            m.scale.x = 0.2; m.scale.y = 0.4;
+            m.color.r = r_trans; m.color.g = g_trans; m.color.b = b_trans; m.color.a = 0.8f;
             
-            visualization_msgs::msg::Marker transMarker;
-            transMarker.header.frame_id = mapFrameLocal; // or odometryFrame
-            transMarker.header.stamp = stamp;
-            transMarker.ns = "degeneracy_translation";
-            transMarker.id = marker_id++;
-            transMarker.type = visualization_msgs::msg::Marker::ARROW;
-            transMarker.action = visualization_msgs::msg::Marker::ADD;
-            
-            transMarker.scale.x = 0.2; // Shaft diameter
-            transMarker.scale.y = 0.4; // Head diameter
-            transMarker.scale.z = 0.0; // Head length (0 = default)
-            
-            transMarker.color.r = 1.0f;
-            transMarker.color.g = 0.0f;
-            transMarker.color.b = 0.0f;
-            transMarker.color.a = 0.8f;
-
-            geometry_msgs::msg::Point start_point, end_point;
-            start_point.x = robotPosition.x();
-            start_point.y = robotPosition.y();
-            start_point.z = robotPosition.z();
-
-            end_point.x = robotPosition.x() + (globalTranslationDir.x() * visualization_scale);
-            end_point.y = robotPosition.y() + (globalTranslationDir.y() * visualization_scale);
-            end_point.z = robotPosition.z() + (globalTranslationDir.z() * visualization_scale);
-
-            transMarker.points.push_back(start_point);
-            transMarker.points.push_back(end_point);
-            
-            markerArray.markers.push_back(transMarker);
+            geometry_msgs::msg::Point start, end;
+            start.x = robotPos.x(); start.y = robotPos.y(); start.z = robotPos.z();
+            end.x = robotPos.x() + globalDir.x() * scale;
+            end.y = robotPos.y() + globalDir.y() * scale;
+            end.z = robotPos.z() + globalDir.z() * scale;
+            m.points.push_back(start); m.points.push_back(end);
+            markerArray.markers.push_back(m);
         }
 
-        // --- Rotation Axis Marker (Yellow) ---
-        if (localRotationAxis.norm() > 1e-4f)
-        {
-            Eigen::Vector3f globalRotationDir = robotRotation * localRotationAxis.normalized();
+        if (localRot.norm() > 1e-4f) {
+            Eigen::Vector3f globalDir = robotRot * localRot.normalized();
+            visualization_msgs::msg::Marker m;
+            m.header.frame_id = mapFrameLocal;
+            m.header.stamp = stamp;
+            m.ns = ns + "_rot";
+            m.id = marker_id++;
+            m.type = visualization_msgs::msg::Marker::ARROW;
+            m.action = visualization_msgs::msg::Marker::ADD;
+            m.scale.x = 0.2; m.scale.y = 0.4;
+            m.color.r = r_rot; m.color.g = g_rot; m.color.b = b_rot; m.color.a = 0.8f;
             
-            visualization_msgs::msg::Marker rotMarker;
-            rotMarker.header.frame_id = mapFrameLocal; // or odometryFrame
-            rotMarker.header.stamp = stamp;
-            rotMarker.ns = "degeneracy_rotation";
-            rotMarker.id = marker_id++;
-            rotMarker.type = visualization_msgs::msg::Marker::ARROW;
-            rotMarker.action = visualization_msgs::msg::Marker::ADD;
-            
-            rotMarker.scale.x = 0.2; 
-            rotMarker.scale.y = 0.4; 
-            rotMarker.scale.z = 0.0; 
-            
-            rotMarker.color.r = 1.0f;
-            rotMarker.color.g = 1.0f;
-            rotMarker.color.b = 0.0f;
-            rotMarker.color.a = 0.8f;
-
-            geometry_msgs::msg::Point start_point, end_point;
-            start_point.x = robotPosition.x();
-            start_point.y = robotPosition.y();
-            start_point.z = robotPosition.z();
-
-            end_point.x = robotPosition.x() + (globalRotationDir.x() * visualization_scale);
-            end_point.y = robotPosition.y() + (globalRotationDir.y() * visualization_scale);
-            end_point.z = robotPosition.z() + (globalRotationDir.z() * visualization_scale);
-
-            rotMarker.points.push_back(start_point);
-            rotMarker.points.push_back(end_point);
-            
-            markerArray.markers.push_back(rotMarker);
+            geometry_msgs::msg::Point start, end;
+            start.x = robotPos.x(); start.y = robotPos.y(); start.z = robotPos.z();
+            end.x = robotPos.x() + globalDir.x() * scale;
+            end.y = robotPos.y() + globalDir.y() * scale;
+            end.z = robotPos.z() + globalDir.z() * scale;
+            m.points.push_back(start); m.points.push_back(end);
+            markerArray.markers.push_back(m);
         }
     }
-
-    pubDegeneracyMarkers->publish(markerArray);
+    pub->publish(markerArray);
 }
-
 

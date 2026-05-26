@@ -24,6 +24,10 @@ private:
     bool failed;
     std::string fail_reason;
 
+    std::vector<TwistVector> last_raw_twists;
+    std::vector<TwistVector> last_pca_basis;
+    std::vector<TwistVector> last_sparsified_basis;
+
 public:
     DegeneracyDetector(const DegeneracyParams &parameters = DegeneracyParams());
 
@@ -34,10 +38,17 @@ public:
         std::shared_ptr<ScanAligner> scanAlignerDegeneracy);
 
     std::vector<TwistVector> getTwistsPerturbationsDegeneracy() const { return twists_perturbations_degeneration; }
+    
     std::string getDegeneracyDirectionsString() const;
+    std::string getFinalBasisString() const;
+
     std::vector<TwistVector> extractBasisFromTwists(
         const std::vector<TwistVector> &twists,
         pcl::PointCloud<PointType>::Ptr cloud_scan);
+    
+    std::vector<TwistVector> getRawTwists() const { return last_raw_twists; }
+    std::vector<TwistVector> getPcaBasis() const { return last_pca_basis; }
+    std::vector<TwistVector> getSparsifiedBasis() const { return last_sparsified_basis; }
 
     bool isFailed() const { return failed; }
     std::string getFailReason() const { return fail_reason; }

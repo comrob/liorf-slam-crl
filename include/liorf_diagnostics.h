@@ -17,6 +17,8 @@
 #include <functional>
 #include <algorithm>
 
+#include <Eigen/Core>
+
 class LiorfDiagnostics
 {
 public:
@@ -52,6 +54,11 @@ public:
                             double prediction_delta_m,
                             double optimized_delta_m,
                             double estimated_velocity_mps);
+    void recordDegeneracyTelemetry(
+        double stamp_sec, 
+        const std::string &module_name, 
+        bool is_degenerate, 
+        const std::vector<Eigen::Matrix<float, 6, 1>> &twists);
     double getLastPredictionDelta() const;
 
 private:
@@ -71,6 +78,7 @@ private:
     std::ofstream telemetry_csv_;
     std::ofstream time_deltas_csv_;
     std::ofstream frame_metrics_csv_;
+    std::ofstream degeneracy_metrics_csv_;
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr telemetry_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr timing_stats_pub_;
@@ -78,6 +86,7 @@ private:
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr event_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr warnings_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr frame_metrics_pub_;
+    rclcpp::Publisher<std_msgs::msg::String>::SharedPtr degeneracy_metrics_pub_;
     rclcpp::TimerBase::SharedPtr diagnostics_timer_;
 
     mutable std::mutex mutex_;

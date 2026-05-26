@@ -278,20 +278,6 @@ std::vector<TwistVector> sparsifyBasisPreservingSubspace(const std::vector<Twist
     return sparsifiedBasis;
 }
 
-std::vector<TwistVector> sparcifyTwistBasis(const std::vector<TwistVector> &directions,
-                                                float eigen_value_threshold,
-                                                bool verbose = false)
-{
-    std::vector<TwistVector> sparsifiedBasis;
-    if (directions.size() > 0)
-    {
-        auto [rank, basis] = computeSubspaceBasis(directions, eigen_value_threshold, verbose);
-        if (rank == 0) return sparsifiedBasis;
-        sparsifiedBasis = sparsifyBasisPreservingSubspace(basis);
-    }
-    return sparsifiedBasis;
-}
-
 } // End anonymous namespace
 
 DegeneracyDetector::DegeneracyDetector(const DegeneracyParams &parameters) : params(parameters), failed(false) {}
@@ -389,26 +375,60 @@ std::string DegeneracyDetector::getDegeneracyDirectionsString() const
     return ss.str();
 }
 
+std::string DegeneracyDetector::getFinalBasisString() const
+{
+    std::stringstream ss;
+    if (last_sparsified_basis.empty()) {
+        return "No final basis extracted.\n";
+    }
+    
+    ss << "Final Sparsified & Scaled Projection Basis:\n";
+    for (size_t i = 0; i < last_sparsified_basis.size(); i++) {
+        TwistVector twist = last_sparsified_basis[i];
+        Eigen::Vector3f trans = twist.segment<3>(0);
+        Eigen::Vector3f rot = twist.segment<3>(3);
+        
+        ss << "  " << i << ") trans: [" << trans.x() << ", " << trans.y() << ", " << trans.z() << "] "
+           << "rot: [" << rot.x() << ", " << rot.y() << ", " << rot.z() << "]\n";
+    }
+    return ss.str();
+}
+
 std::vector<TwistVector> DegeneracyDetector::extractBasisFromTwists(
     const std::vector<TwistVector> &twists,
     pcl::PointCloud<PointType>::Ptr cloud_scan)
 {
+    last_raw_twists = twists; // Store Step A
+
     float medianDistancefromCenter = computeMedianDistance(cloud_scan);
     if(medianDistancefromCenter < 1e-5f) medianDistancefromCenter = 1.0f;
 
-    std::vector<TwistVector> twistsPerturbationsDegeneration = twists;
-    for (size_t i = 0; i < twistsPerturbationsDegeneration.size(); i++)
-    {
-        twistsPerturbationsDegeneration[i].segment<3>(3) *= medianDistancefromCenter;
+    std::vector<TwistVector> twistsScaled = twists;
+    for (size_t i = 0; i < twistsScaled.size(); i++) {
+        twistsScaled[i].segment<3>(3) *= medianDistancefromCenter;
     }
 
-    std::vector<TwistVector> perturbSparsifiedBasis =
-        sparcifyTwistBasis(twistsPerturbationsDegeneration, params.eigen_value_threshold, params.verbose);
-
-    for (size_t i = 0; i < perturbSparsifiedBasis.size(); i++)
-    {
-        perturbSparsifiedBasis[i].segment<3>(3) /= medianDistancefromCenter;
+    // Step B: PCA
+    auto [rank, pca_basis] = computeSubspaceBasis(twistsScaled, params.eigen_value_threshold, params.verbose);
+    
+    // Scale PCA back for visualization storage
+    last_pca_basis = pca_basis;
+    for (size_t i = 0; i < last_pca_basis.size(); i++) {
+        last_pca_basis[i].segment<3>(3) /= medianDistancefromCenter;
     }
 
-    return scaleBasis(perturbSparsifiedBasis, cloud_scan);
+    // Step C: Sparsification
+    std::vector<TwistVector> sparsified_basis;
+    if (rank > 0) {
+        sparsified_basis = sparsifyBasisPreservingSubspace(pca_basis);
+    }
+    
+    // Scale Sparsified back for visualization storage
+    last_sparsified_basis = sparsified_basis;
+    for (size_t i = 0; i < last_sparsified_basis.size(); i++) {
+        last_sparsified_basis[i].segment<3>(3) /= medianDistancefromCenter;
+    }
+
+    // Return the final, fully scaled basis for actual projection
+    return scaleBasis(last_sparsified_basis, cloud_scan);
 }
