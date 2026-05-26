@@ -306,6 +306,7 @@ public:
 
         // degeneracy detection and handling
         declare_parameter<bool>("enableDegeneracyDetection", false);
+        get_parameter("enableDegeneracyDetection", enableDegeneracyDetection);
 
         std::string sensorStr;
         declare_parameter<string>("sensor", " ");
