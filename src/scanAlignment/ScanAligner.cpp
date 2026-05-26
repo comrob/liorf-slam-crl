@@ -199,8 +199,8 @@ void ScanAligner::surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan)
 
         float pd2 = pa * pointSel.x + pb * pointSel.y + pc * pointSel.z + pd;
 
-        float s = 1 - 0.9 * fabs(pd2) / sqrt(sqrt(pointOri.x * pointOri.x
-                + pointOri.y * pointOri.y + pointOri.z * pointOri.z));
+        float s = 1 - 0.9 * fabs(pd2) / sqrt(pointOri.x * pointOri.x
+                + pointOri.y * pointOri.y + pointOri.z * pointOri.z);
 
         coeff.x = s * pa;
         coeff.y = s * pb;
@@ -300,7 +300,7 @@ bool ScanAligner::LMOptimization(int iterCount)
         matV.copyTo(matV2);
 
         isDegenerate = false;
-        float eignThre[6] = {100, 100, 100, 100, 100, 100};
+        float eignThre[6] = {1e-3f, 1e-3f, 1e-3f, 1e-3f, 1e-3f, 1e-3f};
         for (int i = 5; i >= 0; i--) {
             if (matE.at<float>(0, i) < eignThre[i]) {
                 for (int j = 0; j < 6; j++) {
