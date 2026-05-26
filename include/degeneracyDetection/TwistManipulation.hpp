@@ -1,6 +1,9 @@
 // File: include/degeneracyDetection/TwistManipulation.hpp
 #pragma once
 
+ #include <cmath>
+ #include <vector>
+
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 

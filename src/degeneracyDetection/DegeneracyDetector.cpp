@@ -7,6 +7,8 @@ namespace {
 
 float calculateMedianDistance(pcl::PointCloud<PointType>::Ptr cloud_map, bool verbose = false)
 {
+    if (cloud_map->size() < 2) return 0.0f;
+
     std::vector<float> distances;
     pcl::KdTreeFLANN<PointType> kdtree;
     kdtree.setInputCloud(cloud_map);
@@ -21,6 +23,8 @@ float calculateMedianDistance(pcl::PointCloud<PointType>::Ptr cloud_map, bool ve
             distances.push_back(std::sqrt(point_nkn_squared_distance[1]));
         }
     }
+
+    if (distances.size() < 2) return 0.0f;
 
     std::sort(distances.begin(), distances.end());
     size_t mid_index = distances.size() / 2;

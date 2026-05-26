@@ -500,6 +500,10 @@ void mapOptimization::publishTwistMarkers(
 
     visualization_msgs::msg::MarkerArray markerArray;
     visualization_msgs::msg::Marker deleteAllMarker;
+    deleteAllMarker.header.frame_id = odometryFrame;
+    deleteAllMarker.header.stamp = stamp;
+    deleteAllMarker.ns = "degeneracy";
+    deleteAllMarker.id = 0;
     deleteAllMarker.action = visualization_msgs::msg::Marker::DELETEALL;
     markerArray.markers.push_back(deleteAllMarker);
 
