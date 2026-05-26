@@ -2,6 +2,10 @@
 
 void mapOptimization::updateInitialGuess()
 {
+    if (!cloudKeyPoses3D) {
+        RCLCPP_ERROR(get_logger(), "cloudKeyPoses3D is NULL! This should not happen.");
+        return;
+    }
     // save current transformation before any processing
     incrementalOdometryAffineFront = trans2Affine3f(transformTobeMapped);
 
@@ -217,95 +221,39 @@ void mapOptimization::scan2MapOptimization()
 
     if (laserCloudSurfLastDSNum > 30)
     {
-        if (kdtreeLocalMapDirty)
-        {
-            TicToc t_setInputCloud;
-            kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
-            kdtreeLocalMapDirty = false;
-            if (diagnostics)
-                diagnostics->recordSlice("scan2MapOptimization.setInputCloud", t_setInputCloud.toc());
-        }
-
-        scanAlignerPrimary->setMap(laserCloudSurfFromMapDS, kdtreeSurfFromMap);
+        scanAlignerPrimary->setMap(voxelMap);
         AlignmentMetrics metrics = scanAlignerPrimary->align(laserCloudSurfLastDS, transformTobeMapped);
         this->isDegenerate = metrics.is_degenerate;
 
-        // 2. Degeneracy Pipeline
-        if (enableDegeneracyDetection) // Define this in ParamServer
+        if (enableDegeneracyDetection)
         {
-            scanAlignerDegeneracy->setMap(laserCloudSurfFromMapDS, kdtreeSurfFromMap);
+            scanAlignerDegeneracy->setMap(voxelMap); // Share the exact same O(1) map
             degeneracyDetector->evalDegeneracyPerturbation(
                 transformTobeMapped,
                 laserCloudSurfLastDS,
-                laserCloudSurfFromMapDS,
+                laserCloudSurfLastDS, // Pass the scan itself to prevent the segfault
                 scanAlignerDegeneracy);
+            
+            // LOG THE FAILURE REASON IF ANY
+            if (degeneracyDetector->isFailed()) {
+                RCLCPP_WARN(this->get_logger(), "Degeneracy failed: %s", degeneracyDetector->getFailReason().c_str());
+            }
 
-            auto detectedTwists = degeneracyDetector->getTwistsPerturbationsDegeneracy();
-        
-            if (!detectedTwists.empty())
-            {
-                // 1. Calculate the math
-                auto final_basis = degeneracyDetector->extractBasisFromTwists(detectedTwists, laserCloudSurfLastDS);
-                
-                // 2. Publish the three RViz Layers
+            if (enableDegeneracyDetection) {
                 publishTwistMarkers(pubDegeneracyRaw, "raw", degeneracyDetector->getRawTwists(), timeLaserInfoStamp, 
                                     1.0, 0.0, 0.0,   1.0, 1.0, 0.0); // Red/Yellow
                 publishTwistMarkers(pubDegeneracyPCA, "pca", degeneracyDetector->getPcaBasis(), timeLaserInfoStamp, 
                                     0.0, 0.5, 1.0,   0.0, 1.0, 1.0); // Blue/Cyan
                 publishTwistMarkers(pubDegeneracyBasis, "basis", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp, 
                                     0.0, 1.0, 0.0,   1.0, 0.0, 1.0); // Green/Magenta
-                publishDegeneracyPaths(pubDegeneracyPaths, "paths", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp);
-
-                // 3. Log all three stages independently
-                if (diagnostics) {
-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Raw", true, degeneracyDetector->getRawTwists());
-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_PCA", true, degeneracyDetector->getPcaBasis());
-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Basis", true, final_basis);
-                }
-
-                // FIX: Print only the final basis to the terminal
-                RCLCPP_WARN_STREAM(get_logger(), "Degeneracy Detected!\n" << degeneracyDetector->getFinalBasisString());
-                 
-                // 4. Hessian-Nullspace Correction
-                Eigen::Matrix4f poseOptimizedMat = pcl::getTransformation(
-                    transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5],
-                    transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]).matrix();
-                    
-                Eigen::Matrix4f posePredictedMat = incrementalOdometryAffineFront.matrix();
-                
-                TwistVector diffTwist = matrixToTwist(poseOptimizedMat.inverse() * posePredictedMat);
-                TwistVector projectedTwist = projectOntoBasis(diffTwist, final_basis);
-                
-                Eigen::Matrix4f finalCorrectedPose = poseOptimizedMat * expMap(projectedTwist);
-                
-                pcl::getTranslationAndEulerAngles(Eigen::Affine3f(finalCorrectedPose), 
-                    transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5],
-                    transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
-            }
-            else 
-            {
-                // FIX: Clear RViz when the environment is healthy!
-                publishTwistMarkers(pubDegeneracyRaw, "raw", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
-                publishTwistMarkers(pubDegeneracyPCA, "pca", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
-                publishTwistMarkers(pubDegeneracyBasis, "basis", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
-                publishDegeneracyPaths(pubDegeneracyPaths, "paths", {}, timeLaserInfoStamp);
-                
-                // FIX: Log healthy operation to your CSV/JSON
-                if (diagnostics) {
-                    std::vector<TwistVector> empty_twists;
-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Raw", false, empty_twists);
-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_PCA", false, empty_twists);
-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Basis", false, empty_twists);
-                }
+                publishDegeneracyPaths(pubDegeneracyPaths, "degeneracy_paths", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp);
             }
         }
+        
+        transformUpdate();
 
-        if (diagnostics)
+        if (true)
         {
-            diagnostics->recordSlice("scan2MapOptimization.surfOptimization.total", metrics.surf_optimization_ms);
-            diagnostics->recordSlice("scan2MapOptimization.combineOptimizationCoeffs.total", metrics.combine_ms);
-            diagnostics->recordSlice("scan2MapOptimization.LMOptimization.total", metrics.lm_optimization_ms);
-
             std::ostringstream oss;
             oss << "[SCAN2MAP_ITER] iter_used=" << metrics.iterations
                 << " surf_total_ms=" << std::fixed << std::setprecision(3) << metrics.surf_optimization_ms

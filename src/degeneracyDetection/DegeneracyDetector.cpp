@@ -332,7 +332,9 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
         
         if (metrics.final_correspondences < 50) { 
             failed = true;
-            fail_reason = "Degeneracy Aligner failed: Not enough correspondences.";
+            fail_reason = "Degeneracy Aligner failed: Not enough correspondences (" + std::to_string(metrics.final_correspondences) + 
+                          "). Scan size: " + std::to_string(cloud_scan->size()) + 
+                          ", Perturbation step: " + std::to_string(perturbation_step);
             continue;
         }
 

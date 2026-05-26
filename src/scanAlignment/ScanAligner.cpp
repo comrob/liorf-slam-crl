@@ -25,10 +25,9 @@ ScanAligner::ScanAligner(int max_points, float knn_distance, int cores)
     isDegenerate = false;
 }
 
-void ScanAligner::setMap(const pcl::PointCloud<PointType>::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &kdtree)
+void ScanAligner::setMap(const std::shared_ptr<lio::VoxelMap>& map)
 {
-    mapCloud = map;
-    kdtreeMap = kdtree;
+    voxelMap = map;
 }
 
 void ScanAligner::pointAssociateToMap(PointType const *const pi, PointType *const po)
@@ -107,14 +106,23 @@ AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &scan,
 
 void ScanAligner::surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan)
 {
-    // throw an error if kdtreeMap is not set
-    if (kdtreeMap->getInputCloud() == nullptr) {
-        throw std::runtime_error("ScanAligner::surfOptimization - kdtreeMap input cloud is not set. Please call setMap() before surfOptimization().");
+    if (!voxelMap) {
+        throw std::runtime_error("ScanAligner::surfOptimization - voxelMap is not set.");
     }
 
     updatePointAssociateToMap();
 
     const int scanSize = scan->points.size();
+    
+    if (scanSize > (int)laserCloudOriSurfVec.size()) {
+        laserCloudOriSurfVec.resize(scanSize);
+        coeffSelSurfVec.resize(scanSize);
+        laserCloudOriSurfFlag.resize(scanSize, false);
+        laserCloudSurfKnnPassFlag.resize(scanSize, 0);
+        laserCloudSurfPlaneValidFlag.resize(scanSize, 0);
+        laserCloudSurfDebugCode.resize(scanSize, SURF_DEBUG_NOT_OPTIMIZED);
+    }
+
     std::fill(laserCloudSurfKnnPassFlag.begin(), laserCloudSurfKnnPassFlag.begin() + scanSize, 0);
     std::fill(laserCloudSurfPlaneValidFlag.begin(), laserCloudSurfPlaneValidFlag.begin() + scanSize, 0);
     std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.begin() + scanSize, SURF_DEBUG_NOT_OPTIMIZED);
@@ -126,86 +134,38 @@ void ScanAligner::surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan)
     #pragma omp parallel for num_threads(numberOfCores) reduction(+:knnPassCount,planeValidCount,matchedCount)
     for (int i = 0; i < scanSize; i++)
     {
-        PointType pointOri, pointSel, coeff;
-        std::vector<int> pointSearchInd;
-        std::vector<float> pointSearchSqDis;
-
-        pointOri = scan->points[i];
+        PointType pointOri = scan->points[i];
+        PointType pointSel;
         pointAssociateToMap(&pointOri, &pointSel); 
 
-        laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_NEIGHBOR_COUNT;
-        const int foundNeighbors = kdtreeMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
-        if (foundNeighbors < 5)
-            continue;
+        Eigen::Vector3f surfel_normal, surfel_centroid;
+        float planarity_score;
 
-        Eigen::Matrix<float, 5, 3> matA0;
-        Eigen::Matrix<float, 5, 1> matB0;
-        Eigen::Vector3f matX0;
-
-        matA0.setZero();
-        matB0.fill(-1);
-        matX0.setZero();
-
-        const float knnGateDistanceSq = surfKnnMinDistance * surfKnnMinDistance;
-
-        if (pointSearchSqDis[4] >= knnGateDistanceSq)
-        {
-            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_KNN_DISTANCE;
+        // O(1) Surfel Lookup
+        bool found = voxelMap->GetSurfelAtPoint(pointSel, surfel_normal, surfel_centroid, planarity_score);
+        if (!found) {
+            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_NEIGHBOR_COUNT;
             continue;
         }
 
         laserCloudSurfKnnPassFlag[i] = 1;
         knnPassCount++;
-
-        for (int j = 0; j < 5; j++) {
-            matA0(j, 0) = mapCloud->points[pointSearchInd[j]].x;
-            matA0(j, 1) = mapCloud->points[pointSearchInd[j]].y;
-            matA0(j, 2) = mapCloud->points[pointSearchInd[j]].z;
-        }
-
-        matX0 = matA0.colPivHouseholderQr().solve(matB0);
-
-        float pa = matX0(0, 0);
-        float pb = matX0(1, 0);
-        float pc = matX0(2, 0);
-        float pd = 1;
-
-        float ps = sqrt(pa * pa + pb * pb + pc * pc);
-        const float planeNormEpsilon = 1e-6f;
-        if (ps <= planeNormEpsilon) {
-            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_PLANE_INVALID;
-            continue;
-        }
-        pa /= ps; pb /= ps; pc /= ps; pd /= ps;
-
-        bool planeValid = true;
-        for (int j = 0; j < 5; j++) {
-            if (fabs(pa * mapCloud->points[pointSearchInd[j]].x +
-                     pb * mapCloud->points[pointSearchInd[j]].y +
-                     pc * mapCloud->points[pointSearchInd[j]].z + pd) > 0.2) {
-                planeValid = false;
-                break;
-            }
-        }
-
-        if (!planeValid)
-        {
-            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_PLANE_INVALID;
-            continue;
-        }
-
+        
         laserCloudSurfPlaneValidFlag[i] = 1;
         planeValidCount++;
 
-        float pd2 = pa * pointSel.x + pb * pointSel.y + pc * pointSel.z + pd;
+        // Calculate point-to-plane distance (residual)
+        Eigen::Vector3f pt_vec(pointSel.x, pointSel.y, pointSel.z);
+        float pd2 = surfel_normal.dot(pt_vec - surfel_centroid);
 
-        float s = 1 - 0.9 * fabs(pd2) / sqrt(pointOri.x * pointOri.x
-                + pointOri.y * pointOri.y + pointOri.z * pointOri.z);
+        // Robust weighting (Placeholder until Phase 3 PKO integration)
+        float s = 1 - 0.9 * std::abs(pd2) / std::sqrt(pointOri.x * pointOri.x + pointOri.y * pointOri.y + pointOri.z * pointOri.z);
 
-        coeff.x = s * pa;
-        coeff.y = s * pb;
-        coeff.z = s * pc;
-        coeff.intensity = s * pd2;
+        PointType coeff;
+        coeff.x = s * surfel_normal.x();
+        coeff.y = s * surfel_normal.y();
+        coeff.z = s * surfel_normal.z();
+        coeff.intensity = s * pd2; // Store weighted residual
 
         if (s > 0.1) {
             laserCloudSurfDebugCode[i] = SURF_DEBUG_ACCEPTED;
@@ -341,4 +301,9 @@ bool ScanAligner::LMOptimization(int iterCount)
         return true; 
     }
     return false;
+}
+
+void ScanAligner::cornerOptimization(const pcl::PointCloud<PointType>::Ptr &scan)
+{
+    (void)scan;
 }

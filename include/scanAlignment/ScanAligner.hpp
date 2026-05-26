@@ -6,6 +6,15 @@
 #include <opencv2/opencv.hpp>
 #include <chrono>
 #include "tictoc.h"
+#include "mapOptimization/VoxelMap.hpp"
+
+// Define the debug codes globally or inside the class
+constexpr int SURF_DEBUG_NOT_OPTIMIZED = 0;
+constexpr int SURF_DEBUG_ACCEPTED = 1;
+constexpr int SURF_DEBUG_REJECTED_NEIGHBOR_COUNT = 2;
+constexpr int SURF_DEBUG_REJECTED_KNN_DISTANCE = 3;
+constexpr int SURF_DEBUG_REJECTED_PLANE_INVALID = 4;
+constexpr int SURF_DEBUG_REJECTED_LOW_WEIGHT = 5;
 
 struct AlignmentMetrics {
     double surf_optimization_ms = 0.0;
@@ -20,52 +29,54 @@ struct AlignmentMetrics {
     bool is_degenerate = false;
 };
 
-class ScanAligner {
-private:
-    pcl::PointCloud<PointType>::Ptr mapCloud;
-    pcl::KdTreeFLANN<PointType>::Ptr kdtreeMap;
+class ScanAligner
+{
+public:
+    std::vector<int> laserCloudSurfDebugCode; // Needs to be public for the publisher
 
-    pcl::PointCloud<PointType>::Ptr laserCloudOri;
-    pcl::PointCloud<PointType>::Ptr coeffSel;
+    ScanAligner(int max_points, float knn_distance, int cores);
+    ~ScanAligner() = default;
 
-    std::vector<PointType> laserCloudOriSurfVec;
-    std::vector<PointType> coeffSelSurfVec;
-    std::vector<uint8_t> laserCloudOriSurfFlag;
+    void setMap(const std::shared_ptr<lio::VoxelMap>& map);
     
+    // Legacy setMap (can be removed if no longer used)
+    void setMap(const pcl::PointCloud<PointType>::Ptr &map_cloud, const pcl::KdTreeFLANN<PointType>::Ptr &map_kdtree);
+    
+    AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr &scan, float *transform);
+
+    pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const { return laserCloudOri; }
+    const std::vector<int> &getDebugCodes() const { return laserCloudSurfDebugCode; }
+
+private:
+    std::shared_ptr<lio::VoxelMap> voxelMap;
+    int numberOfCores;
+    float surfKnnMinDistance;
     float currentTransform[6];
     Eigen::Affine3f transPointAssociateToMap;
 
-    float surfKnnMinDistance;
-    int numberOfCores;
+    pcl::PointCloud<PointType>::Ptr mapCloud;
+    pcl::KdTreeFLANN<PointType>::Ptr kdtreeMap;
+    pcl::PointCloud<PointType>::Ptr laserCloudOri;
+    pcl::PointCloud<PointType>::Ptr coeffSel;
 
-    cv::Mat matP;
-    bool isDegenerate;
+    std::vector<int> laserCloudSurfKnnPassFlag;
+    std::vector<int> laserCloudSurfPlaneValidFlag;
+    std::vector<PointType> laserCloudOriSurfVec;
+    std::vector<PointType> coeffSelSurfVec;
+    std::vector<bool> laserCloudOriSurfFlag;
 
     uint32_t surfStageInputCount = 0;
     uint32_t surfStageKnnPassCount = 0;
     uint32_t surfStagePlaneValidCount = 0;
     uint32_t surfStageMatchedCount = 0;
 
+    bool isDegenerate = false;
+    cv::Mat matP; // MUST be cv::Mat to match your CPP file
+
     void pointAssociateToMap(PointType const *const pi, PointType *const po);
     void updatePointAssociateToMap();
     void surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan);
     void combineOptimizationCoeffs(int scanSize);
     bool LMOptimization(int iterCount);
-
-public:
-    std::vector<uint8_t> laserCloudSurfKnnPassFlag;
-    std::vector<uint8_t> laserCloudSurfPlaneValidFlag;
-    std::vector<uint8_t> laserCloudSurfDebugCode;
-
-    static constexpr uint8_t SURF_DEBUG_ACCEPTED = 0;
-    static constexpr uint8_t SURF_DEBUG_REJECTED_NEIGHBOR_COUNT = 1;
-    static constexpr uint8_t SURF_DEBUG_REJECTED_KNN_DISTANCE = 2;
-    static constexpr uint8_t SURF_DEBUG_REJECTED_PLANE_INVALID = 3;
-    static constexpr uint8_t SURF_DEBUG_REJECTED_LOW_WEIGHT = 4;
-    static constexpr uint8_t SURF_DEBUG_NOT_OPTIMIZED = 5;
-
-    ScanAligner(int max_points, float knn_distance, int cores);
-    void setMap(const pcl::PointCloud<PointType>::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &kdtree);
-    AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr &scan, float transformIn[6]);
-    pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const { return laserCloudOri; }
+    void cornerOptimization(const pcl::PointCloud<PointType>::Ptr &scan);
 };

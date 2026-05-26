@@ -170,19 +170,19 @@ void mapOptimization::allocateMemory()
     kdtreeSurroundingKeyPoses.reset(new pcl::KdTreeFLANN<PointType>());
     kdtreeHistoryKeyPoses.reset(new pcl::KdTreeFLANN<PointType>());
 
-    laserCloudSurfLast.reset(new pcl::PointCloud<PointType>()); 
-    laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>()); 
+    laserCloudSurfLast.reset(new pcl::PointCloud<PointType>());
+    laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>());
+
+    voxelMap = std::make_shared<lio::VoxelMap>(surroundingKeyframeMapLeafSize);
+    voxelMap->SetMapBoxMultiplier(2.0f); // Default sliding window box multiplier
+    voxelMap->SetPlanarityThreshold(0.1f); // Relaxed planarity constraint for L0/L1 surfel calculation
+    voxelMap->SetMinSurfelInliers(3); // Relaxed from 5 to 3 because points are deeply downsampled!
 
     scanAlignerPrimary = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
     scanAlignerDegeneracy = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
     
     DegeneracyParams dParams; // Optionally bind these to your ParamServer variables
     degeneracyDetector = std::make_shared<DegeneracyDetector>(dParams);
-
-    laserCloudSurfFromMap.reset(new pcl::PointCloud<PointType>());
-    laserCloudSurfFromMapDS.reset(new pcl::PointCloud<PointType>());
-
-    kdtreeSurfFromMap.reset(new pcl::KdTreeFLANN<PointType>());
 
     temporal_filter_state = 0;
 
@@ -192,6 +192,50 @@ void mapOptimization::allocateMemory()
 
     lastIncrementalDeltaPoseLocal = Eigen::Affine3f::Identity();
     hasLastIncrementalDeltaPoseLocal = false;
+
+    downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);    downSizeFilterLocalMapSurf.setLeafSize(surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize);
+    downSizeFilterICP.setLeafSize(loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize);
+    downSizeFilterSurroundingKeyPoses.setLeafSize(surroundingKeyframeDensity, surroundingKeyframeDensity, surroundingKeyframeDensity); // for surrounding key poses of scan-to-map optimization
+
+
+    br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
+    tfBuffer = std::make_shared<tf2_ros::Buffer>(get_clock());
+    tfListener = std::make_shared<tf2_ros::TransformListener>(*tfBuffer);
+
+    tf2::Transform identity;
+    identity.setIdentity();
+    lidar2Baselink.setData(identity);
+
+    // Initialize lidar<->baselink transform relationship
+    if (lidarFrame == baselinkFrame)
+    {
+        // Frames are identical: lidar2baselink is identity by definition
+        hasLidar2Baselink = true;
+        RCLCPP_INFO_STREAM(
+            get_logger(),
+            "[TF_INIT] lidarFrame == baselinkFrame ('" << lidarFrame << "'): "
+            << "lidar2baselink is identity by definition, hasLidar2Baselink=true"
+        );
+    }
+    else
+    {
+        // Frames differ: need to lookup the actual transform
+        RCLCPP_INFO_STREAM(
+            get_logger(),
+            "[TF_INIT] lidarFrame != baselinkFrame ('" << lidarFrame << "' vs '" << baselinkFrame << "'): "
+            << "attempting initial lookup"
+        );
+        tryLookupLidarToBaselinkTf("ctor");
+    }
+
+    if (force_initial_gps && manual_gps_origin.size() == 3)
+    {
+        initializeDatum(
+            manual_gps_origin[0],
+            manual_gps_origin[1],
+            manual_gps_origin[2],
+            manual_global_heading);
+    }
 }
 
 void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedPtr msgIn)

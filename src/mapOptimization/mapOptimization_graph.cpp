@@ -321,8 +321,6 @@ void mapOptimization::correctPoses()
 
     if (aLoopIsClosed == true)
     {
-        // clear map cache
-        laserCloudMapContainer.clear();
         // clear path
         globalPath.poses.clear();
         // update key poses

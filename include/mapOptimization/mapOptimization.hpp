@@ -48,30 +48,6 @@ enum class SCInputType
     MULTI_SCAN_FEAT
 };
 
-struct VOXEL_LOC
-{
-    int64_t x;
-    int64_t y;
-    int64_t z;
-
-    bool operator==(const VOXEL_LOC &other) const
-    {
-        return x == other.x && y == other.y && z == other.z;
-    }
-};
-
-namespace std
-{
-template <>
-struct hash<VOXEL_LOC>
-{
-    std::size_t operator()(const VOXEL_LOC &loc) const noexcept
-    {
-        return ((hash<int64_t>()(loc.x) ^ (hash<int64_t>()(loc.y) << 1)) >> 1) ^ (hash<int64_t>()(loc.z) << 1);
-    }
-};
-} // namespace std
-
 class FloatingAnchorFactor : public gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Pose3>
 {
 private:
@@ -217,16 +193,11 @@ public:
     pcl::PointCloud<PointType>::Ptr laserCloudSurfLast;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfLastDS;
 
-    map<int, pair<pcl::PointCloud<PointType>, pcl::PointCloud<PointType>>> laserCloudMapContainer;
-    pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMap;
-    pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMapDS;
-    std::unordered_map<VOXEL_LOC, PointType> voxelHashMap;
+    std::shared_ptr<lio::VoxelMap> voxelMap;
     bool require_map_rebuild = true;
     bool localMapDirty = true;
     bool kdtreeLocalMapDirty = true;
     double last_gps_rebuild_time = -1.0;
-
-    pcl::KdTreeFLANN<PointType>::Ptr kdtreeSurfFromMap;
 
     pcl::KdTreeFLANN<PointType>::Ptr kdtreeSurroundingKeyPoses;
     pcl::KdTreeFLANN<PointType>::Ptr kdtreeHistoryKeyPoses;
@@ -251,7 +222,6 @@ public:
 
     bool isDegenerate = false;
 
-    int laserCloudSurfFromMapDSNum = 0;
     int laserCloudSurfLastDSNum = 0;
 
     int temporal_filter_state = 0;
@@ -303,10 +273,8 @@ public:
     tf2::Transform tfFromAffine(const Eigen::Affine3f &affine) const;
     Eigen::Affine3f affineFromTf(const tf2::Transform &transform) const;
 
-    VOXEL_LOC voxelizePoint(const PointType &point, const float leafSize) const;
     void markMapRebuildTriggered(const std::string &reason);
     void logLocalMapStats(const std::string &stage);
-    size_t pruneTransformedCloudCache();
     void manageLocalMap();
     void updateRollingMap();
     bool saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req, std::shared_ptr<liorf::srv::SaveMap::Response> res);
@@ -337,10 +305,6 @@ public:
 
     void visualizeGpsConstraints();
     void updateInitialGuess();
-    void extractForLoopClosure();
-    void extractNearby();
-    void extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtract);
-    void extractSurroundingKeyFrames();
     void downsampleCurrentScan();
     void scan2MapOptimization();
     void transformUpdate();

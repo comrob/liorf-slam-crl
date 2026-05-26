@@ -1,15 +1,5 @@
 #include "mapOptimization/mapOptimization.hpp"
 
-VOXEL_LOC mapOptimization::voxelizePoint(const PointType &point, const float leafSize) const
-{
-    const float safeLeaf = std::max(leafSize, 1e-3f);
-    VOXEL_LOC voxel;
-    voxel.x = static_cast<int64_t>(std::floor(point.x / safeLeaf));
-    voxel.y = static_cast<int64_t>(std::floor(point.y / safeLeaf));
-    voxel.z = static_cast<int64_t>(std::floor(point.z / safeLeaf));
-    return voxel;
-}
-
 void mapOptimization::markMapRebuildTriggered(const std::string &reason)
 {
     if (!require_map_rebuild)
@@ -24,7 +14,7 @@ void mapOptimization::markMapRebuildTriggered(const std::string &reason)
         oss << "[MAP_REBUILD_TRIGGER] reason=" << reason
             << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
             << " keyposes=" << cloudKeyPoses3D->size()
-            << " voxel_count=" << voxelHashMap.size();
+            << " voxel_count=" << (voxelMap ? voxelMap->GetVoxelCount() : 0);
         diagnostics->logEvent(oss.str());
     }
 }
@@ -38,9 +28,9 @@ void mapOptimization::logLocalMapStats(const std::string &stage)
     oss << "[LOCAL_MAP_STATS] stage=" << stage
         << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
         << " rebuild_pending=" << (require_map_rebuild ? 1 : 0)
-        << " voxels=" << voxelHashMap.size()
-        << " local_map_pts=" << laserCloudSurfFromMapDS->size()
-        << " cached_clouds=" << laserCloudMapContainer.size()
+        << " voxels=" << (voxelMap ? voxelMap->GetVoxelCount() : 0)
+        << " local_map_pts=" << (voxelMap ? voxelMap->GetPointCount() : 0)
+        << " cached_clouds=" << 0
         << " current_scan_pts=" << laserCloudSurfLastDSNum
         << " keyposes=" << cloudKeyPoses3D->size()
         << " radius_search=" << surroundingKeyframeSearchRadius
@@ -51,283 +41,59 @@ void mapOptimization::logLocalMapStats(const std::string &stage)
     diagnostics->logEventThrottle("local_map_stats", 1.0, oss.str());
 }
 
-size_t mapOptimization::pruneTransformedCloudCache()
-{
-    if (laserCloudMapContainer.empty())
-        return 0;
-
-    const double oldestAllowed = timeLaserInfoCur - transformed_cloud_cache_max_age_sec;
-    size_t removed = 0;
-
-    for (auto it = laserCloudMapContainer.begin(); it != laserCloudMapContainer.end();)
-    {
-        const int key = it->first;
-        bool erase = false;
-
-        if (key < 0 || key >= static_cast<int>(cloudKeyPoses6D->size()))
-        {
-            erase = true;
-        }
-        else if (cloudKeyPoses6D->points[key].time < oldestAllowed)
-        {
-            erase = true;
-        }
-
-        if (erase)
-        {
-            it = laserCloudMapContainer.erase(it);
-            ++removed;
-        }
-        else
-        {
-            ++it;
-        }
-    }
-
-    return removed;
-}
-
 void mapOptimization::manageLocalMap()
 {
-    if (cloudKeyPoses3D->points.empty())
-    {
-        laserCloudSurfFromMapDS->clear();
-        laserCloudSurfFromMapDSNum = 0;
+    if (cloudKeyPoses3D->points.empty()) {
+        voxelMap->Clear();
+        require_map_rebuild = false;
+        localMapDirty = false;
         return;
     }
 
-    if (!require_map_rebuild && !localMapDirty)
+    if (require_map_rebuild || localMapDirty)
     {
-        logLocalMapStats("manageLocalMap_reuse");
-        return;
-    }
+        voxelMap->Clear();
+        int numPoses = cloudKeyPoses3D->size();
+        
+        Eigen::Vector3d current_sensor_pos(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
 
-    if (require_map_rebuild)
-    {
-        const size_t prev_voxel_count = voxelHashMap.size();
+        // When rebuilding, we need to gather nearby or recent keyframes 
+        // to re-populate the voxel map properly.
+        for (int i = numPoses - 1; i >= 0; --i)
+        {
+            if (i >= 0 && i < static_cast<int>(keyframeScanAdmissible.size()) && !keyframeScanAdmissible[i])
+                continue;
 
-        TicToc t_rebuild_extract;
-        voxelHashMap.clear();
-        extractSurroundingKeyFrames();
-        if (diagnostics)
-            diagnostics->recordSlice("manageLocalMap.rebuild.extractSurroundingKeyFrames", t_rebuild_extract.toc());
+            // Simple distance check from the latest pose
+            if (common_lib_->pointDistance(cloudKeyPoses3D->points[i], cloudKeyPoses3D->back()) > surroundingKeyframeSearchRadius)
+                continue;
 
-        TicToc t_rebuild_insert;
-        voxelHashMap.reserve(laserCloudSurfFromMapDS->size());
+            pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(surfCloudKeyFrames[i], &cloudKeyPoses6D->points[i]);
 
-        for (const auto &pt : laserCloudSurfFromMapDS->points)
-            voxelHashMap[voxelizePoint(pt, surroundingKeyframeMapLeafSize)] = pt;
-        if (diagnostics)
-            diagnostics->recordSlice("manageLocalMap.rebuild.hashInsert", t_rebuild_insert.toc());
+            // Add straight to voxel map, keeping the bounding box centered at the latest position
+            voxelMap->UpdateVoxelMap(transformedCurrentScan, current_sensor_pos, localMapTruncationRadius, true);
+        }
 
         require_map_rebuild = false;
-
-        if (diagnostics)
-        {
-            std::ostringstream oss;
-            oss << "[MAP_REBUILD_DONE] mode=full"
-                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
-                << " prev_voxels=" << prev_voxel_count
-                << " new_voxels=" << voxelHashMap.size()
-                << " local_map_pts=" << laserCloudSurfFromMapDS->size();
-            diagnostics->logEvent(oss.str());
-        }
+        localMapDirty = false;
+        
     }
-    else
-    {
-        const float cx = transformTobeMapped[3];
-        const float cy = transformTobeMapped[4];
-        const float cz = transformTobeMapped[5];
-        const float radius2 = localMapTruncationRadius * localMapTruncationRadius;
-        const size_t before_prune = voxelHashMap.size();
-
-        TicToc t_incremental_prune;
-
-        for (auto it = voxelHashMap.begin(); it != voxelHashMap.end();)
-        {
-            const auto &pt = it->second;
-            const float dx = pt.x - cx;
-            const float dy = pt.y - cy;
-            const float dz = pt.z - cz;
-            if ((dx * dx + dy * dy + dz * dz) > radius2)
-                it = voxelHashMap.erase(it);
-            else
-                ++it;
-        }
-        if (diagnostics)
-            diagnostics->recordSlice("manageLocalMap.incremental.prune", t_incremental_prune.toc());
-
-        TicToc t_incremental_rebuildCloud;
-        laserCloudSurfFromMapDS->clear();
-        laserCloudSurfFromMapDS->reserve(voxelHashMap.size());
-        for (const auto &entry : voxelHashMap)
-            laserCloudSurfFromMapDS->push_back(entry.second);
-        if (diagnostics)
-            diagnostics->recordSlice("manageLocalMap.incremental.materializeCloud", t_incremental_rebuildCloud.toc());
-
-        if (diagnostics)
-        {
-            std::ostringstream oss;
-            oss << "[MAP_REBUILD_DONE] mode=incremental"
-                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
-                << " voxels_before=" << before_prune
-                << " voxels_after=" << voxelHashMap.size()
-                << " local_map_pts=" << laserCloudSurfFromMapDS->size();
-            diagnostics->logEventThrottle("map_incremental_update", 1.0, oss.str());
-        }
-    }
-
-    localMapDirty = false;
-    kdtreeLocalMapDirty = true;
-    laserCloudSurfFromMapDSNum = laserCloudSurfFromMapDS->size();
-    logLocalMapStats("manageLocalMap");
 }
 
 void mapOptimization::updateRollingMap()
 {
-    // Safety: don't process if map is locked for rebuilding
-    if (require_map_rebuild || laserCloudSurfLastDS->empty())
+    if (require_map_rebuild || laserCloudSurfLastDS->empty() || !cloudInfo.scan_admission_ok)
         return;
 
-    // Safety: Skip if robot is spinning too fast
-    if (!cloudInfo.scan_admission_ok)
-    {
-        if (diagnostics)
-        {
-            std::ostringstream oss;
-            oss << "[ROLLING_MAP_SKIP] reason=fast_turn"
-                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
-                << " max_angular_speed_rad_s=" << cloudInfo.scan_max_angular_speed;
-            diagnostics->logEventThrottle("rolling_map_skip_fast_turn", 1.0, oss.str());
-        }
-        return;
-    }
+    Eigen::Vector3d sensor_pos(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
+    PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
+    pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
 
-    // ==========================================================
-    // BRANCH A: Filter Disabled
-    // ==========================================================
-    if (!enableTemporalFiltering)
-    {
-        PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
-        pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
+    // VoxelMap handles distance pruning and insertion in O(1)
+    voxelMap->UpdateVoxelMap(transformedCurrentScan, sensor_pos, localMapTruncationRadius, true);
 
-        voxelHashMap.reserve(voxelHashMap.size() + transformedCurrentScan->size());
-        for (const auto &pt : transformedCurrentScan->points)
-        {
-            VOXEL_LOC voxel = voxelizePoint(pt, surroundingKeyframeMapLeafSize);
-            if (voxelHashMap.find(voxel) == voxelHashMap.end())
-                voxelHashMap.emplace(voxel, pt);
-        }
-        logLocalMapStats("updateRollingMap");
-        return;
-    }
-
-    // ==========================================================
-    // BRANCH B: 1-Frame Retroactive Temporal Filter (Enabled)
-    // ==========================================================
-
-    // State 0: Bootstrap (Initial Scan)
-    if (temporal_filter_state == 0)
-    {
-        // Add raw scan to map to ensure initial odometry tracking
-        PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
-        pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
-        
-        voxelHashMap.reserve(voxelHashMap.size() + transformedCurrentScan->size());
-        for (const auto &pt : transformedCurrentScan->points)
-            voxelHashMap[voxelizePoint(pt, surroundingKeyframeMapLeafSize)] = pt;
-        
-        // If we have at least 2 keyframes, we can start filtering
-        if (cloudKeyPoses3D->points.size() >= 2)
-            temporal_filter_state = 1;
-        return;
-    }
-
-    // State 1: Clean & Flush (Triggered after 2nd scan)
-    if (temporal_filter_state == 1)
-    {
-        int prevIdx = 0; // Targets the noisy Keyframe 0
-        pcl::PointCloud<PointType>::Ptr prevCloud = surfCloudKeyFrames[prevIdx];
-        PointTypePose currPose = trans2PointTypePose(transformTobeMapped);
-        pcl::PointCloud<PointType>::Ptr currCloudWorld = transformPointCloud(laserCloudSurfLastDS, &currPose);
-        
-        pcl::KdTreeFLANN<PointType> kdtreeTemporal;
-        kdtreeTemporal.setInputCloud(currCloudWorld);
-        
-        pcl::PointCloud<PointType>::Ptr graduatedPrevCloud(new pcl::PointCloud<PointType>());
-        pcl::PointCloud<PointType>::Ptr prevCloudWorld = transformPointCloud(prevCloud, &cloudKeyPoses6D->points[prevIdx]);
-        
-        float searchRadiusSq = temporalFilterRadius * temporalFilterRadius;
-        std::vector<int> ind; std::vector<float> dist;
-        
-        for (size_t i = 0; i < prevCloudWorld->size(); ++i) {
-            kdtreeTemporal.nearestKSearch(prevCloudWorld->points[i], 1, ind, dist);
-            if (dist[0] < searchRadiusSq) graduatedPrevCloud->push_back(prevCloud->points[i]);
-        }
-
-        // Apply clean data to Keyframe 0
-        surfCloudKeyFrames[prevIdx]->clear();
-        *surfCloudKeyFrames[prevIdx] = *graduatedPrevCloud;
-        laserCloudMapContainer.erase(prevIdx);
-        // Trigger a full map rebuild to flush the noisy State 0 points from voxelHashMap
-        markMapRebuildTriggered("temporal_filter_bootstrap_flush");
-        temporal_filter_state = 2;
-        return;
-    }
-
-    // State 2: Steady State (Normal operation)
-    if (temporal_filter_state == 2)
-    {
-        int prevIdx = cloudKeyPoses3D->size() - 2;
-        pcl::PointCloud<PointType>::Ptr prevCloud = surfCloudKeyFrames[prevIdx];
-        PointTypePose currPose = trans2PointTypePose(transformTobeMapped);
-        pcl::PointCloud<PointType>::Ptr currCloudWorld = transformPointCloud(laserCloudSurfLastDS, &currPose);
-        pcl::PointCloud<PointType>::Ptr prevCloudWorld = transformPointCloud(prevCloud, &cloudKeyPoses6D->points[prevIdx]);
-        
-        // Use a static object (allocated on stack once, persists across calls)
-        static pcl::KdTreeFLANN<PointType> kdtreeTemporal;
-        kdtreeTemporal.setInputCloud(currCloudWorld);
-        
-        std::vector<int> ind; std::vector<float> dist;
-        float searchRadiusSq = temporalFilterRadius * temporalFilterRadius;
-
-        pcl::PointCloud<PointType>::Ptr graduatedPrevCloud(new pcl::PointCloud<PointType>());
-
-        // Add to map ONLY points that survived the temporal trial
-        for (size_t i = 0; i < prevCloudWorld->size(); ++i) {
-            kdtreeTemporal.nearestKSearch(prevCloudWorld->points[i], 1, ind, dist);
-            if (dist[0] < searchRadiusSq)
-            {
-                graduatedPrevCloud->push_back(prevCloud->points[i]);
-                VOXEL_LOC voxel = voxelizePoint(prevCloudWorld->points[i], surroundingKeyframeMapLeafSize);
-                if (voxelHashMap.find(voxel) == voxelHashMap.end())
-                    voxelHashMap.emplace(voxel, prevCloudWorld->points[i]);
-            }
-        }
-
-        // Apply clean data to Keyframe
-        surfCloudKeyFrames[prevIdx]->clear();
-        *surfCloudKeyFrames[prevIdx] = *graduatedPrevCloud;
-        
-        // Remove potentially already cached noisy cloud
-        laserCloudMapContainer.erase(prevIdx);
-    }
-    logLocalMapStats("updateRollingMap_Filtered");
+    logLocalMapStats("updateRollingMap");
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 bool mapOptimization::saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req,
                             std::shared_ptr<liorf::srv::SaveMap::Response> res)
@@ -447,152 +213,4 @@ void mapOptimization::publishGlobalMap()
 
 
 
-
-
-
-
-
-
-
-
-
-
-void mapOptimization::extractForLoopClosure()
-{
-    pcl::PointCloud<PointType>::Ptr cloudToExtract(new pcl::PointCloud<PointType>());
-    int numPoses = cloudKeyPoses3D->size();
-    for (int i = numPoses-1; i >= 0; --i)
-    {
-        if ((int)cloudToExtract->size() <= surroundingKeyframeSize)
-            cloudToExtract->push_back(cloudKeyPoses3D->points[i]);
-        else
-            break;
-    }
-
-    extractCloud(cloudToExtract);
-}
-
-void mapOptimization::extractNearby()
-{
-    pcl::PointCloud<PointType>::Ptr surroundingKeyPoses(new pcl::PointCloud<PointType>());
-    pcl::PointCloud<PointType>::Ptr surroundingKeyPosesDS(new pcl::PointCloud<PointType>());
-    std::vector<int> pointSearchInd;
-    std::vector<float> pointSearchSqDis;
-
-    // extract all the nearby key poses and downsample them
-    TicToc t_extractNearby_radiusSearch;
-    kdtreeSurroundingKeyPoses->setInputCloud(cloudKeyPoses3D); // create kd-tree
-    kdtreeSurroundingKeyPoses->radiusSearch(cloudKeyPoses3D->back(), (double)surroundingKeyframeSearchRadius, pointSearchInd, pointSearchSqDis);
-    if (diagnostics)
-        diagnostics->recordSlice("extractNearby.radiusSearch", t_extractNearby_radiusSearch.toc());
-
-    TicToc t_extractNearby_collectPoses;
-    for (int i = 0; i < (int)pointSearchInd.size(); ++i)
-    {
-        int id = pointSearchInd[i];
-        surroundingKeyPoses->push_back(cloudKeyPoses3D->points[id]);
-    }
-    if (diagnostics)
-        diagnostics->recordSlice("extractNearby.collectPoses", t_extractNearby_collectPoses.toc());
-
-    TicToc t_extractNearby_downsamplePoses;
-    downSizeFilterSurroundingKeyPoses.setInputCloud(surroundingKeyPoses);
-    downSizeFilterSurroundingKeyPoses.filter(*surroundingKeyPosesDS);
-    if (diagnostics)
-        diagnostics->recordSlice("extractNearby.downsamplePoses", t_extractNearby_downsamplePoses.toc());
-
-    TicToc t_extractNearby_remapIndices;
-    for(auto& pt : surroundingKeyPosesDS->points)
-    {
-        kdtreeSurroundingKeyPoses->nearestKSearch(pt, 1, pointSearchInd, pointSearchSqDis);
-        pt.intensity = cloudKeyPoses3D->points[pointSearchInd[0]].intensity;
-    }
-    if (diagnostics)
-        diagnostics->recordSlice("extractNearby.remapIndices", t_extractNearby_remapIndices.toc());
-
-    // also extract some latest key frames in case the robot rotates in one position
-    TicToc t_extractNearby_addRecent;
-    int numPoses = cloudKeyPoses3D->size();
-    for (int i = numPoses-1; i >= 0; --i)
-    {
-        if (timeLaserInfoCur - cloudKeyPoses6D->points[i].time < 10.0)
-            surroundingKeyPosesDS->push_back(cloudKeyPoses3D->points[i]);
-        else
-            break;
-    }
-    if (diagnostics)
-        diagnostics->recordSlice("extractNearby.addRecent", t_extractNearby_addRecent.toc());
-
-    TicToc t_extractNearby_extractCloud;
-    extractCloud(surroundingKeyPosesDS);
-    if (diagnostics)
-        diagnostics->recordSlice("extractNearby.extractCloud", t_extractNearby_extractCloud.toc());
-}
-
-void mapOptimization::extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtract)
-{
-    // fuse the map
-    laserCloudSurfFromMap->clear(); 
-    TicToc t_extractCloud_fuse;
-    for (int i = 0; i < (int)cloudToExtract->size(); ++i)
-    {
-        if (common_lib_->pointDistance(cloudToExtract->points[i], cloudKeyPoses3D->back()) > surroundingKeyframeSearchRadius)
-            continue;
-
-        int thisKeyInd = (int)cloudToExtract->points[i].intensity;
-        if (thisKeyInd >= 0 && thisKeyInd < static_cast<int>(keyframeScanAdmissible.size()) && !keyframeScanAdmissible[thisKeyInd])
-            continue;
-        if (laserCloudMapContainer.find(thisKeyInd) != laserCloudMapContainer.end()) 
-        {
-            // transformed cloud available
-            *laserCloudSurfFromMap   += laserCloudMapContainer[thisKeyInd].second;
-        } else {
-            // transformed cloud not available
-            pcl::PointCloud<PointType> laserCloudCornerTemp;
-            pcl::PointCloud<PointType> laserCloudSurfTemp = *transformPointCloud(surfCloudKeyFrames[thisKeyInd],    &cloudKeyPoses6D->points[thisKeyInd]);
-            *laserCloudSurfFromMap   += laserCloudSurfTemp;
-            laserCloudMapContainer[thisKeyInd] = make_pair(laserCloudCornerTemp, laserCloudSurfTemp);
-        }
-        
-    }
-    if (diagnostics)
-        diagnostics->recordSlice("extractCloud.fuseAndTransform", t_extractCloud_fuse.toc());
-
-    // Downsample the surrounding surf key frames (or map)
-    TicToc t_extractCloud_downsample;
-    downSizeFilterLocalMapSurf.setInputCloud(laserCloudSurfFromMap);
-    downSizeFilterLocalMapSurf.filter(*laserCloudSurfFromMapDS);
-    laserCloudSurfFromMapDSNum = laserCloudSurfFromMapDS->size();
-    if (diagnostics)
-        diagnostics->recordSlice("extractCloud.downsampleLocalMap", t_extractCloud_downsample.toc());
-
-    // clear map cache if too large
-    TicToc t_extractCloud_cacheMaintenance;
-    const size_t removedCacheEntries = pruneTransformedCloudCache();
-    if (diagnostics)
-    {
-        diagnostics->recordSlice("extractCloud.cacheMaintenance", t_extractCloud_cacheMaintenance.toc());
-
-        if (removedCacheEntries > 0)
-        {
-            std::ostringstream oss;
-            oss << "[CACHE_PRUNE] removed=" << removedCacheEntries
-                << " remaining=" << laserCloudMapContainer.size()
-                << " max_age_s=" << transformed_cloud_cache_max_age_sec
-                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur;
-            diagnostics->logEventThrottle("cache_prune", 1.0, oss.str());
-        }
-    }
-}
-
-void mapOptimization::extractSurroundingKeyFrames()
-{
-    if (cloudKeyPoses3D->points.empty() == true)
-        return;
-
-    TicToc t_extractSurroundingKeyFrames_extractNearby;
-    extractNearby();
-    if (diagnostics)
-        diagnostics->recordSlice("extractSurroundingKeyFrames.extractNearby", t_extractSurroundingKeyFrames_extractNearby.toc());
-}
 

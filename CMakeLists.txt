@@ -96,10 +96,15 @@ add_executable(${PROJECT_NAME}_mapOptmization
   src/mapOptimization/mapOptimization_gps.cpp
   src/mapOptimization/mapOptimization_loop.cpp
   src/mapOptimization/mapOptimization_publish.cpp
+  src/mapOptimization/VoxelMap.cpp
   src/scanAlignment/ScanAligner.cpp
+  src/scanAlignment/LieUtils.cpp
+  src/scanAlignment/ProbabilisticKernelOptimizer.cpp
   src/degeneracyDetection/DegeneracyDetector.cpp
   ${common_lib}
   include/Scancontext.cpp)
+
+
 target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
    AND CMAKE_BUILD_TYPE STREQUAL "Release"

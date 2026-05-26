@@ -389,9 +389,20 @@ void mapOptimization::publishFrames()
 
     // publish key poses
     publishCloud(pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, mapFrameLocal);
-    // Publish surrounding key frames
-    publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, mapFrameLocal);
-
+    // Publish surrounding key frames (local map)
+    if (pubRecentKeyFrames->get_subscription_count() != 0)
+    {
+        pcl::PointCloud<PointType>::Ptr localMapCloud(new pcl::PointCloud<PointType>());
+        auto centroids = voxelMap->GetL0Centroids();
+        localMapCloud->reserve(centroids.size());
+        for (const auto& c : centroids) {
+            PointType p;
+            p.x = c.x(); p.y = c.y(); p.z = c.z();
+            localMapCloud->push_back(p);
+        }
+        publishCloud(pubRecentKeyFrames, localMapCloud, timeLaserInfoStamp, mapFrameLocal);
+    }
+    
     if (pubSurfDebugColored->get_subscription_count() != 0)
     {
         pcl::PointCloud<PointType>::Ptr transformedInput = transformPointCloud(laserCloudSurfLastDS, &thisPose6D);
@@ -414,19 +425,19 @@ void mapOptimization::publishFrames()
 
             switch (scanAlignerPrimary->laserCloudSurfDebugCode[i])
             {
-                case ScanAligner::SURF_DEBUG_ACCEPTED:
+                case SURF_DEBUG_ACCEPTED:
                     point.r = 0; point.g = 255; point.b = 0;      // green
                     break;
-                case ScanAligner::SURF_DEBUG_REJECTED_NEIGHBOR_COUNT:
+                case SURF_DEBUG_REJECTED_NEIGHBOR_COUNT:
                     point.r = 255; point.g = 0; point.b = 0;      // red
                     break;
-                case ScanAligner::SURF_DEBUG_REJECTED_KNN_DISTANCE:
+                case SURF_DEBUG_REJECTED_KNN_DISTANCE:
                     point.r = 255; point.g = 165; point.b = 0;    // orange
                     break;
-                case ScanAligner::SURF_DEBUG_REJECTED_PLANE_INVALID:
+                case SURF_DEBUG_REJECTED_PLANE_INVALID:
                     point.r = 255; point.g = 255; point.b = 0;    // yellow
                     break;
-                case ScanAligner::SURF_DEBUG_REJECTED_LOW_WEIGHT:
+                case SURF_DEBUG_REJECTED_LOW_WEIGHT:
                     point.r = 255; point.g = 0; point.b = 255;    // magenta
                     break;
                 default:
