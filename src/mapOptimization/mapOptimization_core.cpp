@@ -1,5 +1,6 @@
 #include "mapOptimization/mapOptimization.hpp"
 #include "scanAlignment/VoxelPkoBackend.hpp"
+#include "scanAlignment/KdTreeLmBackend.hpp"
 
 using gtsam::ISAM2;
 using gtsam::ISAM2Params;
@@ -17,6 +18,7 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
         history_policy,
         reliability_policy,
         "~/.ros/liorf_logs",
+        backend_type,
         "/liorf/debug/telemetry",
         1.0,
         diagnostics_write_files_master,
@@ -174,14 +176,22 @@ void mapOptimization::allocateMemory()
     laserCloudSurfLast.reset(new pcl::PointCloud<PointType>());
     laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>());
 
-    mappingBackend = std::make_shared<lio::VoxelPkoBackend>(
-        voxel_map_config, 
-        pko_config, 
-        N_SCAN * Horizon_SCAN, 
-        surfKnnMinDistance, 
-        numberOfCores,
-        localMapTruncationRadius
-    );
+    if (backend_type == "voxel_pko") {
+        mappingBackend = std::make_shared<lio::VoxelPkoBackend>(
+            voxel_map_config, 
+            pko_config, 
+            N_SCAN * Horizon_SCAN, 
+            surfKnnMinDistance, 
+            numberOfCores,
+            localMapTruncationRadius
+        );
+        
+    } else if (backend_type == "kdtree_lm") {
+        mappingBackend = std::make_shared<lio::KdTreeLmBackend>(kdtree_lm_config);
+    } else {
+        RCLCPP_ERROR(get_logger(), "Unknown backend_type: %s. Falling back to kdtree_lm.", backend_type.c_str());
+        mappingBackend = std::make_shared<lio::KdTreeLmBackend>(kdtree_lm_config);
+    }
 
     DegeneracyParams dParams; // Optionally bind these to your ParamServer variables
     degeneracyDetector = std::make_shared<DegeneracyDetector>(dParams);

@@ -19,8 +19,8 @@
     enableDegeneracyDetection: false
     
     # Topics
-    pointCloudTopic: "/ouster/points"               # Point cloud data
-    imuTopic: "/ouster/imu"                         # IMU data
+    pointCloudTopic: "/os1/points"               # Point cloud data
+    imuTopic: "/os1/imu"                         # IMU data
     odomTopic: "odometry/imu"                       # IMU pre-preintegration odometry
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
 
@@ -86,7 +86,6 @@
 
     # voxel filter paprams (Legacy/Global variables)
     mappingSurfLeafSize: 0.2                      
-    surfKnnMinDistance: 5.0    
                      
     useSorFilter: false                           
     sorMeanK: 5                                   
@@ -104,9 +103,8 @@
     surroundingkeyframeAddingDistThreshold: 1.0   
     surroundingkeyframeAddingAngleThreshold: 0.2  
     surroundingKeyframeDensity: 2.0               
-    surroundingKeyframeSearchRadius: 50.0         
+    surroundingKeyframeSearchRadius: 50.0
     localMapTruncationRadius: 60.0               
-    surroundingKeyframeMapLeafSize: 0.3           
 
     # Loop closure
     loopClosureEnableFlag: true
@@ -133,9 +131,10 @@
     # Algorithmic Configurations (Decoupled Architecture)
     # ==========================================================
     mapping:
+      backend_type: "voxel_pko" # Options: "voxel_pko" or "kdtree_lm"
       
-      # Spatial Hashing & Surfel Map Parameters
-      voxel_map:
+      # Parameters for VoxelMap + Probabilistic Kernel Optimizer
+      voxel_pko:
         hierarchy_factor: 3
         planarity_threshold: 0.1
         point_to_surfel_threshold: 0.1
@@ -143,8 +142,6 @@
         min_linearity_ratio: 0.3
         map_box_multiplier: 2.0
       
-      # Probabilistic Kernel Optimizer (Robust IRLS) Parameters
-      pko:
         use_adaptive: true
         min_scale_factor: 0.001
         max_scale_factor: 10.0
@@ -152,3 +149,11 @@
         truncated_threshold: 10.0
         gmm_components: 2
         gmm_sample_size: 100
+
+      # Parameters for legacy KD-Tree + Levenberg-Marquardt Optimizer
+      kdtree_lm:
+        surroundingKeyframeMapLeafSize: 0.3
+        surroundingKeyframeSearchNum: 50
+        surfKnnMinDistance: 5.0
+        edgeFeatureMinValidNum: 10.0
+        surfFeatureMinValidNum: 100.0

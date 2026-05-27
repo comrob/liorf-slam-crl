@@ -6,7 +6,8 @@ LiorfDiagnostics::LiorfDiagnostics(
     const std::string &history_policy,
     const std::string &reliability_policy,
     const std::string &base_dir,
-    const std::string &topic,
+        const std::string &run_suffix,
+        const std::string &topic,
         double publish_hz,
         bool write_files_master,
         bool write_timing_stats,
@@ -29,7 +30,7 @@ LiorfDiagnostics::LiorfDiagnostics(
     if (!node_)
         return;
 
-    run_dir_ = createRunDirectory(base_dir);
+    run_dir_ = createRunDirectory(base_dir, run_suffix);
 
     run_parameters_.open((run_dir_ / "run_parameters.yaml").string(), std::ios::out);
     if (write_files_master_ && write_timing_stats_)
@@ -327,7 +328,7 @@ double LiorfDiagnostics::getLastPredictionDelta() const
     return last_prediction_delta_m_;
 }
 
-std::filesystem::path LiorfDiagnostics::createRunDirectory(const std::string &base_dir)
+std::filesystem::path LiorfDiagnostics::createRunDirectory(const std::string &base_dir, const std::string &run_suffix)
 {
     std::string expanded = base_dir;
     if (!expanded.empty() && expanded[0] == '~')
@@ -342,6 +343,7 @@ std::filesystem::path LiorfDiagnostics::createRunDirectory(const std::string &ba
     std::tm tm_buf = *std::localtime(&now_c);
     std::ostringstream stamp;
     stamp << std::put_time(&tm_buf, "run_%Y%m%d_%H%M%S");
+    if (!run_suffix.empty()) stamp << "_" << run_suffix;
 
     std::filesystem::path path = std::filesystem::path(expanded) / stamp.str();
     std::filesystem::create_directories(path);

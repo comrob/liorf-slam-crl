@@ -61,6 +61,7 @@
 
 #include "scanAlignment/ProbabilisticKernelOptimizer.hpp"
 #include "mapOptimization/VoxelMapConfig.hpp"
+#include "scanAlignment/KdTreeLmBackend.hpp"
 
 using namespace std;
 
@@ -231,8 +232,10 @@ public:
 
     bool enableDegeneracyDetection;
 
+    std::string backend_type;
     lio::PKOConfig pko_config;
     lio::VoxelMapConfig voxel_map_config;
+    lio::KdTreeLmConfig kdtree_lm_config;
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {   
@@ -429,10 +432,6 @@ public:
 
         declare_parameter<float>("mappingSurfLeafSize", 0.2f);
         get_parameter("mappingSurfLeafSize", mappingSurfLeafSize);
-        declare_parameter<float>("surroundingKeyframeMapLeafSize", 0.2f);
-        get_parameter("surroundingKeyframeMapLeafSize", surroundingKeyframeMapLeafSize);
-        declare_parameter<float>("surfKnnMinDistance", 1.0f);
-        get_parameter("surfKnnMinDistance", surfKnnMinDistance);
         declare_parameter<float>("z_tollerance", 1000.0f);
         get_parameter("z_tollerance", z_tollerance);
         declare_parameter<float>("rotation_tollerance", 1000.0f);
@@ -510,42 +509,63 @@ public:
         declare_parameter<float>("globalMapVisualizationLeafSize", 1.0f);
         get_parameter("globalMapVisualizationLeafSize", globalMapVisualizationLeafSize);
         
-        declare_parameter<int>("mapping.voxel_map.hierarchy_factor", 3);
-        get_parameter("mapping.voxel_map.hierarchy_factor", voxel_map_config.hierarchy_factor);
-
-        declare_parameter<float>("mapping.voxel_map.planarity_threshold", 0.1f);
-        get_parameter("mapping.voxel_map.planarity_threshold", voxel_map_config.planarity_threshold);
-
-        declare_parameter<float>("mapping.voxel_map.point_to_surfel_threshold", 0.1f);
-        get_parameter("mapping.voxel_map.point_to_surfel_threshold", voxel_map_config.point_to_surfel_threshold);
-
-        declare_parameter<int>("mapping.voxel_map.min_surfel_inliers", 3);
-        get_parameter("mapping.voxel_map.min_surfel_inliers", voxel_map_config.min_surfel_inliers);
-
-        declare_parameter<float>("mapping.voxel_map.min_linearity_ratio", 0.3f);
-        get_parameter("mapping.voxel_map.min_linearity_ratio", voxel_map_config.min_linearity_ratio);
-
-        declare_parameter<float>("mapping.voxel_map.map_box_multiplier", 2.0f);
-        get_parameter("mapping.voxel_map.map_box_multiplier", voxel_map_config.map_box_multiplier);
-
         // ==========================================================
-        // PKO Parameters
+        // Backend and VoxelPko Parameters
         // ==========================================================
-        declare_parameter("mapping.pko.use_adaptive", true);
-        declare_parameter("mapping.pko.min_scale_factor", 0.001);
-        declare_parameter("mapping.pko.max_scale_factor", 10.0);
-        declare_parameter("mapping.pko.num_alpha_segments", 25);
-        declare_parameter("mapping.pko.truncated_threshold", 10.0);
-        declare_parameter("mapping.pko.gmm_components", 2);
-        declare_parameter("mapping.pko.gmm_sample_size", 100);
+        declare_parameter<string>("mapping.backend_type", "voxel_pko");
+        get_parameter("mapping.backend_type", backend_type);
 
-        get_parameter("mapping.pko.use_adaptive", pko_config.use_adaptive);
-        get_parameter("mapping.pko.min_scale_factor", pko_config.min_scale_factor);
-        get_parameter("mapping.pko.max_scale_factor", pko_config.max_scale_factor);
-        get_parameter("mapping.pko.num_alpha_segments", pko_config.num_alpha_segments);
-        get_parameter("mapping.pko.truncated_threshold", pko_config.truncated_threshold);
-        get_parameter("mapping.pko.gmm_components", pko_config.gmm_components);
-        get_parameter("mapping.pko.gmm_sample_size", pko_config.gmm_sample_size);
+        declare_parameter<int>("mapping.voxel_pko.hierarchy_factor", 3);
+        get_parameter("mapping.voxel_pko.hierarchy_factor", voxel_map_config.hierarchy_factor);
+
+        declare_parameter<float>("mapping.voxel_pko.planarity_threshold", 0.1f);
+        get_parameter("mapping.voxel_pko.planarity_threshold", voxel_map_config.planarity_threshold);
+
+        declare_parameter<float>("mapping.voxel_pko.point_to_surfel_threshold", 0.1f);
+        get_parameter("mapping.voxel_pko.point_to_surfel_threshold", voxel_map_config.point_to_surfel_threshold);
+
+        declare_parameter<int>("mapping.voxel_pko.min_surfel_inliers", 3);
+        get_parameter("mapping.voxel_pko.min_surfel_inliers", voxel_map_config.min_surfel_inliers);
+
+        declare_parameter<float>("mapping.voxel_pko.min_linearity_ratio", 0.3f);
+        get_parameter("mapping.voxel_pko.min_linearity_ratio", voxel_map_config.min_linearity_ratio);
+
+        declare_parameter<float>("mapping.voxel_pko.map_box_multiplier", 2.0f);
+        get_parameter("mapping.voxel_pko.map_box_multiplier", voxel_map_config.map_box_multiplier);
+
+        declare_parameter("mapping.voxel_pko.use_adaptive", true);
+        declare_parameter("mapping.voxel_pko.min_scale_factor", 0.001);
+        declare_parameter("mapping.voxel_pko.max_scale_factor", 10.0);
+        declare_parameter("mapping.voxel_pko.num_alpha_segments", 25);
+        declare_parameter("mapping.voxel_pko.truncated_threshold", 10.0);
+        declare_parameter("mapping.voxel_pko.gmm_components", 2);
+        declare_parameter("mapping.voxel_pko.gmm_sample_size", 100);
+
+        get_parameter("mapping.voxel_pko.use_adaptive", pko_config.use_adaptive);
+        get_parameter("mapping.voxel_pko.min_scale_factor", pko_config.min_scale_factor);
+        get_parameter("mapping.voxel_pko.max_scale_factor", pko_config.max_scale_factor);
+        get_parameter("mapping.voxel_pko.num_alpha_segments", pko_config.num_alpha_segments);
+        get_parameter("mapping.voxel_pko.truncated_threshold", pko_config.truncated_threshold);
+        get_parameter("mapping.voxel_pko.gmm_components", pko_config.gmm_components);
+        get_parameter("mapping.voxel_pko.gmm_sample_size", pko_config.gmm_sample_size);
+        
+        // ==========================================================
+        // KdTreeLm Parameters
+        // ==========================================================
+        declare_parameter<float>("mapping.kdtree_lm.surroundingKeyframeMapLeafSize", 0.4f);
+        get_parameter("mapping.kdtree_lm.surroundingKeyframeMapLeafSize", kdtree_lm_config.surroundingKeyframeMapLeafSize);
+
+        declare_parameter<int>("mapping.kdtree_lm.surroundingKeyframeSearchNum", 50);
+        get_parameter("mapping.kdtree_lm.surroundingKeyframeSearchNum", kdtree_lm_config.surroundingKeyframeSearchNum);
+
+        declare_parameter<float>("mapping.kdtree_lm.surfKnnMinDistance", 5.0f);
+        get_parameter("mapping.kdtree_lm.surfKnnMinDistance", kdtree_lm_config.surfKnnMinDistance);
+
+        declare_parameter<float>("mapping.kdtree_lm.edgeFeatureMinValidNum", 10.0f);
+        get_parameter("mapping.kdtree_lm.edgeFeatureMinValidNum", kdtree_lm_config.edgeFeatureMinValidNum);
+
+        declare_parameter<float>("mapping.kdtree_lm.surfFeatureMinValidNum", 100.0f);
+        get_parameter("mapping.kdtree_lm.surfFeatureMinValidNum", kdtree_lm_config.surfFeatureMinValidNum);
         
 
         usleep(100);

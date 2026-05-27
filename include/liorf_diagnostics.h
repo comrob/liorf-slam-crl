@@ -28,6 +28,7 @@ public:
         const std::string &history_policy,
         const std::string &reliability_policy,
         const std::string &base_dir = "~/.ros/liorf_logs",
+        const std::string &run_suffix = "",
         const std::string &topic = "/liorf/debug/telemetry",
         double publish_hz = 1.0,
         bool write_files_master = true,
@@ -62,7 +63,7 @@ public:
     double getLastPredictionDelta() const;
 
 private:
-    std::filesystem::path createRunDirectory(const std::string &base_dir);
+    std::filesystem::path createRunDirectory(const std::string &base_dir, const std::string &run_suffix);
     void dumpActiveParameters();
     void publishTelemetry();
 

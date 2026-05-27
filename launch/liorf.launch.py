@@ -83,7 +83,7 @@ def generate_launch_description():
                 executable='liorf_mapOptmization',
                 name='liorf_mapOptmization',
                 parameters=node_parameters,
-                output='screen'
+                output='screen',
             ),
             Node(
                 package='rviz2',

@@ -9,9 +9,9 @@ namespace lio {
 
 // Legacy parameter structure required for the old KD-Tree and LM approach
 struct KdTreeLmConfig {
-    float surroundingKeyframeSearchRadius = 50.0;
     float surroundingKeyframeMapLeafSize = 0.4;
     int surroundingKeyframeSearchNum = 50;
+    float surfKnnMinDistance = 5.0;
     
     // LM specific threshold parameters can be added here
     float edgeFeatureMinValidNum = 10;
@@ -40,7 +40,7 @@ public:
     
     size_t getMapPointCount() const override;
 
-    const std::vector<int>& getDebugCodes() const override { return emptyDebugCodes; }
+    const std::vector<int>& getDebugCodes() const override { return laserCloudSurfDebugCode; }
     pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const override { return laserCloudOri; }
 
 private:
@@ -56,7 +56,30 @@ private:
     // Internal variables specific to LM Optimization ported from the old node
     pcl::PointCloud<PointType>::Ptr laserCloudOri;
     pcl::PointCloud<PointType>::Ptr coeffSel;
-    cv::Mat matA, matAt, matAtA, matX, matB, matAtB;
+    cv::Mat matP;
+    bool isDegenerate;
+
+    std::vector<PointType> laserCloudOriSurfVec;
+    std::vector<PointType> coeffSelSurfVec;
+    std::vector<uint8_t> laserCloudOriSurfFlag;
+    
+    std::vector<uint8_t> laserCloudSurfKnnPassFlag;
+    std::vector<uint8_t> laserCloudSurfPlaneValidFlag;
+    std::vector<int> laserCloudSurfDebugCode;
+
+    Eigen::Affine3f transPointAssociateToMap;
+
+    uint32_t surfStageInputCount = 0;
+    uint32_t surfStageKnnPassCount = 0;
+    uint32_t surfStagePlaneValidCount = 0;
+    uint32_t surfStageMatchedCount = 0;
+
+    static constexpr uint8_t SURF_DEBUG_ACCEPTED = 1;
+    static constexpr uint8_t SURF_DEBUG_REJECTED_NEIGHBOR_COUNT = 2;
+    static constexpr uint8_t SURF_DEBUG_REJECTED_KNN_DISTANCE = 3;
+    static constexpr uint8_t SURF_DEBUG_REJECTED_PLANE_INVALID = 4;
+    static constexpr uint8_t SURF_DEBUG_REJECTED_LOW_WEIGHT = 5;
+    static constexpr uint8_t SURF_DEBUG_NOT_OPTIMIZED = 0;
 
     // Helper functions for the legacy LM alignment
     void pointAssociateToMap(PointType const * const pi, PointType * const po, float* transformTobeMapped);
