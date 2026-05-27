@@ -31,7 +31,7 @@
 
 #include "Scancontext.h"
 #include "tictoc.h"
-#include "scanAlignment/ScanAligner.hpp"
+#include "scanAlignment/IMappingBackend.hpp"
 #include "degeneracyDetection/DegeneracyDetector.hpp"
 
 #include <fstream>
@@ -92,8 +92,7 @@ class mapOptimization : public ParamServer
 {
 public:
     MapExporter map_exporter_;
-    std::shared_ptr<ScanAligner> scanAlignerPrimary;
-    std::shared_ptr<ScanAligner> scanAlignerDegeneracy;
+    std::shared_ptr<lio::IMappingBackend> mappingBackend;
     std::shared_ptr<DegeneracyDetector> degeneracyDetector;
 
     gtsam::NonlinearFactorGraph gtSAMgraph;
@@ -193,7 +192,6 @@ public:
     pcl::PointCloud<PointType>::Ptr laserCloudSurfLast;
     pcl::PointCloud<PointType>::Ptr laserCloudSurfLastDS;
 
-    std::shared_ptr<lio::VoxelMap> voxelMap;
     bool require_map_rebuild = true;
     bool localMapDirty = true;
     bool kdtreeLocalMapDirty = true;

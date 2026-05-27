@@ -176,6 +176,9 @@ void mapOptimization::gpsHandler(const sensor_msgs::msg::NavSatFix::SharedPtr gp
     gps_odom.pose.pose.position.x = trans_local_[0];
     gps_odom.pose.pose.position.y = trans_local_[1];
     gps_odom.pose.pose.position.z = trans_local_[2];
+    gps_odom.pose.covariance[0]  = std::max(gpsMsg->position_covariance[0], 1e-6);
+    gps_odom.pose.covariance[7]  = std::max(gpsMsg->position_covariance[4], 1e-6);
+    gps_odom.pose.covariance[14] = std::max(gpsMsg->position_covariance[8], 1e-6);
     tf2::Quaternion quat_tf;
     quat_tf.setRPY(0.0, 0.0, 0.0);
     geometry_msgs::msg::Quaternion quat_msg;

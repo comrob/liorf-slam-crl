@@ -16,7 +16,7 @@
     reject_fast_turn_scans: true
     fast_turn_max_angular_speed_rad_s: 0.5
 
-    enableDegeneracyDetection: true
+    enableDegeneracyDetection: false
     
     # Topics
     pointCloudTopic: "/ouster/points"               # Point cloud data
@@ -105,7 +105,7 @@
     surroundingkeyframeAddingAngleThreshold: 0.2  
     surroundingKeyframeDensity: 2.0               
     surroundingKeyframeSearchRadius: 50.0         
-    localMapTruncationRadius: 150.0               
+    localMapTruncationRadius: 60.0               
     surroundingKeyframeMapLeafSize: 0.3           
 
     # Loop closure

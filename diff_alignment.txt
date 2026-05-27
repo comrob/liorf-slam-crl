@@ -1,0 +1,2897 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 8d1be79..177ad46 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -96,10 +96,15 @@ add_executable(${PROJECT_NAME}_mapOptmization
+   src/mapOptimization/mapOptimization_gps.cpp
+   src/mapOptimization/mapOptimization_loop.cpp
+   src/mapOptimization/mapOptimization_publish.cpp
++  src/mapOptimization/VoxelMap.cpp
+   src/scanAlignment/ScanAligner.cpp
++  src/scanAlignment/LieUtils.cpp
++  src/scanAlignment/ProbabilisticKernelOptimizer.cpp
+   src/degeneracyDetection/DegeneracyDetector.cpp
+   ${common_lib}
+   include/Scancontext.cpp)
++
++
+ target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE ${OpenMP_CXX_FLAGS})
+ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
+    AND CMAKE_BUILD_TYPE STREQUAL "Release"
+diff --git a/config/lio_sam_ouster.yaml b/config/lio_sam_ouster.yaml
+index f5fb1db..4de06df 100644
+--- a/config/lio_sam_ouster.yaml
++++ b/config/lio_sam_ouster.yaml
+@@ -19,53 +19,53 @@
+     enableDegeneracyDetection: true
+     
+     # Topics
+-    pointCloudTopic: "/os1/points"               # Point cloud data
+-    imuTopic: "/os1/imu"                         # IMU data
+-    odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
+-    gpsTopic: "/gnss/septentrio/fix"                   # GPS odometry topic from navsat, see module_navsat.launch file
++    pointCloudTopic: "/ouster/points"               # Point cloud data
++    imuTopic: "/ouster/imu"                         # IMU data
++    odomTopic: "odometry/imu"                       # IMU pre-preintegration odometry
++    gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
+ 
+     # Frames
+-    lidarFrame: "os1/os_lidar"
+-    baselinkFrame: "os1/os_sensor"
++    lidarFrame: "os_lidar"
++    baselinkFrame: "os_sensor"
+     odometryFrame: "odom"
+     mapFrameLocal: "map"
+     mapFrameEnu: "map_enu"
+     mapFrameNed: "map_ned"
+     ECEFframe: "earth"
+-    debugTFs: true
++    debugTFs: false
+ 
+     # GPS Settings
+-    useImuHeadingInitialization: true           # if using GPS data, set to "true"
+-    useGpsElevation: false                      # if GPS elevation is bad, set to "false"
+-    gpsCovThreshold: 2.0                        # m^2, threshold for using GPS data
+-    poseCovThreshold: 25.0                      # m^2, threshold for using GPS data
+-    gps_processing_delay_sec: 1.0               # process GPS constraints only after this ROS-time delay from GPS stamp
+-    gps_covariance_inflation_m: 2.0             # extra GPS factor std-dev [m] added as variance inflation (m^2) on XYZ
+-    gps_reject_on_invalid_status: false         # if true, reject GPS measurements with status < 0; if false, accept them anyway
+-    gps_keyframe_search_window: 10              # number of recent keyframes to search for GPS alignment (larger = more lenient)
+-    gps_max_constraint_dt_sec: 0.30             # max time difference [s] between GPS and closest keyframe (smaller = more strict)
++    useImuHeadingInitialization: true           
++    useGpsElevation: false                      
++    gpsCovThreshold: 2.0                        
++    poseCovThreshold: 25.0                      
++    gps_processing_delay_sec: 1.0               
++    gps_covariance_inflation_m: 2.0             
++    gps_reject_on_invalid_status: false         
++    gps_keyframe_search_window: 10              
++    gps_max_constraint_dt_sec: 0.30             
+     
+     force_initial_gps: true
+-    manual_gps_origin: [50.0763, 14.41, 252.6]   # LLA GPS origin for manual georeference initialization (if `force_initial_gps` enabled)
+-    manual_global_heading: 0.0                   # global yaw heading in degrees to rotate EN
++    manual_gps_origin: [50.0763, 14.41, 252.6]  
++    manual_global_heading: 0.0                   
+ 
+     # Export settings
+-    savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3
+-    savePCDDirectory: "/Downloads/LOAM/"        # in your home folder, starts and ends with "/". Warning: the code deletes "LOAM" folder then recreates it. See "mapOptimization" for implementation
+-    save_dense_gps_trajectory: true             # keep full raw GPS history in memory for save-time CSV export
+-    save_dense_odom_trajectory: true            # keep full mapping odometry history in memory for save-time CSV export
++    savePCD: false                              
++    savePCDDirectory: "/Downloads/LOAM/"        
++    save_dense_gps_trajectory: true             
++    save_dense_odom_trajectory: true            
+ 
+     # Sensor Settings
+-    sensor: ouster                            # lidar sensor type, 'velodyne' or 'ouster' or 'livox' or 'robosense'
+-    N_SCAN: 128                                  # number of lidar channel (i.e., Velodyne/Ouster: 16, 32, 64, 128, Livox Horizon: 6)
+-    Horizon_SCAN: 1024                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048, Livox Horizon: 4000)
+-    downsampleRate: 1                           # default: 1. Downsample your data if too many points(line). i.e., 16 = 64 / 4, 16 = 16 / 1
+-    point_filter_num: 5                         # default: 3. Downsample your data if too many points(point). e.g., 16: 1, 32: 5, 64: 8
+-    lidarMinRange: 1.0                          # default: 1.0, minimum lidar range to be used
+-    lidarMaxRange: 100.0                       # default: 1000.0, maximum lidar range to be used
++    sensor: ouster                            
++    N_SCAN: 128                                  
++    Horizon_SCAN: 1024                          
++    downsampleRate: 1                           
++    point_filter_num: 5                         
++    lidarMinRange: 1.0                          
++    lidarMaxRange: 100.0                       
+ 
+     # IMU Settings
+-    imuType: 0                                  # 0: 6-axis  1: 9-axis
++    imuType: 0                                  
+     imuRate: 500.0
+     imuAccNoise: 3.9939570888238808e-03
+     imuGyrNoise: 1.5636343949698187e-03
+@@ -80,51 +80,75 @@
+                     0.0, -1.0, 0.0,
+                     0.0, 0.0, 1.0]
+ 
+-    # This parameter is set only when the 9-axis IMU is used, but it must be a high-precision IMU. e.g. MTI-680
+     extrinsicRPY: [1.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0,
+                     0.0, 0.0, 1.0]
+ 
+-    # voxel filter paprams
+-    mappingSurfLeafSize: 0.2                      # default: 0.4 - outdoor, 0.2 - indoor
+-    surfKnnMinDistance: 5.0                       # meters, max allowed distance to 5th kNN neighbor for surf matching
+-    useSorFilter: false                           # enable Statistical Outlier Removal on current scan surf cloud
+-    sorMeanK: 5                                   # number of neighbors to analyze in SoR
+-    sorStddevMulThresh: 1.0                       # SoR standard deviation multiplier
++    # voxel filter paprams (Legacy/Global variables)
++    mappingSurfLeafSize: 0.2                      
++    surfKnnMinDistance: 5.0    
++                     
++    useSorFilter: false                           
++    sorMeanK: 5                                   
++    sorStddevMulThresh: 1.0                       
+ 
+-    # robot motion constraint (in case you are using a 2D robot)
+-    z_tollerance: 1000.0                            # meters
+-    rotation_tollerance: 1000.0                     # radians
++    # robot motion constraint
++    z_tollerance: 1000.0                            
++    rotation_tollerance: 1000.0                     
+ 
+     # CPU Params
+-    numberOfCores: 16                              # number of cores for mapping optimization
+-    mappingProcessInterval: 0.0                  # seconds, regulate mapping frequency
++    numberOfCores: 16                              
++    mappingProcessInterval: 0.0                  
+ 
+     # Surrounding map
+-    surroundingkeyframeAddingDistThreshold: 1.0   # meters, regulate keyframe adding threshold
+-    surroundingkeyframeAddingAngleThreshold: 0.2  # radians, regulate keyframe adding threshold
+-    surroundingKeyframeDensity: 2.0               # meters, downsample surrounding keyframe poses   
+-    surroundingKeyframeSearchRadius: 50.0         # meters, radius for keyframe neighbor search
+-    localMapTruncationRadius: 150.0               # meters, radius for voxel map pruning (local map truncation)
+-    surroundingKeyframeMapLeafSize: 0.3           # downsample local map point cloud
++    surroundingkeyframeAddingDistThreshold: 1.0   
++    surroundingkeyframeAddingAngleThreshold: 0.2  
++    surroundingKeyframeDensity: 2.0               
++    surroundingKeyframeSearchRadius: 50.0         
++    localMapTruncationRadius: 150.0               
++    surroundingKeyframeMapLeafSize: 0.3           
+ 
+     # Loop closure
+     loopClosureEnableFlag: true
+-    loopClosureFrequency: 0.1                     # Hz, regulate loop closure constraint add frequency
+-    surroundingKeyframeSize: 50                   # submap size (when loop closure enabled)
+-    historyKeyframeSearchRadius: 15.0             # meters, key frame that is within n meters from current pose will be considerd for loop closure
+-    historyKeyframeSearchTimeDiff: 200.0          # seconds, key frame that is n seconds older will be considered for loop closure
+-    historyKeyframeSearchNum: 25                  # number of history key frames will be fused into a submap for loop closure
+-    loopClosureICPSurfLeafSize: 0.5               # downsample icp point cloud  
+-    historyKeyframeFitnessScore: 0.3              # icp threshold, the smaller the better alignment
+-    rebuild_on_loop_closure: true                 # trigger rolling local-map rebuild when loop constraints are added
+-    rebuild_on_gps_jump: false                     # trigger rolling local-map rebuild on accepted GPS factor (time-gated)
+-    transformed_cloud_cache_max_age_sec: 0.5      # keep transformed keyframe cloud cache only for the last N seconds
+-    cloud_info_queue_depth: 5                     # CloudInfo subscriber queue depth (smaller -> less backlog, more frame drops)
+-    drop_stale_lidar_frames: true                 # drop LiDAR frames that are already too old when callback runs
+-    max_lidar_processing_lag_sec: 0.5             # maximum allowed LiDAR processing lag before dropping frame
++    loopClosureFrequency: 0.1                     
++    surroundingKeyframeSize: 50                   
++    historyKeyframeSearchRadius: 15.0             
++    historyKeyframeSearchTimeDiff: 200.0          
++    historyKeyframeSearchNum: 25                  
++    loopClosureICPSurfLeafSize: 0.5               
++    historyKeyframeFitnessScore: 0.3              
++    rebuild_on_loop_closure: true                 
++    rebuild_on_gps_jump: false                    
++    transformed_cloud_cache_max_age_sec: 0.5      
++    cloud_info_queue_depth: 5                     
++    drop_stale_lidar_frames: true                 
++    max_lidar_processing_lag_sec: 0.5             
+ 
+     # Visualization
+-    globalMapVisualizationSearchRadius: 1000.0    # meters, global map visualization radius
+-    globalMapVisualizationPoseDensity: 1.0       # meters, global map visualization keyframe density
+-    globalMapVisualizationLeafSize: 0.5           # meters, global map visualization cloud density
+\ No newline at end of file
++    globalMapVisualizationSearchRadius: 1000.0    
++    globalMapVisualizationPoseDensity: 1.0       
++    globalMapVisualizationLeafSize: 0.5           
++    
++    # ==========================================================
++    # Algorithmic Configurations (Decoupled Architecture)
++    # ==========================================================
++    mapping:
++      
++      # Spatial Hashing & Surfel Map Parameters
++      voxel_map:
++        hierarchy_factor: 3
++        planarity_threshold: 0.1
++        point_to_surfel_threshold: 0.1
++        min_surfel_inliers: 3
++        min_linearity_ratio: 0.3
++        map_box_multiplier: 2.0
++      
++      # Probabilistic Kernel Optimizer (Robust IRLS) Parameters
++      pko:
++        use_adaptive: true
++        min_scale_factor: 0.001
++        max_scale_factor: 10.0
++        num_alpha_segments: 25
++        truncated_threshold: 10.0
++        gmm_components: 2
++        gmm_sample_size: 100
+\ No newline at end of file
+diff --git a/include/mapOptimization/VoxelMap.hpp b/include/mapOptimization/VoxelMap.hpp
+new file mode 100644
+index 0000000..dd88612
+--- /dev/null
++++ b/include/mapOptimization/VoxelMap.hpp
+@@ -0,0 +1,189 @@
++/**
++ * @file      VoxelMap.hpp
++ * @brief     Voxel-based hash map for efficient nearest neighbor search
++ */
++
++#ifndef VOXEL_MAP_HPP
++#define VOXEL_MAP_HPP
++
++#include <pcl/point_types.h>
++#include <pcl/point_cloud.h>
++#include <unordered_map>
++#include <unordered_set>
++#include <vector>
++#include <mutex>
++#include <Eigen/Dense>
++
++#include "mapOptimization/VoxelMapConfig.hpp"
++
++using PointType = pcl::PointXYZI;
++
++namespace lio {
++
++/**
++ * @brief Voxel key for spatial hashing
++ * Represents a 3D grid cell by integer indices (x, y, z)
++ */
++struct VoxelKey {
++    int x, y, z;
++    
++    VoxelKey() : x(0), y(0), z(0) {}
++    VoxelKey(int x_, int y_, int z_) : x(x_), y(y_), z(z_) {}
++    
++    bool operator==(const VoxelKey& other) const {
++        return x == other.x && y == other.y && z == other.z;
++    }
++    
++    // For debugging
++    std::string ToString() const {
++        return "(" + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z) + ")";
++    }
++};
++
++/**
++ * @brief Z-order (Morton code) hash function for VoxelKey
++ */
++struct VoxelKeyHash {
++private:
++    static inline uint64_t ExpandBits(int32_t v) {
++        uint64_t x = static_cast<uint64_t>(v + (1 << 20)) & 0x1fffff;  // 21 bits
++        x = (x | (x << 32)) & 0x1f00000000ffffULL;
++        x = (x | (x << 16)) & 0x1f0000ff0000ffULL;
++        x = (x | (x << 8))  & 0x100f00f00f00f00fULL;
++        x = (x | (x << 4))  & 0x10c30c30c30c30c3ULL;
++        x = (x | (x << 2))  & 0x1249249249249249ULL;
++        return x;
++    }
++    
++public:
++    std::size_t operator()(const VoxelKey& key) const {
++        uint64_t morton = ExpandBits(key.x) | (ExpandBits(key.y) << 1) | (ExpandBits(key.z) << 2);
++        return static_cast<std::size_t>(morton);
++    }
++};
++
++class VoxelMap {
++public:
++    // explicit VoxelMap(float voxel_size = 0.5f);
++    explicit VoxelMap(const VoxelMapConfig& config);
++    void SetVoxelSize(float size);
++    void SetMaxHitCount(int max_count) { m_max_hit_count = max_count; }
++    int GetMaxHitCount() const { return m_max_hit_count; }
++    void SetInitHitCount(int count) { m_init_hit_count = count; }
++    int GetInitHitCount() const { return m_init_hit_count; }
++    void SetHierarchyFactor(int factor);
++    void SetPlanarityThreshold(float threshold) { m_planarity_threshold = threshold; }
++    void SetPointToSurfelThreshold(float threshold) { m_point_to_surfel_threshold = threshold; }
++    void SetMinSurfelInliers(int count) { m_min_surfel_inliers = count; }
++    void SetMinLinearityRatio(float ratio) { m_min_linearity_ratio = ratio; }
++    void SetMapBoxMultiplier(float multiplier) { m_map_box_multiplier = multiplier; }
++    float GetMapBoxMultiplier() const { return m_map_box_multiplier; }
++    Eigen::Vector3f GetMapCenter() const { return m_map_center; }
++    bool IsMapInitialized() const { return m_map_initialized; }
++    int GetHierarchyFactor() const { return m_hierarchy_factor; }
++    float GetVoxelSize() const { return m_voxel_size; }
++    
++    void AddPoint(const PointType& point);
++    void AddPointCloud(const pcl::PointCloud<PointType>::Ptr& cloud);
++    void Clear();
++    void UpdateVoxelMap(const pcl::PointCloud<PointType>::Ptr& new_cloud,
++                        const Eigen::Vector3d& sensor_position,
++                        double max_distance, bool is_keyframe);
++    
++    size_t GetPointCount() const {
++        size_t total = 0;
++        for (const auto& pair : m_voxels_L0) {
++            total += pair.second.point_count;
++        }
++        return total;
++    }
++    
++    size_t GetVoxelCount() const { return m_voxels_L0.size(); }
++    
++    std::vector<Eigen::Vector3f> GetL0Centroids() const {
++        std::vector<Eigen::Vector3f> centroids;
++        centroids.reserve(m_voxels_L0.size());
++        for (const auto& pair : m_voxels_L0) {
++            centroids.push_back(pair.second.centroid);
++        }
++        return centroids;
++    }
++    
++    PointType GetCentroidPoint(const VoxelKey& key) const;
++    std::vector<VoxelKey> GetOccupiedVoxels() const;
++    Eigen::Vector3f VoxelKeyToCenter(const VoxelKey& key) const;
++    Eigen::Vector3f GetVoxelCentroid(const VoxelKey& key) const;
++    int GetVoxelHitCount(const VoxelKey& key) const;
++    std::vector<std::pair<Eigen::Vector3f, int>> GetOccupiedVoxelsWithHitCount() const;
++    void MarkVoxelAsHit(const VoxelKey& key);
++    void ClearHitMarkers();
++    bool IsVoxelHit(const VoxelKey& key) const;
++    std::vector<VoxelKey> GetHitVoxels() const;
++    std::vector<std::tuple<Eigen::Vector3f, Eigen::Vector3f, float, VoxelKey, int>> GetL1Surfels() const;
++    
++    bool GetSurfelAtPoint(const PointType& point,
++                          Eigen::Vector3f& normal,
++                          Eigen::Vector3f& centroid,
++                          float& planarity_score) const;
++    
++private:
++    VoxelKey PointToVoxelKey(const PointType& point, int level = 0) const;
++    VoxelKey GetParentKey(const VoxelKey& key) const;
++    void RegisterToParent(const VoxelKey& key_L0);
++    void UnregisterFromParent(const VoxelKey& key_L0);
++    std::vector<VoxelKey> GetNeighborVoxels(const VoxelKey& center, float search_distance) const;
++    
++    float m_voxel_size;
++    int m_max_hit_count;
++    int m_init_hit_count = 1;
++    int m_hierarchy_factor;
++    float m_planarity_threshold = 0.01f;
++    float m_point_to_surfel_threshold = 0.1f;
++    int m_min_surfel_inliers = 5;
++    float m_min_linearity_ratio = 0.3f;
++    
++    float m_map_box_multiplier = 2.0f;
++    Eigen::Vector3f m_map_center = Eigen::Vector3f::Zero();
++    bool m_map_initialized = false;
++    float m_max_distance = 100.0f;
++    
++    struct VoxelNode_L0 {
++        Eigen::Vector3f centroid;
++        int hit_count;
++        int point_count;
++        bool centroid_dirty;
++        
++        VoxelNode_L0() : centroid(Eigen::Vector3f::Zero()), hit_count(1), point_count(0), centroid_dirty(true) {}
++    };
++    std::unordered_map<VoxelKey, VoxelNode_L0, VoxelKeyHash> m_voxels_L0;
++    
++    struct VoxelNode_L1 {
++        int hit_count;
++        std::unordered_set<VoxelKey, VoxelKeyHash> occupied_children;
++        
++        bool has_surfel;
++        Eigen::Vector3f surfel_normal;
++        Eigen::Vector3f surfel_centroid;
++        Eigen::Matrix3f surfel_covariance;
++        float planarity_score;
++        int last_child_count;
++        
++        VoxelNode_L1() 
++            : hit_count(0)
++            , has_surfel(false)
++            , surfel_normal(Eigen::Vector3f::Zero())
++            , surfel_centroid(Eigen::Vector3f::Zero())
++            , surfel_covariance(Eigen::Matrix3f::Zero())
++            , planarity_score(1.0f)
++            , last_child_count(0) {}
++    };
++    std::unordered_map<VoxelKey, VoxelNode_L1, VoxelKeyHash> m_voxels_L1;
++    
++    std::unordered_map<VoxelKey, bool, VoxelKeyHash> m_hit_voxels;
++    
++    mutable std::recursive_mutex m_mutex;
++};
++
++} // namespace lio
++
++#endif // VOXEL_MAP_HPP
+\ No newline at end of file
+diff --git a/include/mapOptimization/VoxelMapConfig.hpp b/include/mapOptimization/VoxelMapConfig.hpp
+new file mode 100644
+index 0000000..83f37e9
+--- /dev/null
++++ b/include/mapOptimization/VoxelMapConfig.hpp
+@@ -0,0 +1,23 @@
++/**
++ * @file      VoxelMapConfig.hpp
++ * @brief     Lightweight configuration struct for VoxelMap
++ */
++
++#ifndef VOXEL_MAP_CONFIG_HPP
++#define VOXEL_MAP_CONFIG_HPP
++
++namespace lio {
++
++struct VoxelMapConfig {
++    float voxel_size = 0.5f;
++    int hierarchy_factor = 3;
++    float planarity_threshold = 0.1f;
++    float point_to_surfel_threshold = 0.1f;
++    int min_surfel_inliers = 3;
++    float min_linearity_ratio = 0.3f;
++    float map_box_multiplier = 2.0f;
++};
++
++} // namespace lio
++
++#endif // VOXEL_MAP_CONFIG_HPP
+\ No newline at end of file
+diff --git a/include/mapOptimization/mapOptimization.hpp b/include/mapOptimization/mapOptimization.hpp
+index ab3e634..32381c0 100644
+--- a/include/mapOptimization/mapOptimization.hpp
++++ b/include/mapOptimization/mapOptimization.hpp
+@@ -48,30 +48,6 @@ enum class SCInputType
+     MULTI_SCAN_FEAT
+ };
+ 
+-struct VOXEL_LOC
+-{
+-    int64_t x;
+-    int64_t y;
+-    int64_t z;
+-
+-    bool operator==(const VOXEL_LOC &other) const
+-    {
+-        return x == other.x && y == other.y && z == other.z;
+-    }
+-};
+-
+-namespace std
+-{
+-template <>
+-struct hash<VOXEL_LOC>
+-{
+-    std::size_t operator()(const VOXEL_LOC &loc) const noexcept
+-    {
+-        return ((hash<int64_t>()(loc.x) ^ (hash<int64_t>()(loc.y) << 1)) >> 1) ^ (hash<int64_t>()(loc.z) << 1);
+-    }
+-};
+-} // namespace std
+-
+ class FloatingAnchorFactor : public gtsam::NoiseModelFactor2<gtsam::Pose3, gtsam::Pose3>
+ {
+ private:
+@@ -217,17 +193,12 @@ public:
+     pcl::PointCloud<PointType>::Ptr laserCloudSurfLast;
+     pcl::PointCloud<PointType>::Ptr laserCloudSurfLastDS;
+ 
+-    map<int, pair<pcl::PointCloud<PointType>, pcl::PointCloud<PointType>>> laserCloudMapContainer;
+-    pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMap;
+-    pcl::PointCloud<PointType>::Ptr laserCloudSurfFromMapDS;
+-    std::unordered_map<VOXEL_LOC, PointType> voxelHashMap;
++    std::shared_ptr<lio::VoxelMap> voxelMap;
+     bool require_map_rebuild = true;
+     bool localMapDirty = true;
+     bool kdtreeLocalMapDirty = true;
+     double last_gps_rebuild_time = -1.0;
+ 
+-    pcl::KdTreeFLANN<PointType>::Ptr kdtreeSurfFromMap;
+-
+     pcl::KdTreeFLANN<PointType>::Ptr kdtreeSurroundingKeyPoses;
+     pcl::KdTreeFLANN<PointType>::Ptr kdtreeHistoryKeyPoses;
+ 
+@@ -251,7 +222,6 @@ public:
+ 
+     bool isDegenerate = false;
+ 
+-    int laserCloudSurfFromMapDSNum = 0;
+     int laserCloudSurfLastDSNum = 0;
+ 
+     int temporal_filter_state = 0;
+@@ -303,10 +273,8 @@ public:
+     tf2::Transform tfFromAffine(const Eigen::Affine3f &affine) const;
+     Eigen::Affine3f affineFromTf(const tf2::Transform &transform) const;
+ 
+-    VOXEL_LOC voxelizePoint(const PointType &point, const float leafSize) const;
+     void markMapRebuildTriggered(const std::string &reason);
+     void logLocalMapStats(const std::string &stage);
+-    size_t pruneTransformedCloudCache();
+     void manageLocalMap();
+     void updateRollingMap();
+     bool saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req, std::shared_ptr<liorf::srv::SaveMap::Response> res);
+@@ -337,10 +305,6 @@ public:
+ 
+     void visualizeGpsConstraints();
+     void updateInitialGuess();
+-    void extractForLoopClosure();
+-    void extractNearby();
+-    void extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtract);
+-    void extractSurroundingKeyFrames();
+     void downsampleCurrentScan();
+     void scan2MapOptimization();
+     void transformUpdate();
+diff --git a/include/scanAlignment/LieUtils.hpp b/include/scanAlignment/LieUtils.hpp
+new file mode 100644
+index 0000000..f0e8210
+--- /dev/null
++++ b/include/scanAlignment/LieUtils.hpp
+@@ -0,0 +1,88 @@
++/**
++ * @file      LieUtils.hpp
++ * @brief     Lie group utilities for SO(3) and SE(3) operations without Sophus dependency
++ */
++
++#ifndef LIE_UTILS_HPP
++#define LIE_UTILS_HPP
++
++#include <Eigen/Dense>
++#include <cmath>
++
++namespace lio {
++
++constexpr float kEpsilon = 1e-6f;
++constexpr float kPi = 3.14159f;
++
++class SO3 {
++public:
++    SO3() = default;
++    explicit SO3(const Eigen::Matrix3f& R);
++    void Normalize();
++    static SO3 Exp(const Eigen::Vector3f& omega);
++    Eigen::Vector3f Log() const;
++    const Eigen::Matrix3f& Matrix() const { return m_matrix; }
++    Eigen::Matrix3f& Matrix() { return m_matrix; }
++    SO3 operator*(const SO3& other) const {
++        return SO3(m_matrix * other.m_matrix);
++    }
++    Eigen::Vector3f operator*(const Eigen::Vector3f& v) const {
++        return m_matrix * v;
++    }
++    SO3 Inverse() const {
++        return SO3(m_matrix.transpose());
++    }
++    static SO3 Identity() {
++        return SO3(Eigen::Matrix3f::Identity());
++    }
++    
++private:
++    Eigen::Matrix3f m_matrix = Eigen::Matrix3f::Identity();
++};
++
++class SE3 {
++public:
++    SE3() = default;
++    SE3(const SO3& rotation, const Eigen::Vector3f& translation) 
++        : m_rotation(rotation), m_translation(translation) {}
++    SE3(const Eigen::Matrix3f& R, const Eigen::Vector3f& t)
++        : m_rotation(R), m_translation(t) {}
++    explicit SE3(const Eigen::Matrix4f& matrix);
++    
++    static SE3 FromMatrix(const Eigen::Matrix4f& T);
++    static SE3 Exp(const Eigen::Matrix<float, 6, 1>& xi);
++    Eigen::Matrix<float, 6, 1> Log() const;
++    Eigen::Matrix4f Matrix() const;
++    
++    const SO3& Rotation() const { return m_rotation; }
++    SO3& Rotation() { return m_rotation; }
++    Eigen::Matrix3f RotationMatrix() const { return m_rotation.Matrix(); }
++    const Eigen::Vector3f& Translation() const { return m_translation; }
++    Eigen::Vector3f& Translation() { return m_translation; }
++    
++    SE3 operator*(const SE3& other) const {
++        return SE3(m_rotation * other.m_rotation,
++                   m_translation + m_rotation * other.m_translation);
++    }
++    Eigen::Vector3f operator*(const Eigen::Vector3f& p) const {
++        return m_rotation * p + m_translation;
++    }
++    SE3 Inverse() const {
++        SO3 R_inv = m_rotation.Inverse();
++        return SE3(R_inv, R_inv * (-m_translation));
++    }
++    static SE3 Identity() {
++        return SE3(SO3::Identity(), Eigen::Vector3f::Zero());
++    }
++    
++private:
++    SO3 m_rotation;
++    Eigen::Vector3f m_translation = Eigen::Vector3f::Zero();
++};
++
++Eigen::Matrix3f Hat(const Eigen::Vector3f& v);
++Eigen::Vector3f Vee(const Eigen::Matrix3f& S);
++
++} // namespace lio
++
++#endif // LIE_UTILS_HPP
+\ No newline at end of file
+diff --git a/include/scanAlignment/ProbabilisticKernelOptimizer.hpp b/include/scanAlignment/ProbabilisticKernelOptimizer.hpp
+new file mode 100644
+index 0000000..50ae36d
+--- /dev/null
++++ b/include/scanAlignment/ProbabilisticKernelOptimizer.hpp
+@@ -0,0 +1,57 @@
++/**
++ * @file      ProbabilisticKernelOptimizer.hpp
++ * @brief     Probabilistic Kernel Optimization for adaptive robust estimation.
++ */
++
++#ifndef PROBABILISTIC_KERNEL_OPTIMIZER_HPP
++#define PROBABILISTIC_KERNEL_OPTIMIZER_HPP
++
++#include <vector>
++#include <string>
++
++namespace lio {
++
++struct PKOConfig {
++    bool use_adaptive = true;                    
++    double min_scale_factor = 0.01;              
++    double max_scale_factor = 10.0;              
++    int num_alpha_segments = 100;                
++    double truncated_threshold = 10.0;           
++    int gmm_components = 3;                      
++    int gmm_sample_size = 1000;                  
++    
++    PKOConfig() = default;
++};
++
++class ProbabilisticKernelOptimizer {
++public:
++    explicit ProbabilisticKernelOptimizer(const PKOConfig& config = PKOConfig());
++    ~ProbabilisticKernelOptimizer() = default;
++    
++    double CalculateScaleFactor(const std::vector<double>& residuals);
++    void Reset();
++    const PKOConfig& GetConfig() const { return m_config; }
++
++private:
++    void InitializePKO();
++    void FitGMM(const std::vector<double>& residuals);
++    double GaussianPDF(double x, double mean, double variance) const;
++    double CalculatePartitionFunction(double alpha) const;
++    double HuberKernelWeight(double residual, double delta) const;
++    double CalculateJSDivergence(double alpha);
++
++private:
++    PKOConfig m_config;
++    std::vector<double> m_alpha_candidates;
++    std::vector<double> m_partition_functions;
++    double m_alpha_star_ref;
++    bool m_initialized;
++    
++    std::vector<double> m_gmm_weights;
++    std::vector<double> m_gmm_means;
++    std::vector<double> m_gmm_variances;
++};
++
++} // namespace lio
++
++#endif // PROBABILISTIC_KERNEL_OPTIMIZER_HPP
+\ No newline at end of file
+diff --git a/include/scanAlignment/ScanAligner.hpp b/include/scanAlignment/ScanAligner.hpp
+index 1228031..be48b76 100644
+--- a/include/scanAlignment/ScanAligner.hpp
++++ b/include/scanAlignment/ScanAligner.hpp
+@@ -6,6 +6,16 @@
+ #include <opencv2/opencv.hpp>
+ #include <chrono>
+ #include "tictoc.h"
++#include "mapOptimization/VoxelMap.hpp"
++#include "scanAlignment/ProbabilisticKernelOptimizer.hpp" // Added PKO include
++
++// Define the debug codes globally or inside the class
++constexpr int SURF_DEBUG_NOT_OPTIMIZED = 0;
++constexpr int SURF_DEBUG_ACCEPTED = 1;
++constexpr int SURF_DEBUG_REJECTED_NEIGHBOR_COUNT = 2;
++constexpr int SURF_DEBUG_REJECTED_KNN_DISTANCE = 3;
++constexpr int SURF_DEBUG_REJECTED_PLANE_INVALID = 4;
++constexpr int SURF_DEBUG_REJECTED_LOW_WEIGHT = 5;
+ 
+ struct AlignmentMetrics {
+     double surf_optimization_ms = 0.0;
+@@ -20,52 +30,56 @@ struct AlignmentMetrics {
+     bool is_degenerate = false;
+ };
+ 
+-class ScanAligner {
++class ScanAligner
++{
++public:
++    std::vector<int> laserCloudSurfDebugCode; // Needs to be public for the publisher
++
++    ScanAligner(int max_points, float knn_distance, int cores, const lio::PKOConfig& pko_config = lio::PKOConfig());
++    ~ScanAligner() = default;
++
++    void setMap(const std::shared_ptr<lio::VoxelMap>& map);
++    
++    // Legacy setMap (can be removed if no longer used)
++    void setMap(const pcl::PointCloud<PointType>::Ptr &map_cloud, const pcl::KdTreeFLANN<PointType>::Ptr &map_kdtree);
++    
++    AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr &scan, float *transform);
++
++    pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const { return laserCloudOri; }
++    const std::vector<int> &getDebugCodes() const { return laserCloudSurfDebugCode; }
++
+ private:
++    std::shared_ptr<lio::VoxelMap> voxelMap;
++    std::shared_ptr<lio::ProbabilisticKernelOptimizer> m_pko;
++
++    int numberOfCores;
++    float surfKnnMinDistance;
++    float currentTransform[6];
++    Eigen::Affine3f transPointAssociateToMap;
++
+     pcl::PointCloud<PointType>::Ptr mapCloud;
+     pcl::KdTreeFLANN<PointType>::Ptr kdtreeMap;
+-
+     pcl::PointCloud<PointType>::Ptr laserCloudOri;
+     pcl::PointCloud<PointType>::Ptr coeffSel;
+ 
++    std::vector<int> laserCloudSurfKnnPassFlag;
++    std::vector<int> laserCloudSurfPlaneValidFlag;
+     std::vector<PointType> laserCloudOriSurfVec;
+     std::vector<PointType> coeffSelSurfVec;
+-    std::vector<uint8_t> laserCloudOriSurfFlag;
+-    
+-    float currentTransform[6];
+-    Eigen::Affine3f transPointAssociateToMap;
+-
+-    float surfKnnMinDistance;
+-    int numberOfCores;
+-
+-    cv::Mat matP;
+-    bool isDegenerate;
++    std::vector<bool> laserCloudOriSurfFlag;
+ 
+     uint32_t surfStageInputCount = 0;
+     uint32_t surfStageKnnPassCount = 0;
+     uint32_t surfStagePlaneValidCount = 0;
+     uint32_t surfStageMatchedCount = 0;
+ 
++    bool isDegenerate = false;
++    cv::Mat matP; // MUST be cv::Mat to match your CPP file
++
+     void pointAssociateToMap(PointType const *const pi, PointType *const po);
+     void updatePointAssociateToMap();
+     void surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan);
+     void combineOptimizationCoeffs(int scanSize);
+     bool LMOptimization(int iterCount);
+-
+-public:
+-    std::vector<uint8_t> laserCloudSurfKnnPassFlag;
+-    std::vector<uint8_t> laserCloudSurfPlaneValidFlag;
+-    std::vector<uint8_t> laserCloudSurfDebugCode;
+-
+-    static constexpr uint8_t SURF_DEBUG_ACCEPTED = 0;
+-    static constexpr uint8_t SURF_DEBUG_REJECTED_NEIGHBOR_COUNT = 1;
+-    static constexpr uint8_t SURF_DEBUG_REJECTED_KNN_DISTANCE = 2;
+-    static constexpr uint8_t SURF_DEBUG_REJECTED_PLANE_INVALID = 3;
+-    static constexpr uint8_t SURF_DEBUG_REJECTED_LOW_WEIGHT = 4;
+-    static constexpr uint8_t SURF_DEBUG_NOT_OPTIMIZED = 5;
+-
+-    ScanAligner(int max_points, float knn_distance, int cores);
+-    void setMap(const pcl::PointCloud<PointType>::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &kdtree);
+-    AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr &scan, float transformIn[6]);
+-    pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const { return laserCloudOri; }
++    void cornerOptimization(const pcl::PointCloud<PointType>::Ptr &scan);
+ };
+\ No newline at end of file
+diff --git a/include/utility.h b/include/utility.h
+index 6cad502..0c275dc 100644
+--- a/include/utility.h
++++ b/include/utility.h
+@@ -59,6 +59,9 @@
+ #include <thread>
+ #include <mutex>
+ 
++#include "scanAlignment/ProbabilisticKernelOptimizer.hpp"
++#include "mapOptimization/VoxelMapConfig.hpp"
++
+ using namespace std;
+ 
+ typedef pcl::PointXYZI PointType;
+@@ -88,6 +91,8 @@ inline std::string TranslationPredictionSourceToString(TranslationPredictionSour
+     }
+ }
+ 
++
++
+ class ParamServer : public rclcpp::Node
+ {
+ public:
+@@ -226,6 +231,9 @@ public:
+ 
+     bool enableDegeneracyDetection;
+ 
++    lio::PKOConfig pko_config;
++    lio::VoxelMapConfig voxel_map_config;
++
+     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
+     {   
+         declare_parameter<string>("history_policy", "history_keep_last");
+@@ -495,12 +503,50 @@ public:
+         get_parameter("gps_max_constraint_dt_sec", gps_max_constraint_dt_sec);
+ 
+ 
+-       declare_parameter<float>("globalMapVisualizationSearchRadius", 1e3f);
++        declare_parameter<float>("globalMapVisualizationSearchRadius", 1e3f);
+         get_parameter("globalMapVisualizationSearchRadius", globalMapVisualizationSearchRadius);
+         declare_parameter<float>("globalMapVisualizationPoseDensity", 10.0);
+         get_parameter("globalMapVisualizationPoseDensity", globalMapVisualizationPoseDensity);
+         declare_parameter<float>("globalMapVisualizationLeafSize", 1.0f);
+         get_parameter("globalMapVisualizationLeafSize", globalMapVisualizationLeafSize);
++        
++        declare_parameter<int>("mapping.voxel_map.hierarchy_factor", 3);
++        get_parameter("mapping.voxel_map.hierarchy_factor", voxel_map_config.hierarchy_factor);
++
++        declare_parameter<float>("mapping.voxel_map.planarity_threshold", 0.1f);
++        get_parameter("mapping.voxel_map.planarity_threshold", voxel_map_config.planarity_threshold);
++
++        declare_parameter<float>("mapping.voxel_map.point_to_surfel_threshold", 0.1f);
++        get_parameter("mapping.voxel_map.point_to_surfel_threshold", voxel_map_config.point_to_surfel_threshold);
++
++        declare_parameter<int>("mapping.voxel_map.min_surfel_inliers", 3);
++        get_parameter("mapping.voxel_map.min_surfel_inliers", voxel_map_config.min_surfel_inliers);
++
++        declare_parameter<float>("mapping.voxel_map.min_linearity_ratio", 0.3f);
++        get_parameter("mapping.voxel_map.min_linearity_ratio", voxel_map_config.min_linearity_ratio);
++
++        declare_parameter<float>("mapping.voxel_map.map_box_multiplier", 2.0f);
++        get_parameter("mapping.voxel_map.map_box_multiplier", voxel_map_config.map_box_multiplier);
++
++        // ==========================================================
++        // PKO Parameters
++        // ==========================================================
++        declare_parameter("mapping.pko.use_adaptive", true);
++        declare_parameter("mapping.pko.min_scale_factor", 0.001);
++        declare_parameter("mapping.pko.max_scale_factor", 10.0);
++        declare_parameter("mapping.pko.num_alpha_segments", 25);
++        declare_parameter("mapping.pko.truncated_threshold", 10.0);
++        declare_parameter("mapping.pko.gmm_components", 2);
++        declare_parameter("mapping.pko.gmm_sample_size", 100);
++
++        get_parameter("mapping.pko.use_adaptive", pko_config.use_adaptive);
++        get_parameter("mapping.pko.min_scale_factor", pko_config.min_scale_factor);
++        get_parameter("mapping.pko.max_scale_factor", pko_config.max_scale_factor);
++        get_parameter("mapping.pko.num_alpha_segments", pko_config.num_alpha_segments);
++        get_parameter("mapping.pko.truncated_threshold", pko_config.truncated_threshold);
++        get_parameter("mapping.pko.gmm_components", pko_config.gmm_components);
++        get_parameter("mapping.pko.gmm_sample_size", pko_config.gmm_sample_size);
++        
+ 
+         usleep(100);
+     }
+diff --git a/src/degeneracyDetection/DegeneracyDetector.cpp b/src/degeneracyDetection/DegeneracyDetector.cpp
+index bf423e8..98cee36 100644
+--- a/src/degeneracyDetection/DegeneracyDetector.cpp
++++ b/src/degeneracyDetection/DegeneracyDetector.cpp
+@@ -332,7 +332,9 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
+         
+         if (metrics.final_correspondences < 50) { 
+             failed = true;
+-            fail_reason = "Degeneracy Aligner failed: Not enough correspondences.";
++            fail_reason = "Degeneracy Aligner failed: Not enough correspondences (" + std::to_string(metrics.final_correspondences) + 
++                          "). Scan size: " + std::to_string(cloud_scan->size()) + 
++                          ", Perturbation step: " + std::to_string(perturbation_step);
+             continue;
+         }
+ 
+diff --git a/src/mapOptimization/VoxelMap.cpp b/src/mapOptimization/VoxelMap.cpp
+new file mode 100644
+index 0000000..a47b394
+--- /dev/null
++++ b/src/mapOptimization/VoxelMap.cpp
+@@ -0,0 +1,422 @@
++/**
++ * @file      VoxelMap.cpp
++ * @brief     Implementation of voxel-based hash map for efficient nearest neighbor search
++ */
++
++#include "mapOptimization/VoxelMap.hpp"
++#include <algorithm>
++#include <cmath>
++#include <limits>
++#include <queue>
++#include <rclcpp/rclcpp.hpp>
++
++namespace lio {
++
++VoxelMap::VoxelMap(const VoxelMapConfig& config) 
++    : m_voxel_size(config.voxel_size)
++    , m_max_hit_count(10) // default hardcoded
++    , m_hierarchy_factor(config.hierarchy_factor)
++    , m_planarity_threshold(config.planarity_threshold)
++    , m_point_to_surfel_threshold(config.point_to_surfel_threshold)
++    , m_min_surfel_inliers(config.min_surfel_inliers)
++    , m_min_linearity_ratio(config.min_linearity_ratio)
++    , m_map_box_multiplier(config.map_box_multiplier)
++{
++    
++}
++
++void VoxelMap::SetVoxelSize(float size) {
++    if (size <= 0.0f) {
++        throw std::invalid_argument("Voxel size must be positive");
++    }
++    if (std::abs(m_voxel_size - size) > 1e-6f) {
++        m_voxel_size = size;
++        Clear();
++        RCLCPP_WARN(rclcpp::get_logger("VoxelMap"), "Voxel size changed - map cleared");
++    }
++}
++
++void VoxelMap::SetHierarchyFactor(int factor) {
++    if (factor <= 0 || factor % 2 == 0) {
++        RCLCPP_ERROR(rclcpp::get_logger("VoxelMap"), "Hierarchy factor must be positive and odd. Got: %d", factor);
++        return;
++    }
++    if (m_hierarchy_factor != factor) {
++        m_hierarchy_factor = factor;
++        Clear();
++        RCLCPP_INFO(rclcpp::get_logger("VoxelMap"), "Hierarchy factor changed to %d - map cleared", factor);
++    }
++}
++
++VoxelKey VoxelMap::PointToVoxelKey(const PointType& point, int level) const {
++    float scale = m_voxel_size;
++    if (level == 1) scale *= static_cast<float>(m_hierarchy_factor);
++    
++    int vx = static_cast<int>(std::floor(point.x / scale));
++    int vy = static_cast<int>(std::floor(point.y / scale));
++    int vz = static_cast<int>(std::floor(point.z / scale));
++    return VoxelKey(vx, vy, vz);
++}
++
++VoxelKey VoxelMap::GetParentKey(const VoxelKey& key) const {
++    int f = m_hierarchy_factor;
++    return VoxelKey(
++        key.x >= 0 ? key.x / f : (key.x - (f - 1)) / f,
++        key.y >= 0 ? key.y / f : (key.y - (f - 1)) / f,
++        key.z >= 0 ? key.z / f : (key.z - (f - 1)) / f
++    );
++}
++
++void VoxelMap::RegisterToParent(const VoxelKey& key_L0) {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    VoxelKey parent_L1 = GetParentKey(key_L0);
++    m_voxels_L1[parent_L1].occupied_children.insert(key_L0);
++}
++
++void VoxelMap::UnregisterFromParent(const VoxelKey& key_L0) {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    VoxelKey parent_L1 = GetParentKey(key_L0);
++    
++    auto it_L1 = m_voxels_L1.find(parent_L1);
++    if (it_L1 == m_voxels_L1.end()) return;
++    
++    it_L1->second.occupied_children.erase(key_L0);
++    if (it_L1->second.occupied_children.size() < 5) {
++        it_L1->second.has_surfel = false;
++    }
++    if (it_L1->second.occupied_children.empty()) {
++        m_voxels_L1.erase(it_L1);
++    }
++}
++
++void VoxelMap::AddPoint(const PointType& point) {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    VoxelKey key = PointToVoxelKey(point, 0);
++    
++    auto it = m_voxels_L0.find(key);
++    bool was_empty = (it == m_voxels_L0.end());
++    
++    VoxelNode_L0& voxel_data = m_voxels_L0[key];
++    Eigen::Vector3f point_vec(point.x, point.y, point.z);
++    int n = voxel_data.point_count;
++    
++    if (n == 0) {
++        voxel_data.centroid = point_vec;
++        voxel_data.hit_count = m_init_hit_count;
++        voxel_data.point_count = 1;
++    } else {
++        voxel_data.centroid = (voxel_data.centroid * n + point_vec) / (n + 1);
++        voxel_data.point_count++;
++    }
++    
++    if (was_empty) {
++        RegisterToParent(key);
++    }
++}
++
++void VoxelMap::AddPointCloud(const pcl::PointCloud<PointType>::Ptr& cloud) {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    if (!cloud || cloud->empty()) {
++        RCLCPP_WARN(rclcpp::get_logger("VoxelMap"), "UpdateVoxelMap called with empty point cloud");
++        return;
++    }
++
++    for (size_t i = 0; i < cloud->size(); ++i) {
++        AddPoint(cloud->at(i));
++    }
++}
++
++std::vector<VoxelKey> VoxelMap::GetNeighborVoxels(const VoxelKey& center, float search_distance) const {
++    std::vector<VoxelKey> neighbors;
++    int search_range = static_cast<int>(std::ceil(search_distance / m_voxel_size));
++    int grid_size = 2 * search_range + 1;
++    neighbors.reserve(grid_size * grid_size * grid_size);
++    
++    for (int dx = -search_range; dx <= search_range; ++dx) {
++        for (int dy = -search_range; dy <= search_range; ++dy) {
++            for (int dz = -search_range; dz <= search_range; ++dz) {
++                neighbors.emplace_back(center.x + dx, center.y + dy, center.z + dz);
++            }
++        }
++    }
++    
++    return neighbors;
++}
++
++void VoxelMap::Clear() {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    m_voxels_L0.clear();
++    m_voxels_L1.clear();
++}
++
++void VoxelMap::UpdateVoxelMap(const pcl::PointCloud<PointType>::Ptr& new_cloud,
++                               const Eigen::Vector3d& sensor_position,
++                               double max_distance, bool is_keyframe) {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    
++    if (new_cloud->empty()) 
++    {
++        RCLCPP_WARN(rclcpp::get_logger("VoxelMap"), "UpdateVoxelMap called with empty point cloud");
++        return;
++    }
++    
++    if (!is_keyframe) {
++        return; // Only add new points for keyframes
++    }
++    
++    m_max_distance = static_cast<float>(max_distance);
++    Eigen::Vector3f sensor_pos = sensor_position.cast<float>();
++    
++    float box_half_size = m_max_distance * m_map_box_multiplier;
++    float recenter_threshold = m_max_distance / m_map_box_multiplier;
++    
++    if (!m_map_initialized) {
++        m_map_center = sensor_pos;
++        m_map_initialized = true;
++        RCLCPP_INFO(rclcpp::get_logger("VoxelMap"), "Map initialized at center: (%.1f, %.1f, %.1f), box size: %.1fm x %.1fm", 
++                     m_map_center.x(), m_map_center.y(), m_map_center.z(), 
++                     box_half_size * 2.0f, box_half_size * 2.0f);
++    }
++    
++    float dist_from_center = (sensor_pos - m_map_center).norm();
++    bool need_recenter = dist_from_center > recenter_threshold;
++    
++    if (need_recenter) {
++        // Removed unused variable 'old_center'
++        m_map_center = sensor_pos;
++        
++        std::vector<VoxelKey> voxels_to_remove;
++        for (const auto& pair : m_voxels_L0) {
++            const VoxelKey& key = pair.first;
++            Eigen::Vector3f voxel_center = VoxelKeyToCenter(key);
++            
++            bool outside_box = 
++                std::abs(voxel_center.x() - m_map_center.x()) > box_half_size ||
++                std::abs(voxel_center.y() - m_map_center.y()) > box_half_size ||
++                std::abs(voxel_center.z() - m_map_center.z()) > box_half_size;
++            
++            if (outside_box) {
++                voxels_to_remove.push_back(key);
++            }
++        }
++        
++        for (const auto& key : voxels_to_remove) {
++            UnregisterFromParent(key);
++            m_voxels_L0.erase(key);
++        }
++        
++        std::vector<VoxelKey> L1_to_remove;
++        for (const auto& pair : m_voxels_L1) {
++            if (pair.second.occupied_children.empty()) {
++                L1_to_remove.push_back(pair.first);
++            }
++        }
++        for (const auto& key : L1_to_remove) {
++            m_voxels_L1.erase(key);
++        }
++    }
++    
++    AddPointCloud(new_cloud);
++    
++    std::unordered_set<VoxelKey, VoxelKeyHash> affected_L1;
++    for (const auto& pt : *new_cloud) {
++        VoxelKey key_L1 = PointToVoxelKey(pt, 1);
++        affected_L1.insert(key_L1);
++    }
++    
++    for (const VoxelKey& key_L1 : affected_L1) {
++        auto it_L1 = m_voxels_L1.find(key_L1);
++        if (it_L1 == m_voxels_L1.end()) continue;
++        
++        VoxelNode_L1& node_L1 = it_L1->second;
++        int current_child_count = node_L1.occupied_children.size();
++        
++        if (current_child_count < m_min_surfel_inliers) {
++            node_L1.has_surfel = false;
++            continue;
++        }
++
++        if (node_L1.has_surfel && node_L1.last_child_count == current_child_count) {
++            continue;
++        }
++
++        std::vector<Eigen::Vector3f> collected_centroids;
++        collected_centroids.reserve(node_L1.occupied_children.size());
++        
++        for (const VoxelKey& key_L0 : node_L1.occupied_children) {
++            auto it_L0 = m_voxels_L0.find(key_L0);
++            if (it_L0 == m_voxels_L0.end()) continue;
++            collected_centroids.push_back(it_L0->second.centroid);
++        }
++        
++        if (collected_centroids.size() < 3) {
++            node_L1.has_surfel = false;
++            continue;
++        }
++    
++        Eigen::Vector3f centroid = Eigen::Vector3f::Zero();
++        for (const auto& pt : collected_centroids) {
++            centroid += pt;
++        }
++        centroid /= static_cast<float>(collected_centroids.size());
++        
++        Eigen::Matrix3f covariance = Eigen::Matrix3f::Zero();
++        for (const auto& pt : collected_centroids) {
++            Eigen::Vector3f diff = pt - centroid;
++            covariance += diff * diff.transpose();
++        }
++        covariance /= static_cast<float>(collected_centroids.size());
++        
++        Eigen::JacobiSVD<Eigen::Matrix3f> svd(covariance, Eigen::ComputeFullU | Eigen::ComputeFullV);
++        Eigen::Vector3f singular_values = svd.singularValues();
++        Eigen::Vector3f normal = svd.matrixU().col(2);
++        float planarity = singular_values(2) / (singular_values(0) + 1e-6f);
++
++        if (planarity > m_planarity_threshold) {
++            node_L1.has_surfel = false;
++            for (const VoxelKey& key_L0 : node_L1.occupied_children) {
++                m_voxels_L0.erase(key_L0);
++            }
++            m_voxels_L1.erase(it_L1);
++            continue;
++        }
++        
++        node_L1.has_surfel = true;
++        node_L1.surfel_normal = normal;
++        node_L1.surfel_centroid = centroid;
++        node_L1.surfel_covariance = covariance;
++        node_L1.planarity_score = planarity;
++        node_L1.last_child_count = current_child_count;
++    }
++}
++
++std::vector<VoxelKey> VoxelMap::GetOccupiedVoxels() const {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    std::vector<VoxelKey> occupied_voxels;
++    occupied_voxels.reserve(m_voxels_L0.size());
++    
++    for (const auto& pair : m_voxels_L0) {
++        if (pair.second.point_count > 0) {  
++            occupied_voxels.push_back(pair.first);
++        }
++    }
++    return occupied_voxels;
++}
++
++Eigen::Vector3f VoxelMap::VoxelKeyToCenter(const VoxelKey& key) const {
++    float center_x = (key.x + 0.5f) * m_voxel_size;
++    float center_y = (key.y + 0.5f) * m_voxel_size;
++    float center_z = (key.z + 0.5f) * m_voxel_size;
++    return Eigen::Vector3f(center_x, center_y, center_z);
++}
++
++Eigen::Vector3f VoxelMap::GetVoxelCentroid(const VoxelKey& key) const {
++    auto it = m_voxels_L0.find(key);
++    if (it == m_voxels_L0.end()) {
++        return VoxelKeyToCenter(key);
++    }
++    return it->second.centroid;
++}
++
++PointType VoxelMap::GetCentroidPoint(const VoxelKey& key) const {
++    auto it = m_voxels_L0.find(key);
++    Eigen::Vector3f center;
++    if (it == m_voxels_L0.end()) {
++        center = VoxelKeyToCenter(key);
++    } else {
++        center = it->second.centroid;
++    }
++    PointType pt;
++    pt.x = center.x();
++    pt.y = center.y();
++    pt.z = center.z();
++    pt.intensity = 0.0f;
++    return pt;
++}
++
++int VoxelMap::GetVoxelHitCount(const VoxelKey& key) const {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    auto it = m_voxels_L0.find(key);
++    if (it == m_voxels_L0.end()) {
++        return 0;
++    }
++    return it->second.hit_count;
++}
++
++std::vector<std::pair<Eigen::Vector3f, int>> VoxelMap::GetOccupiedVoxelsWithHitCount() const {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    std::vector<std::pair<Eigen::Vector3f, int>> result;
++    result.reserve(m_voxels_L0.size());
++    
++    for (const auto& pair : m_voxels_L0) {
++        if (pair.second.point_count > 0) {
++            Eigen::Vector3f center = VoxelKeyToCenter(pair.first);
++            result.emplace_back(center, pair.second.hit_count);
++        }
++    }
++    return result;
++}
++
++void VoxelMap::MarkVoxelAsHit(const VoxelKey& key) {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    m_hit_voxels[key] = true;
++}
++
++void VoxelMap::ClearHitMarkers() {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    m_hit_voxels.clear();
++}
++
++bool VoxelMap::IsVoxelHit(const VoxelKey& key) const {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    return m_hit_voxels.find(key) != m_hit_voxels.end();
++}
++
++std::vector<VoxelKey> VoxelMap::GetHitVoxels() const {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    std::vector<VoxelKey> hit_voxels;
++    hit_voxels.reserve(m_hit_voxels.size());
++    for (const auto& pair : m_hit_voxels) {
++        hit_voxels.push_back(pair.first);
++    }
++    return hit_voxels;
++}
++
++std::vector<std::tuple<Eigen::Vector3f, Eigen::Vector3f, float, VoxelKey, int>> VoxelMap::GetL1Surfels() const {
++    std::lock_guard<std::recursive_mutex> lock(m_mutex);
++    std::vector<std::tuple<Eigen::Vector3f, Eigen::Vector3f, float, VoxelKey, int>> surfels;
++    
++    for (const auto& pair : m_voxels_L1) {
++        const VoxelKey& key = pair.first;
++        const VoxelNode_L1& node = pair.second;
++        
++        if (node.has_surfel) {
++            surfels.emplace_back(node.surfel_centroid, node.surfel_normal, node.planarity_score, key, node.hit_count);
++        }
++    }
++    return surfels;
++}
++
++bool VoxelMap::GetSurfelAtPoint(const PointType& point,
++                                 Eigen::Vector3f& normal,
++                                 Eigen::Vector3f& centroid,
++                                 float& planarity_score) const {
++    VoxelKey key_L1 = PointToVoxelKey(point, 1);
++    
++    auto it = m_voxels_L1.find(key_L1);
++    if (it == m_voxels_L1.end()) {
++        return false;
++    }
++    
++    const VoxelNode_L1& node = it->second;
++    if (!node.has_surfel) {
++        return false;
++    }
++    
++    normal = node.surfel_normal;
++    centroid = node.surfel_centroid;
++    planarity_score = node.planarity_score;
++    return true;
++}
++
++} // namespace lio
+\ No newline at end of file
+diff --git a/src/mapOptimization/mapOptimization_core.cpp b/src/mapOptimization/mapOptimization_core.cpp
+index 79a21dc..0f76b23 100644
+--- a/src/mapOptimization/mapOptimization_core.cpp
++++ b/src/mapOptimization/mapOptimization_core.cpp
+@@ -170,20 +170,18 @@ void mapOptimization::allocateMemory()
+     kdtreeSurroundingKeyPoses.reset(new pcl::KdTreeFLANN<PointType>());
+     kdtreeHistoryKeyPoses.reset(new pcl::KdTreeFLANN<PointType>());
+ 
+-    laserCloudSurfLast.reset(new pcl::PointCloud<PointType>()); 
+-    laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>()); 
++    laserCloudSurfLast.reset(new pcl::PointCloud<PointType>());
++    laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>());
+ 
+-    scanAlignerPrimary = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
+-    scanAlignerDegeneracy = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
++    voxelMap = std::make_shared<lio::VoxelMap>(voxel_map_config);
+     
++    scanAlignerPrimary = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores, pko_config);
++    scanAlignerDegeneracy = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores, pko_config);
++    
++
+     DegeneracyParams dParams; // Optionally bind these to your ParamServer variables
+     degeneracyDetector = std::make_shared<DegeneracyDetector>(dParams);
+ 
+-    laserCloudSurfFromMap.reset(new pcl::PointCloud<PointType>());
+-    laserCloudSurfFromMapDS.reset(new pcl::PointCloud<PointType>());
+-
+-    kdtreeSurfFromMap.reset(new pcl::KdTreeFLANN<PointType>());
+-
+     temporal_filter_state = 0;
+ 
+     for (int i = 0; i < 6; ++i){
+@@ -192,6 +190,50 @@ void mapOptimization::allocateMemory()
+ 
+     lastIncrementalDeltaPoseLocal = Eigen::Affine3f::Identity();
+     hasLastIncrementalDeltaPoseLocal = false;
++
++    downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);    downSizeFilterLocalMapSurf.setLeafSize(surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize);
++    downSizeFilterICP.setLeafSize(loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize);
++    downSizeFilterSurroundingKeyPoses.setLeafSize(surroundingKeyframeDensity, surroundingKeyframeDensity, surroundingKeyframeDensity); // for surrounding key poses of scan-to-map optimization
++
++
++    br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
++    tfBuffer = std::make_shared<tf2_ros::Buffer>(get_clock());
++    tfListener = std::make_shared<tf2_ros::TransformListener>(*tfBuffer);
++
++    tf2::Transform identity;
++    identity.setIdentity();
++    lidar2Baselink.setData(identity);
++
++    // Initialize lidar<->baselink transform relationship
++    if (lidarFrame == baselinkFrame)
++    {
++        // Frames are identical: lidar2baselink is identity by definition
++        hasLidar2Baselink = true;
++        RCLCPP_INFO_STREAM(
++            get_logger(),
++            "[TF_INIT] lidarFrame == baselinkFrame ('" << lidarFrame << "'): "
++            << "lidar2baselink is identity by definition, hasLidar2Baselink=true"
++        );
++    }
++    else
++    {
++        // Frames differ: need to lookup the actual transform
++        RCLCPP_INFO_STREAM(
++            get_logger(),
++            "[TF_INIT] lidarFrame != baselinkFrame ('" << lidarFrame << "' vs '" << baselinkFrame << "'): "
++            << "attempting initial lookup"
++        );
++        tryLookupLidarToBaselinkTf("ctor");
++    }
++
++    if (force_initial_gps && manual_gps_origin.size() == 3)
++    {
++        initializeDatum(
++            manual_gps_origin[0],
++            manual_gps_origin[1],
++            manual_gps_origin[2],
++            manual_global_heading);
++    }
+ }
+ 
+ void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedPtr msgIn)
+diff --git a/src/mapOptimization/mapOptimization_graph.cpp b/src/mapOptimization/mapOptimization_graph.cpp
+index 55473cc..af1b6bb 100644
+--- a/src/mapOptimization/mapOptimization_graph.cpp
++++ b/src/mapOptimization/mapOptimization_graph.cpp
+@@ -321,8 +321,6 @@ void mapOptimization::correctPoses()
+ 
+     if (aLoopIsClosed == true)
+     {
+-        // clear map cache
+-        laserCloudMapContainer.clear();
+         // clear path
+         globalPath.poses.clear();
+         // update key poses
+diff --git a/src/mapOptimization/mapOptimization_map.cpp b/src/mapOptimization/mapOptimization_map.cpp
+index 27b2988..7c87a9d 100644
+--- a/src/mapOptimization/mapOptimization_map.cpp
++++ b/src/mapOptimization/mapOptimization_map.cpp
+@@ -1,15 +1,5 @@
+ #include "mapOptimization/mapOptimization.hpp"
+ 
+-VOXEL_LOC mapOptimization::voxelizePoint(const PointType &point, const float leafSize) const
+-{
+-    const float safeLeaf = std::max(leafSize, 1e-3f);
+-    VOXEL_LOC voxel;
+-    voxel.x = static_cast<int64_t>(std::floor(point.x / safeLeaf));
+-    voxel.y = static_cast<int64_t>(std::floor(point.y / safeLeaf));
+-    voxel.z = static_cast<int64_t>(std::floor(point.z / safeLeaf));
+-    return voxel;
+-}
+-
+ void mapOptimization::markMapRebuildTriggered(const std::string &reason)
+ {
+     if (!require_map_rebuild)
+@@ -24,7 +14,7 @@ void mapOptimization::markMapRebuildTriggered(const std::string &reason)
+         oss << "[MAP_REBUILD_TRIGGER] reason=" << reason
+             << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+             << " keyposes=" << cloudKeyPoses3D->size()
+-            << " voxel_count=" << voxelHashMap.size();
++            << " voxel_count=" << (voxelMap ? voxelMap->GetVoxelCount() : 0);
+         diagnostics->logEvent(oss.str());
+     }
+ }
+@@ -38,9 +28,9 @@ void mapOptimization::logLocalMapStats(const std::string &stage)
+     oss << "[LOCAL_MAP_STATS] stage=" << stage
+         << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+         << " rebuild_pending=" << (require_map_rebuild ? 1 : 0)
+-        << " voxels=" << voxelHashMap.size()
+-        << " local_map_pts=" << laserCloudSurfFromMapDS->size()
+-        << " cached_clouds=" << laserCloudMapContainer.size()
++        << " voxels=" << (voxelMap ? voxelMap->GetVoxelCount() : 0)
++        << " local_map_pts=" << (voxelMap ? voxelMap->GetPointCount() : 0)
++        << " cached_clouds=" << 0
+         << " current_scan_pts=" << laserCloudSurfLastDSNum
+         << " keyposes=" << cloudKeyPoses3D->size()
+         << " radius_search=" << surroundingKeyframeSearchRadius
+@@ -51,284 +41,60 @@ void mapOptimization::logLocalMapStats(const std::string &stage)
+     diagnostics->logEventThrottle("local_map_stats", 1.0, oss.str());
+ }
+ 
+-size_t mapOptimization::pruneTransformedCloudCache()
+-{
+-    if (laserCloudMapContainer.empty())
+-        return 0;
+-
+-    const double oldestAllowed = timeLaserInfoCur - transformed_cloud_cache_max_age_sec;
+-    size_t removed = 0;
+-
+-    for (auto it = laserCloudMapContainer.begin(); it != laserCloudMapContainer.end();)
+-    {
+-        const int key = it->first;
+-        bool erase = false;
+-
+-        if (key < 0 || key >= static_cast<int>(cloudKeyPoses6D->size()))
+-        {
+-            erase = true;
+-        }
+-        else if (cloudKeyPoses6D->points[key].time < oldestAllowed)
+-        {
+-            erase = true;
+-        }
+-
+-        if (erase)
+-        {
+-            it = laserCloudMapContainer.erase(it);
+-            ++removed;
+-        }
+-        else
+-        {
+-            ++it;
+-        }
+-    }
+-
+-    return removed;
+-}
+-
+ void mapOptimization::manageLocalMap()
+ {
+-    if (cloudKeyPoses3D->points.empty())
+-    {
+-        laserCloudSurfFromMapDS->clear();
+-        laserCloudSurfFromMapDSNum = 0;
+-        return;
+-    }
+-
+-    if (!require_map_rebuild && !localMapDirty)
+-    {
+-        logLocalMapStats("manageLocalMap_reuse");
++    if (cloudKeyPoses3D->points.empty()) {
++        voxelMap->Clear();
++        require_map_rebuild = false;
++        localMapDirty = false;
+         return;
+     }
+ 
+-    if (require_map_rebuild)
++    if (require_map_rebuild || localMapDirty)
+     {
+-        const size_t prev_voxel_count = voxelHashMap.size();
++        voxelMap->Clear();
++        int numPoses = cloudKeyPoses3D->size();
++        
++        Eigen::Vector3d current_sensor_pos(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
+ 
+-        TicToc t_rebuild_extract;
+-        voxelHashMap.clear();
+-        extractSurroundingKeyFrames();
+-        if (diagnostics)
+-            diagnostics->recordSlice("manageLocalMap.rebuild.extractSurroundingKeyFrames", t_rebuild_extract.toc());
++        // When rebuilding, we need to gather nearby or recent keyframes 
++        // to re-populate the voxel map properly.
++        for (int i = numPoses - 1; i >= 0; --i)
++        {
++            if (i >= 0 && i < static_cast<int>(keyframeScanAdmissible.size()) && !keyframeScanAdmissible[i])
++                continue;
+ 
+-        TicToc t_rebuild_insert;
+-        voxelHashMap.reserve(laserCloudSurfFromMapDS->size());
++            // Simple distance check from the latest pose
++            if (common_lib_->pointDistance(cloudKeyPoses3D->points[i], cloudKeyPoses3D->back()) > surroundingKeyframeSearchRadius)
++                continue;
+ 
+-        for (const auto &pt : laserCloudSurfFromMapDS->points)
+-            voxelHashMap[voxelizePoint(pt, surroundingKeyframeMapLeafSize)] = pt;
+-        if (diagnostics)
+-            diagnostics->recordSlice("manageLocalMap.rebuild.hashInsert", t_rebuild_insert.toc());
++            pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(surfCloudKeyFrames[i], &cloudKeyPoses6D->points[i]);
+ 
+-        require_map_rebuild = false;
+-
+-        if (diagnostics)
+-        {
+-            std::ostringstream oss;
+-            oss << "[MAP_REBUILD_DONE] mode=full"
+-                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+-                << " prev_voxels=" << prev_voxel_count
+-                << " new_voxels=" << voxelHashMap.size()
+-                << " local_map_pts=" << laserCloudSurfFromMapDS->size();
+-            diagnostics->logEvent(oss.str());
++            // Add straight to voxel map, keeping the bounding box centered at the latest position
++            voxelMap->UpdateVoxelMap(transformedCurrentScan, current_sensor_pos, localMapTruncationRadius, true);
+         }
+-    }
+-    else
+-    {
+-        const float cx = transformTobeMapped[3];
+-        const float cy = transformTobeMapped[4];
+-        const float cz = transformTobeMapped[5];
+-        const float radius2 = localMapTruncationRadius * localMapTruncationRadius;
+-        const size_t before_prune = voxelHashMap.size();
+-
+-        TicToc t_incremental_prune;
+ 
+-        for (auto it = voxelHashMap.begin(); it != voxelHashMap.end();)
+-        {
+-            const auto &pt = it->second;
+-            const float dx = pt.x - cx;
+-            const float dy = pt.y - cy;
+-            const float dz = pt.z - cz;
+-            if ((dx * dx + dy * dy + dz * dz) > radius2)
+-                it = voxelHashMap.erase(it);
+-            else
+-                ++it;
+-        }
+-        if (diagnostics)
+-            diagnostics->recordSlice("manageLocalMap.incremental.prune", t_incremental_prune.toc());
+-
+-        TicToc t_incremental_rebuildCloud;
+-        laserCloudSurfFromMapDS->clear();
+-        laserCloudSurfFromMapDS->reserve(voxelHashMap.size());
+-        for (const auto &entry : voxelHashMap)
+-            laserCloudSurfFromMapDS->push_back(entry.second);
+-        if (diagnostics)
+-            diagnostics->recordSlice("manageLocalMap.incremental.materializeCloud", t_incremental_rebuildCloud.toc());
+-
+-        if (diagnostics)
+-        {
+-            std::ostringstream oss;
+-            oss << "[MAP_REBUILD_DONE] mode=incremental"
+-                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+-                << " voxels_before=" << before_prune
+-                << " voxels_after=" << voxelHashMap.size()
+-                << " local_map_pts=" << laserCloudSurfFromMapDS->size();
+-            diagnostics->logEventThrottle("map_incremental_update", 1.0, oss.str());
+-        }
++        require_map_rebuild = false;
++        localMapDirty = false;
++        
+     }
+-
+-    localMapDirty = false;
+-    kdtreeLocalMapDirty = true;
+-    laserCloudSurfFromMapDSNum = laserCloudSurfFromMapDS->size();
+-    logLocalMapStats("manageLocalMap");
+ }
+ 
+ void mapOptimization::updateRollingMap()
+ {
+-    // Safety: don't process if map is locked for rebuilding
+-    if (require_map_rebuild || laserCloudSurfLastDS->empty())
+-        return;
+-
+-    // Safety: Skip if robot is spinning too fast
+-    if (!cloudInfo.scan_admission_ok)
+-    {
+-        if (diagnostics)
+-        {
+-            std::ostringstream oss;
+-            oss << "[ROLLING_MAP_SKIP] reason=fast_turn"
+-                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
+-                << " max_angular_speed_rad_s=" << cloudInfo.scan_max_angular_speed;
+-            diagnostics->logEventThrottle("rolling_map_skip_fast_turn", 1.0, oss.str());
+-        }
++    if (require_map_rebuild || laserCloudSurfLastDS->empty() || !cloudInfo.scan_admission_ok)
+         return;
+-    }
+ 
+-    // ==========================================================
+-    // BRANCH A: Filter Disabled
+-    // ==========================================================
+-    if (!enableTemporalFiltering)
+-    {
+-        PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
+-        pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
+-
+-        voxelHashMap.reserve(voxelHashMap.size() + transformedCurrentScan->size());
+-        for (const auto &pt : transformedCurrentScan->points)
+-        {
+-            VOXEL_LOC voxel = voxelizePoint(pt, surroundingKeyframeMapLeafSize);
+-            if (voxelHashMap.find(voxel) == voxelHashMap.end())
+-                voxelHashMap.emplace(voxel, pt);
+-        }
+-        logLocalMapStats("updateRollingMap");
+-        return;
+-    }
++    Eigen::Vector3d sensor_pos(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
++    PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
++    pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
+ 
+-    // ==========================================================
+-    // BRANCH B: 1-Frame Retroactive Temporal Filter (Enabled)
+-    // ==========================================================
++    // VoxelMap handles distance pruning and insertion in O(1)
++    voxelMap->UpdateVoxelMap(transformedCurrentScan, sensor_pos, localMapTruncationRadius, true);
+ 
+-    // State 0: Bootstrap (Initial Scan)
+-    if (temporal_filter_state == 0)
+-    {
+-        // Add raw scan to map to ensure initial odometry tracking
+-        PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
+-        pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
+-        
+-        voxelHashMap.reserve(voxelHashMap.size() + transformedCurrentScan->size());
+-        for (const auto &pt : transformedCurrentScan->points)
+-            voxelHashMap[voxelizePoint(pt, surroundingKeyframeMapLeafSize)] = pt;
+-        
+-        // If we have at least 2 keyframes, we can start filtering
+-        if (cloudKeyPoses3D->points.size() >= 2)
+-            temporal_filter_state = 1;
+-        return;
+-    }
+-
+-    // State 1: Clean & Flush (Triggered after 2nd scan)
+-    if (temporal_filter_state == 1)
+-    {
+-        int prevIdx = 0; // Targets the noisy Keyframe 0
+-        pcl::PointCloud<PointType>::Ptr prevCloud = surfCloudKeyFrames[prevIdx];
+-        PointTypePose currPose = trans2PointTypePose(transformTobeMapped);
+-        pcl::PointCloud<PointType>::Ptr currCloudWorld = transformPointCloud(laserCloudSurfLastDS, &currPose);
+-        
+-        pcl::KdTreeFLANN<PointType> kdtreeTemporal;
+-        kdtreeTemporal.setInputCloud(currCloudWorld);
+-        
+-        pcl::PointCloud<PointType>::Ptr graduatedPrevCloud(new pcl::PointCloud<PointType>());
+-        pcl::PointCloud<PointType>::Ptr prevCloudWorld = transformPointCloud(prevCloud, &cloudKeyPoses6D->points[prevIdx]);
+-        
+-        float searchRadiusSq = temporalFilterRadius * temporalFilterRadius;
+-        std::vector<int> ind; std::vector<float> dist;
+-        
+-        for (size_t i = 0; i < prevCloudWorld->size(); ++i) {
+-            kdtreeTemporal.nearestKSearch(prevCloudWorld->points[i], 1, ind, dist);
+-            if (dist[0] < searchRadiusSq) graduatedPrevCloud->push_back(prevCloud->points[i]);
+-        }
+-
+-        // Apply clean data to Keyframe 0
+-        surfCloudKeyFrames[prevIdx]->clear();
+-        *surfCloudKeyFrames[prevIdx] = *graduatedPrevCloud;
+-        laserCloudMapContainer.erase(prevIdx);
+-        // Trigger a full map rebuild to flush the noisy State 0 points from voxelHashMap
+-        markMapRebuildTriggered("temporal_filter_bootstrap_flush");
+-        temporal_filter_state = 2;
+-        return;
+-    }
+-
+-    // State 2: Steady State (Normal operation)
+-    if (temporal_filter_state == 2)
+-    {
+-        int prevIdx = cloudKeyPoses3D->size() - 2;
+-        pcl::PointCloud<PointType>::Ptr prevCloud = surfCloudKeyFrames[prevIdx];
+-        PointTypePose currPose = trans2PointTypePose(transformTobeMapped);
+-        pcl::PointCloud<PointType>::Ptr currCloudWorld = transformPointCloud(laserCloudSurfLastDS, &currPose);
+-        pcl::PointCloud<PointType>::Ptr prevCloudWorld = transformPointCloud(prevCloud, &cloudKeyPoses6D->points[prevIdx]);
+-        
+-        // Use a static object (allocated on stack once, persists across calls)
+-        static pcl::KdTreeFLANN<PointType> kdtreeTemporal;
+-        kdtreeTemporal.setInputCloud(currCloudWorld);
+-        
+-        std::vector<int> ind; std::vector<float> dist;
+-        float searchRadiusSq = temporalFilterRadius * temporalFilterRadius;
+-
+-        pcl::PointCloud<PointType>::Ptr graduatedPrevCloud(new pcl::PointCloud<PointType>());
+-
+-        // Add to map ONLY points that survived the temporal trial
+-        for (size_t i = 0; i < prevCloudWorld->size(); ++i) {
+-            kdtreeTemporal.nearestKSearch(prevCloudWorld->points[i], 1, ind, dist);
+-            if (dist[0] < searchRadiusSq)
+-            {
+-                graduatedPrevCloud->push_back(prevCloud->points[i]);
+-                VOXEL_LOC voxel = voxelizePoint(prevCloudWorld->points[i], surroundingKeyframeMapLeafSize);
+-                if (voxelHashMap.find(voxel) == voxelHashMap.end())
+-                    voxelHashMap.emplace(voxel, prevCloudWorld->points[i]);
+-            }
+-        }
+-
+-        // Apply clean data to Keyframe
+-        surfCloudKeyFrames[prevIdx]->clear();
+-        *surfCloudKeyFrames[prevIdx] = *graduatedPrevCloud;
+-        
+-        // Remove potentially already cached noisy cloud
+-        laserCloudMapContainer.erase(prevIdx);
+-    }
+-    logLocalMapStats("updateRollingMap_Filtered");
++    logLocalMapStats("updateRollingMap");
+ }
+ 
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+ bool mapOptimization::saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req,
+                             std::shared_ptr<liorf::srv::SaveMap::Response> res)
+ {
+@@ -448,151 +214,3 @@ void mapOptimization::publishGlobalMap()
+ 
+ 
+ 
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-void mapOptimization::extractForLoopClosure()
+-{
+-    pcl::PointCloud<PointType>::Ptr cloudToExtract(new pcl::PointCloud<PointType>());
+-    int numPoses = cloudKeyPoses3D->size();
+-    for (int i = numPoses-1; i >= 0; --i)
+-    {
+-        if ((int)cloudToExtract->size() <= surroundingKeyframeSize)
+-            cloudToExtract->push_back(cloudKeyPoses3D->points[i]);
+-        else
+-            break;
+-    }
+-
+-    extractCloud(cloudToExtract);
+-}
+-
+-void mapOptimization::extractNearby()
+-{
+-    pcl::PointCloud<PointType>::Ptr surroundingKeyPoses(new pcl::PointCloud<PointType>());
+-    pcl::PointCloud<PointType>::Ptr surroundingKeyPosesDS(new pcl::PointCloud<PointType>());
+-    std::vector<int> pointSearchInd;
+-    std::vector<float> pointSearchSqDis;
+-
+-    // extract all the nearby key poses and downsample them
+-    TicToc t_extractNearby_radiusSearch;
+-    kdtreeSurroundingKeyPoses->setInputCloud(cloudKeyPoses3D); // create kd-tree
+-    kdtreeSurroundingKeyPoses->radiusSearch(cloudKeyPoses3D->back(), (double)surroundingKeyframeSearchRadius, pointSearchInd, pointSearchSqDis);
+-    if (diagnostics)
+-        diagnostics->recordSlice("extractNearby.radiusSearch", t_extractNearby_radiusSearch.toc());
+-
+-    TicToc t_extractNearby_collectPoses;
+-    for (int i = 0; i < (int)pointSearchInd.size(); ++i)
+-    {
+-        int id = pointSearchInd[i];
+-        surroundingKeyPoses->push_back(cloudKeyPoses3D->points[id]);
+-    }
+-    if (diagnostics)
+-        diagnostics->recordSlice("extractNearby.collectPoses", t_extractNearby_collectPoses.toc());
+-
+-    TicToc t_extractNearby_downsamplePoses;
+-    downSizeFilterSurroundingKeyPoses.setInputCloud(surroundingKeyPoses);
+-    downSizeFilterSurroundingKeyPoses.filter(*surroundingKeyPosesDS);
+-    if (diagnostics)
+-        diagnostics->recordSlice("extractNearby.downsamplePoses", t_extractNearby_downsamplePoses.toc());
+-
+-    TicToc t_extractNearby_remapIndices;
+-    for(auto& pt : surroundingKeyPosesDS->points)
+-    {
+-        kdtreeSurroundingKeyPoses->nearestKSearch(pt, 1, pointSearchInd, pointSearchSqDis);
+-        pt.intensity = cloudKeyPoses3D->points[pointSearchInd[0]].intensity;
+-    }
+-    if (diagnostics)
+-        diagnostics->recordSlice("extractNearby.remapIndices", t_extractNearby_remapIndices.toc());
+-
+-    // also extract some latest key frames in case the robot rotates in one position
+-    TicToc t_extractNearby_addRecent;
+-    int numPoses = cloudKeyPoses3D->size();
+-    for (int i = numPoses-1; i >= 0; --i)
+-    {
+-        if (timeLaserInfoCur - cloudKeyPoses6D->points[i].time < 10.0)
+-            surroundingKeyPosesDS->push_back(cloudKeyPoses3D->points[i]);
+-        else
+-            break;
+-    }
+-    if (diagnostics)
+-        diagnostics->recordSlice("extractNearby.addRecent", t_extractNearby_addRecent.toc());
+-
+-    TicToc t_extractNearby_extractCloud;
+-    extractCloud(surroundingKeyPosesDS);
+-    if (diagnostics)
+-        diagnostics->recordSlice("extractNearby.extractCloud", t_extractNearby_extractCloud.toc());
+-}
+-
+-void mapOptimization::extractCloud(pcl::PointCloud<PointType>::Ptr cloudToExtract)
+-{
+-    // fuse the map
+-    laserCloudSurfFromMap->clear(); 
+-    TicToc t_extractCloud_fuse;
+-    for (int i = 0; i < (int)cloudToExtract->size(); ++i)
+-    {
+-        if (common_lib_->pointDistance(cloudToExtract->points[i], cloudKeyPoses3D->back()) > surroundingKeyframeSearchRadius)
+-            continue;
+-
+-        int thisKeyInd = (int)cloudToExtract->points[i].intensity;
+-        if (thisKeyInd >= 0 && thisKeyInd < static_cast<int>(keyframeScanAdmissible.size()) && !keyframeScanAdmissible[thisKeyInd])
+-            continue;
+-        if (laserCloudMapContainer.find(thisKeyInd) != laserCloudMapContainer.end()) 
+-        {
+-            // transformed cloud available
+-            *laserCloudSurfFromMap   += laserCloudMapContainer[thisKeyInd].second;
+-        } else {
+-            // transformed cloud not available
+-            pcl::PointCloud<PointType> laserCloudCornerTemp;
+-            pcl::PointCloud<PointType> laserCloudSurfTemp = *transformPointCloud(surfCloudKeyFrames[thisKeyInd],    &cloudKeyPoses6D->points[thisKeyInd]);
+-            *laserCloudSurfFromMap   += laserCloudSurfTemp;
+-            laserCloudMapContainer[thisKeyInd] = make_pair(laserCloudCornerTemp, laserCloudSurfTemp);
+-        }
+-        
+-    }
+-    if (diagnostics)
+-        diagnostics->recordSlice("extractCloud.fuseAndTransform", t_extractCloud_fuse.toc());
+-
+-    // Downsample the surrounding surf key frames (or map)
+-    TicToc t_extractCloud_downsample;
+-    downSizeFilterLocalMapSurf.setInputCloud(laserCloudSurfFromMap);
+-    downSizeFilterLocalMapSurf.filter(*laserCloudSurfFromMapDS);
+-    laserCloudSurfFromMapDSNum = laserCloudSurfFromMapDS->size();
+-    if (diagnostics)
+-        diagnostics->recordSlice("extractCloud.downsampleLocalMap", t_extractCloud_downsample.toc());
+-
+-    // clear map cache if too large
+-    TicToc t_extractCloud_cacheMaintenance;
+-    const size_t removedCacheEntries = pruneTransformedCloudCache();
+-    if (diagnostics)
+-    {
+-        diagnostics->recordSlice("extractCloud.cacheMaintenance", t_extractCloud_cacheMaintenance.toc());
+-
+-        if (removedCacheEntries > 0)
+-        {
+-            std::ostringstream oss;
+-            oss << "[CACHE_PRUNE] removed=" << removedCacheEntries
+-                << " remaining=" << laserCloudMapContainer.size()
+-                << " max_age_s=" << transformed_cloud_cache_max_age_sec
+-                << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur;
+-            diagnostics->logEventThrottle("cache_prune", 1.0, oss.str());
+-        }
+-    }
+-}
+-
+-void mapOptimization::extractSurroundingKeyFrames()
+-{
+-    if (cloudKeyPoses3D->points.empty() == true)
+-        return;
+-
+-    TicToc t_extractSurroundingKeyFrames_extractNearby;
+-    extractNearby();
+-    if (diagnostics)
+-        diagnostics->recordSlice("extractSurroundingKeyFrames.extractNearby", t_extractSurroundingKeyFrames_extractNearby.toc());
+-}
+-
+diff --git a/src/mapOptimization/mapOptimization_publish.cpp b/src/mapOptimization/mapOptimization_publish.cpp
+index f1c2928..befc0b9 100644
+--- a/src/mapOptimization/mapOptimization_publish.cpp
++++ b/src/mapOptimization/mapOptimization_publish.cpp
+@@ -389,9 +389,20 @@ void mapOptimization::publishFrames()
+ 
+     // publish key poses
+     publishCloud(pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, mapFrameLocal);
+-    // Publish surrounding key frames
+-    publishCloud(pubRecentKeyFrames, laserCloudSurfFromMapDS, timeLaserInfoStamp, mapFrameLocal);
+-
++    // Publish surrounding key frames (local map)
++    if (pubRecentKeyFrames->get_subscription_count() != 0)
++    {
++        pcl::PointCloud<PointType>::Ptr localMapCloud(new pcl::PointCloud<PointType>());
++        auto centroids = voxelMap->GetL0Centroids();
++        localMapCloud->reserve(centroids.size());
++        for (const auto& c : centroids) {
++            PointType p;
++            p.x = c.x(); p.y = c.y(); p.z = c.z();
++            localMapCloud->push_back(p);
++        }
++        publishCloud(pubRecentKeyFrames, localMapCloud, timeLaserInfoStamp, mapFrameLocal);
++    }
++    
+     if (pubSurfDebugColored->get_subscription_count() != 0)
+     {
+         pcl::PointCloud<PointType>::Ptr transformedInput = transformPointCloud(laserCloudSurfLastDS, &thisPose6D);
+@@ -414,19 +425,19 @@ void mapOptimization::publishFrames()
+ 
+             switch (scanAlignerPrimary->laserCloudSurfDebugCode[i])
+             {
+-                case ScanAligner::SURF_DEBUG_ACCEPTED:
++                case SURF_DEBUG_ACCEPTED:
+                     point.r = 0; point.g = 255; point.b = 0;      // green
+                     break;
+-                case ScanAligner::SURF_DEBUG_REJECTED_NEIGHBOR_COUNT:
++                case SURF_DEBUG_REJECTED_NEIGHBOR_COUNT:
+                     point.r = 255; point.g = 0; point.b = 0;      // red
+                     break;
+-                case ScanAligner::SURF_DEBUG_REJECTED_KNN_DISTANCE:
++                case SURF_DEBUG_REJECTED_KNN_DISTANCE:
+                     point.r = 255; point.g = 165; point.b = 0;    // orange
+                     break;
+-                case ScanAligner::SURF_DEBUG_REJECTED_PLANE_INVALID:
++                case SURF_DEBUG_REJECTED_PLANE_INVALID:
+                     point.r = 255; point.g = 255; point.b = 0;    // yellow
+                     break;
+-                case ScanAligner::SURF_DEBUG_REJECTED_LOW_WEIGHT:
++                case SURF_DEBUG_REJECTED_LOW_WEIGHT:
+                     point.r = 255; point.g = 0; point.b = 255;    // magenta
+                     break;
+                 default:
+diff --git a/src/mapOptimization/mapOptimization_scan.cpp b/src/mapOptimization/mapOptimization_scan.cpp
+index 4469b23..fda6df2 100644
+--- a/src/mapOptimization/mapOptimization_scan.cpp
++++ b/src/mapOptimization/mapOptimization_scan.cpp
+@@ -2,6 +2,10 @@
+ 
+ void mapOptimization::updateInitialGuess()
+ {
++    if (!cloudKeyPoses3D) {
++        RCLCPP_ERROR(get_logger(), "cloudKeyPoses3D is NULL! This should not happen.");
++        return;
++    }
+     // save current transformation before any processing
+     incrementalOdometryAffineFront = trans2Affine3f(transformTobeMapped);
+ 
+@@ -217,95 +221,39 @@ void mapOptimization::scan2MapOptimization()
+ 
+     if (laserCloudSurfLastDSNum > 30)
+     {
+-        if (kdtreeLocalMapDirty)
+-        {
+-            TicToc t_setInputCloud;
+-            kdtreeSurfFromMap->setInputCloud(laserCloudSurfFromMapDS);
+-            kdtreeLocalMapDirty = false;
+-            if (diagnostics)
+-                diagnostics->recordSlice("scan2MapOptimization.setInputCloud", t_setInputCloud.toc());
+-        }
+-
+-        scanAlignerPrimary->setMap(laserCloudSurfFromMapDS, kdtreeSurfFromMap);
++        scanAlignerPrimary->setMap(voxelMap);
+         AlignmentMetrics metrics = scanAlignerPrimary->align(laserCloudSurfLastDS, transformTobeMapped);
+         this->isDegenerate = metrics.is_degenerate;
+ 
+-        // 2. Degeneracy Pipeline
+-        if (enableDegeneracyDetection) // Define this in ParamServer
++        if (enableDegeneracyDetection)
+         {
+-            scanAlignerDegeneracy->setMap(laserCloudSurfFromMapDS, kdtreeSurfFromMap);
++            scanAlignerDegeneracy->setMap(voxelMap); // Share the exact same O(1) map
+             degeneracyDetector->evalDegeneracyPerturbation(
+                 transformTobeMapped,
+                 laserCloudSurfLastDS,
+-                laserCloudSurfFromMapDS,
++                laserCloudSurfLastDS, // Pass the scan itself to prevent the segfault
+                 scanAlignerDegeneracy);
++            
++            // LOG THE FAILURE REASON IF ANY
++            if (degeneracyDetector->isFailed()) {
++                RCLCPP_WARN(this->get_logger(), "Degeneracy failed: %s", degeneracyDetector->getFailReason().c_str());
++            }
+ 
+-            auto detectedTwists = degeneracyDetector->getTwistsPerturbationsDegeneracy();
+-        
+-            if (!detectedTwists.empty())
+-            {
+-                // 1. Calculate the math
+-                auto final_basis = degeneracyDetector->extractBasisFromTwists(detectedTwists, laserCloudSurfLastDS);
+-                
+-                // 2. Publish the three RViz Layers
++            if (enableDegeneracyDetection) {
+                 publishTwistMarkers(pubDegeneracyRaw, "raw", degeneracyDetector->getRawTwists(), timeLaserInfoStamp, 
+                                     1.0, 0.0, 0.0,   1.0, 1.0, 0.0); // Red/Yellow
+                 publishTwistMarkers(pubDegeneracyPCA, "pca", degeneracyDetector->getPcaBasis(), timeLaserInfoStamp, 
+                                     0.0, 0.5, 1.0,   0.0, 1.0, 1.0); // Blue/Cyan
+                 publishTwistMarkers(pubDegeneracyBasis, "basis", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp, 
+                                     0.0, 1.0, 0.0,   1.0, 0.0, 1.0); // Green/Magenta
+-                publishDegeneracyPaths(pubDegeneracyPaths, "paths", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp);
+-
+-                // 3. Log all three stages independently
+-                if (diagnostics) {
+-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Raw", true, degeneracyDetector->getRawTwists());
+-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_PCA", true, degeneracyDetector->getPcaBasis());
+-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Basis", true, final_basis);
+-                }
+-
+-                // FIX: Print only the final basis to the terminal
+-                RCLCPP_WARN_STREAM(get_logger(), "Degeneracy Detected!\n" << degeneracyDetector->getFinalBasisString());
+-                 
+-                // 4. Hessian-Nullspace Correction
+-                Eigen::Matrix4f poseOptimizedMat = pcl::getTransformation(
+-                    transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5],
+-                    transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]).matrix();
+-                    
+-                Eigen::Matrix4f posePredictedMat = incrementalOdometryAffineFront.matrix();
+-                
+-                TwistVector diffTwist = matrixToTwist(poseOptimizedMat.inverse() * posePredictedMat);
+-                TwistVector projectedTwist = projectOntoBasis(diffTwist, final_basis);
+-                
+-                Eigen::Matrix4f finalCorrectedPose = poseOptimizedMat * expMap(projectedTwist);
+-                
+-                pcl::getTranslationAndEulerAngles(Eigen::Affine3f(finalCorrectedPose), 
+-                    transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5],
+-                    transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
+-            }
+-            else 
+-            {
+-                // FIX: Clear RViz when the environment is healthy!
+-                publishTwistMarkers(pubDegeneracyRaw, "raw", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
+-                publishTwistMarkers(pubDegeneracyPCA, "pca", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
+-                publishTwistMarkers(pubDegeneracyBasis, "basis", {}, timeLaserInfoStamp, 0,0,0, 0,0,0);
+-                publishDegeneracyPaths(pubDegeneracyPaths, "paths", {}, timeLaserInfoStamp);
+-                
+-                // FIX: Log healthy operation to your CSV/JSON
+-                if (diagnostics) {
+-                    std::vector<TwistVector> empty_twists;
+-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Raw", false, empty_twists);
+-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_PCA", false, empty_twists);
+-                    diagnostics->recordDegeneracyTelemetry(timeLaserInfoStamp.seconds(), "Perturbation_Basis", false, empty_twists);
+-                }
++                publishDegeneracyPaths(pubDegeneracyPaths, "degeneracy_paths", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp);
+             }
+         }
++        
++        transformUpdate();
+ 
+-        if (diagnostics)
++        if (true)
+         {
+-            diagnostics->recordSlice("scan2MapOptimization.surfOptimization.total", metrics.surf_optimization_ms);
+-            diagnostics->recordSlice("scan2MapOptimization.combineOptimizationCoeffs.total", metrics.combine_ms);
+-            diagnostics->recordSlice("scan2MapOptimization.LMOptimization.total", metrics.lm_optimization_ms);
+-
+             std::ostringstream oss;
+             oss << "[SCAN2MAP_ITER] iter_used=" << metrics.iterations
+                 << " surf_total_ms=" << std::fixed << std::setprecision(3) << metrics.surf_optimization_ms
+diff --git a/src/scanAlignment/LieUtils.cpp b/src/scanAlignment/LieUtils.cpp
+new file mode 100644
+index 0000000..a2e4922
+--- /dev/null
++++ b/src/scanAlignment/LieUtils.cpp
+@@ -0,0 +1,164 @@
++/**
++ * @file      LieUtils.cpp
++ * @brief     Implementation of Lie group utilities for SO(3) and SE(3) operations
++ */
++
++#include "scanAlignment/LieUtils.hpp"
++
++namespace lio {
++
++SO3 SO3::Exp(const Eigen::Vector3f& omega) {
++    const float theta = omega.norm();
++    
++    if (theta < kEpsilon) {
++        return SO3(Eigen::Matrix3f::Identity() + Hat(omega));
++    }
++    
++    const float theta_inv = 1.0f / theta;
++    const Eigen::Vector3f k = omega * theta_inv;
++    const Eigen::Matrix3f K = Hat(k);
++    
++    return SO3(Eigen::Matrix3f::Identity() + 
++               std::sin(theta) * K + 
++               (1.0f - std::cos(theta)) * K * K);
++}
++
++Eigen::Vector3f SO3::Log() const {
++    const float trace = m_matrix.trace();
++    const float cos_theta = (trace - 1.0f) * 0.5f;
++    
++    const float cos_theta_clamped = std::max(-1.0f, std::min(1.0f, cos_theta));
++    const float theta = std::acos(cos_theta_clamped);
++    
++    if (theta < kEpsilon) {
++        return Vee(m_matrix - Eigen::Matrix3f::Identity());
++    }
++    
++    const float sin_theta = std::sin(theta);
++    if (std::abs(sin_theta) < kEpsilon) {
++        Eigen::Vector3f axis;
++        int max_idx = 0;
++        if (m_matrix(1, 1) > m_matrix(0, 0)) max_idx = 1;
++        if (m_matrix(2, 2) > m_matrix(max_idx, max_idx)) max_idx = 2;
++        
++        axis[max_idx] = std::sqrt((m_matrix(max_idx, max_idx) + 1.0f) * 0.5f);
++        
++        for (int i = 0; i < 3; ++i) {
++            if (i != max_idx) {
++                axis[i] = m_matrix(max_idx, i) / (2.0f * axis[max_idx]);
++            }
++        }
++        
++        Eigen::Vector3f skew_axis = Vee(m_matrix - m_matrix.transpose()) * 0.5f;
++        float dot = axis.dot(skew_axis);
++        if (dot < 0) {
++            axis = -axis;
++        }
++        
++        return axis * theta;
++    }
++    
++    const float factor = theta / (2.0f * sin_theta);
++    return factor * Vee(m_matrix - m_matrix.transpose());
++}
++
++SO3::SO3(const Eigen::Matrix3f& R) {
++    Eigen::JacobiSVD<Eigen::Matrix3f> svd(R, Eigen::ComputeFullU | Eigen::ComputeFullV);
++    Eigen::Matrix3f U = svd.matrixU();
++    Eigen::Matrix3f V = svd.matrixV();
++    
++    m_matrix = U * V.transpose();
++    
++    if (m_matrix.determinant() < 0.0f) {
++        U.col(2) *= -1.0f;
++        m_matrix = U * V.transpose();
++    }
++}
++
++void SO3::Normalize() {
++    *this = SO3(m_matrix);
++}
++
++SE3::SE3(const Eigen::Matrix4f& matrix) {
++    m_rotation = SO3(matrix.block<3, 3>(0, 0));
++    m_translation = matrix.block<3, 1>(0, 3);
++}
++
++SE3 SE3::FromMatrix(const Eigen::Matrix4f& T) {
++    return SE3(T);
++}
++
++SE3 SE3::Exp(const Eigen::Matrix<float, 6, 1>& xi) {
++    const Eigen::Vector3f rho = xi.head<3>();
++    const Eigen::Vector3f phi = xi.tail<3>();
++    
++    const SO3 R = SO3::Exp(phi);
++    const float theta = phi.norm();
++    Eigen::Vector3f t;
++    
++    if (theta < kEpsilon) {
++        t = rho;
++    } else {
++        const Eigen::Matrix3f phi_hat = Hat(phi);
++        const float theta2 = theta * theta;
++        const float sin_theta = std::sin(theta);
++        const float cos_theta = std::cos(theta);
++        
++        const Eigen::Matrix3f V = Eigen::Matrix3f::Identity() +
++            (1.0f - cos_theta) / theta2 * phi_hat +
++            (theta - sin_theta) / (theta2 * theta) * phi_hat * phi_hat;
++        
++        t = V * rho;
++    }
++    
++    return SE3(R, t);
++}
++
++Eigen::Matrix<float, 6, 1> SE3::Log() const {
++    Eigen::Matrix<float, 6, 1> xi;
++    
++    const Eigen::Vector3f phi = m_rotation.Log();
++    const float theta = phi.norm();
++    
++    if (theta < kEpsilon) {
++        xi.head<3>() = m_translation;
++    } else {
++        const Eigen::Matrix3f phi_hat = Hat(phi);
++        const float theta2 = theta * theta;
++        const float sin_theta = std::sin(theta);
++        const float cos_theta = std::cos(theta);
++        
++        const float coeff = (2.0f * sin_theta - theta * (1.0f + cos_theta)) / 
++                           (2.0f * theta2 * sin_theta);
++        
++        const Eigen::Matrix3f V_inv = Eigen::Matrix3f::Identity() -
++            0.5f * phi_hat +
++            coeff * phi_hat * phi_hat;
++        
++        xi.head<3>() = V_inv * m_translation;
++    }
++    
++    xi.tail<3>() = phi;
++    return xi;
++}
++
++Eigen::Matrix4f SE3::Matrix() const {
++    Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
++    T.block<3, 3>(0, 0) = m_rotation.Matrix();
++    T.block<3, 1>(0, 3) = m_translation;
++    return T;
++}
++
++Eigen::Matrix3f Hat(const Eigen::Vector3f& v) {
++    Eigen::Matrix3f S;
++    S <<     0.0f, -v(2),  v(1),
++          v(2),     0.0f, -v(0),
++         -v(1),  v(0),     0.0f;
++    return S;
++}
++
++Eigen::Vector3f Vee(const Eigen::Matrix3f& S) {
++    return Eigen::Vector3f(S(2, 1), S(0, 2), S(1, 0));
++}
++
++} // namespace lio
+\ No newline at end of file
+diff --git a/src/scanAlignment/ProbabilisticKernelOptimizer.cpp b/src/scanAlignment/ProbabilisticKernelOptimizer.cpp
+new file mode 100644
+index 0000000..ac49d12
+--- /dev/null
++++ b/src/scanAlignment/ProbabilisticKernelOptimizer.cpp
+@@ -0,0 +1,325 @@
++/**
++ * @file      ProbabilisticKernelOptimizer.cpp
++ * @brief     Implementation of Probabilistic Kernel Optimization.
++ */
++
++#include "scanAlignment/ProbabilisticKernelOptimizer.hpp"
++#include <algorithm>
++#include <cmath>
++#include <numeric>
++#include <limits>
++#include <random>
++#include <iostream>
++
++#ifndef M_PI
++#define M_PI 3.14159265358979323846
++#endif
++
++namespace lio {
++
++ProbabilisticKernelOptimizer::ProbabilisticKernelOptimizer(const PKOConfig& config)
++    : m_config(config)
++    , m_alpha_star_ref(config.max_scale_factor)
++    , m_initialized(false) {
++}
++
++void ProbabilisticKernelOptimizer::Reset() {
++    m_alpha_star_ref = m_config.max_scale_factor;
++    m_gmm_weights.clear();
++    m_gmm_means.clear();
++    m_gmm_variances.clear();
++}
++
++double ProbabilisticKernelOptimizer::CalculateScaleFactor(const std::vector<double>& residuals) {
++    if (residuals.empty()) {
++        return 1.0;
++    }
++    
++    if (!m_config.use_adaptive) {
++        return m_config.min_scale_factor;
++    }
++    
++    if (!m_initialized) {
++        InitializePKO();
++        m_initialized = true;
++    }
++    
++    FitGMM(residuals);
++    
++    double best_alpha = m_config.min_scale_factor;
++    double best_cost = std::numeric_limits<double>::max();
++    
++    for (size_t i = 1; i < m_alpha_candidates.size(); ++i) {
++        double alpha = m_alpha_candidates[i];
++        
++        if (alpha > m_alpha_star_ref) {
++            continue;
++        }
++        
++        double js_divergence = CalculateJSDivergence(alpha);
++        
++        if (js_divergence < best_cost) {
++            best_cost = js_divergence;
++            best_alpha = alpha;
++        }
++    }
++    
++    m_alpha_star_ref = best_alpha;
++    return best_alpha;
++}
++
++void ProbabilisticKernelOptimizer::InitializePKO() {
++    m_alpha_candidates.clear();
++    m_partition_functions.clear();
++    
++    m_alpha_candidates.resize(m_config.num_alpha_segments + 1);
++    m_partition_functions.resize(m_config.num_alpha_segments + 1);
++    
++    m_alpha_candidates[0] = m_config.min_scale_factor;
++    m_partition_functions[0] = CalculatePartitionFunction(m_config.min_scale_factor);
++    
++    for (int i = 1; i <= m_config.num_alpha_segments; ++i) {
++        double t = static_cast<double>(i) / static_cast<double>(m_config.num_alpha_segments);
++        double log_scaled_value = (std::pow(100.0, t) - 1.0) / 99.0;
++        double alpha = m_config.min_scale_factor + 
++                      (m_config.max_scale_factor - m_config.min_scale_factor) * log_scaled_value;
++        
++        m_alpha_candidates[i] = alpha;
++        m_partition_functions[i] = CalculatePartitionFunction(alpha);
++    }
++}
++
++void ProbabilisticKernelOptimizer::FitGMM(const std::vector<double>& residuals) {
++    if (residuals.empty()) {
++        return;
++    }
++    
++    int n = residuals.size();
++    int sample_size = std::min(m_config.gmm_sample_size, n);
++    
++    std::vector<int> indices(n);
++    std::iota(indices.begin(), indices.end(), 0);
++    std::mt19937 gen(42);
++    std::shuffle(indices.begin(), indices.end(), gen);
++    
++    std::vector<double> sampled_data(sample_size);
++    for (int i = 0; i < sample_size; ++i) {
++        sampled_data[i] = residuals[indices[i]];
++    }
++    
++    m_gmm_means.resize(m_config.gmm_components);
++    m_gmm_means[0] = 0.0;
++    
++    std::uniform_int_distribution<> dis(0, sampled_data.size() - 1);
++    for (int i = 1; i < m_config.gmm_components; ++i) {
++        m_gmm_means[i] = sampled_data[dis(gen)];
++    }
++    
++    std::vector<int> clusters(sampled_data.size());
++    std::vector<double> new_means(m_config.gmm_components);
++    
++    for (int iter = 0; iter < 100; ++iter) {
++        for (size_t i = 0; i < sampled_data.size(); ++i) {
++            double min_dist = std::numeric_limits<double>::max();
++            int cluster_index = 0;
++            for (int j = 0; j < m_config.gmm_components; ++j) {
++                double dist = std::abs(sampled_data[i] - m_gmm_means[j]);
++                if (dist < min_dist) {
++                    min_dist = dist;
++                    cluster_index = j;
++                }
++            }
++            clusters[i] = cluster_index;
++        }
++        
++        std::fill(new_means.begin(), new_means.end(), 0.0);
++        std::vector<int> counts(m_config.gmm_components, 0);
++        for (size_t i = 0; i < sampled_data.size(); ++i) {
++            new_means[clusters[i]] += sampled_data[i];
++            counts[clusters[i]]++;
++        }
++        for (int j = 0; j < m_config.gmm_components; ++j) {
++            if (j == 0) {
++                new_means[j] = 0.0;
++            } else if (counts[j] > 0) {
++                new_means[j] /= counts[j];
++            }
++        }
++        
++        if (m_gmm_means == new_means) {
++            break;
++        }
++        new_means[0] = 0.0;
++        m_gmm_means = new_means;
++    }
++    
++    double mean_of_data = std::accumulate(sampled_data.begin(), sampled_data.end(), 0.0) / sampled_data.size();
++    double initial_variance = 0.0;
++    for (double x : sampled_data) {
++        initial_variance += (x - mean_of_data) * (x - mean_of_data);
++    }
++    initial_variance /= sampled_data.size();
++    m_gmm_variances.assign(m_config.gmm_components, initial_variance);
++    
++    std::vector<int> cluster_counts(m_config.gmm_components, 0);
++    for (int cluster : clusters) {
++        cluster_counts[cluster]++;
++    }
++    
++    m_gmm_weights.resize(m_config.gmm_components);
++    for (int j = 0; j < m_config.gmm_components; ++j) {
++        m_gmm_weights[j] = static_cast<double>(cluster_counts[j]) / sampled_data.size();
++    }
++    
++    const int max_iterations = 100;
++    const double convergence_threshold = 1e-6;
++    
++    std::vector<std::vector<double>> responsibilities(sample_size, 
++                                                     std::vector<double>(m_config.gmm_components));
++    
++    for (int iter = 0; iter < max_iterations; ++iter) {
++        for (int i = 0; i < sample_size; ++i) {
++            double sum_resp = 0.0;
++            for (int j = 0; j < m_config.gmm_components; ++j) {
++                responsibilities[i][j] = m_gmm_weights[j] * 
++                                        GaussianPDF(sampled_data[i], m_gmm_means[j], m_gmm_variances[j]);
++                sum_resp += responsibilities[i][j];
++            }
++            for (int j = 0; j < m_config.gmm_components; ++j) {
++                responsibilities[i][j] /= (sum_resp + 1e-10);
++            }
++        }
++        
++        std::vector<double> N_k(m_config.gmm_components, 0.0);
++        for (int j = 0; j < m_config.gmm_components; ++j) {
++            for (int i = 0; i < sample_size; ++i) {
++                N_k[j] += responsibilities[i][j];
++            }
++        }
++        
++        std::vector<double> new_weights(m_config.gmm_components);
++        std::vector<double> new_means_em(m_config.gmm_components, 0.0);
++        std::vector<double> new_variances(m_config.gmm_components, 0.0);
++        
++        for (int j = 0; j < m_config.gmm_components; ++j) {
++            new_weights[j] = N_k[j] / sample_size;
++            
++            if (j == 0) {
++                new_means_em[j] = 0.0;
++            } else {
++                for (int i = 0; i < sample_size; ++i) {
++                    new_means_em[j] += responsibilities[i][j] * sampled_data[i];
++                }
++                new_means_em[j] /= (N_k[j] + 1e-10);
++            }
++            
++            for (int i = 0; i < sample_size; ++i) {
++                double diff = sampled_data[i] - new_means_em[j];
++                new_variances[j] += responsibilities[i][j] * diff * diff;
++            }
++            new_variances[j] /= (N_k[j] + 1e-10);
++            new_variances[j] = std::max(new_variances[j], 1e-6); 
++        }
++        
++        double param_change = 0.0;
++        for (int j = 1; j < m_config.gmm_components; ++j) {
++            param_change += std::abs(new_means_em[j] - m_gmm_means[j]);
++        }
++        
++        m_gmm_weights = new_weights;
++        new_means_em[0] = 0.0;
++        m_gmm_means = new_means_em;
++        m_gmm_variances = new_variances;
++        
++        if (param_change < convergence_threshold) {
++            break;
++        }
++    }
++}
++
++double ProbabilisticKernelOptimizer::GaussianPDF(double x, double mean, double variance) const {
++    if (variance <= 0.0) {
++        return 0.0;
++    }
++    double diff = x - mean;
++    double exponent = -0.5 * (diff * diff) / variance;
++    double normalization = 1.0 / std::sqrt(2.0 * M_PI * variance);
++    return normalization * std::exp(exponent);
++}
++
++double ProbabilisticKernelOptimizer::CalculatePartitionFunction(double alpha) const {
++    const double integration_bound = m_config.truncated_threshold;
++    const double integration_step = 0.01;
++    
++    double integral = 0.0;
++    for (double x = 0.0; x <= integration_bound; x += integration_step) {
++        double kernel_value = HuberKernelWeight(x, alpha);
++        integral += kernel_value * integration_step;
++    }
++    return std::max(integral, 1e-10);
++}
++
++double ProbabilisticKernelOptimizer::HuberKernelWeight(double residual, double delta) const {
++    double abs_residual = std::abs(residual);
++    if (abs_residual <= delta) {
++        return 1.0;
++    } else {
++        return delta / abs_residual;
++    }
++}
++
++double ProbabilisticKernelOptimizer::CalculateJSDivergence(double alpha) {
++    const int num_segments = 100;
++    const double dr = m_config.truncated_threshold / num_segments;
++    
++    std::vector<double> resvec(num_segments);
++    for (int i = 0; i < num_segments; ++i) {
++        resvec[i] = dr * (1 + i);
++    }
++    
++    double partition_func = 0.0;
++    for (size_t j = 0; j < m_alpha_candidates.size(); ++j) {
++        if (std::abs(m_alpha_candidates[j] - alpha) < 1e-10) {
++            partition_func = m_partition_functions[j];
++            break;
++        }
++    }
++    
++    if (partition_func == 0.0) {
++        partition_func = CalculatePartitionFunction(alpha);
++    }
++    
++    if (partition_func < 1e-10) {
++        return std::numeric_limits<double>::max();
++    }
++    
++    double cost = 0.0;
++    double cnt = 0.0;
++    
++    for (double r : resvec) {
++        double Pr = 0.0;
++        for (int m = 0; m < m_config.gmm_components && m < static_cast<int>(m_gmm_weights.size()); ++m) {
++            Pr += m_gmm_weights[m] * GaussianPDF(r, m_gmm_means[m], m_gmm_variances[m]);
++        }
++        Pr += 1e-10;
++        
++        double kernel_val = HuberKernelWeight(r, alpha);
++        double Q = kernel_val / (partition_func + 1e-10) + 1e-10;
++        
++        double M = 0.5 * (Pr + Q);
++        double jsd = 0.5 * (Pr * std::log(Pr / M) + Q * std::log(Q / M));
++        
++        if (!std::isnan(jsd)) {
++            cost += jsd;
++            cnt += 1.0;
++        }
++    }
++    
++    if (cnt == 0) {
++        return std::numeric_limits<double>::max();
++    }
++    
++    return cost / cnt;
++}
++
++} // namespace lio
+\ No newline at end of file
+diff --git a/src/scanAlignment/ScanAligner.cpp b/src/scanAlignment/ScanAligner.cpp
+index fa47d05..0c04a62 100644
+--- a/src/scanAlignment/ScanAligner.cpp
++++ b/src/scanAlignment/ScanAligner.cpp
+@@ -2,9 +2,12 @@
+ #include "scanAlignment/ScanAligner.hpp"
+ #include <omp.h>
+ 
+-ScanAligner::ScanAligner(int max_points, float knn_distance, int cores) 
+-    : surfKnnMinDistance(knn_distance), numberOfCores(cores)
++ScanAligner::ScanAligner(int max_points, float knn_distance, int cores, const lio::PKOConfig& pko_config)
+ {
++    numberOfCores = cores;    
++    surfKnnMinDistance = knn_distance;
++
++    m_pko = std::make_shared<lio::ProbabilisticKernelOptimizer>(pko_config);
+     mapCloud = pcl::PointCloud<PointType>::Ptr(new pcl::PointCloud<PointType>());
+     kdtreeMap = pcl::KdTreeFLANN<PointType>::Ptr(new pcl::KdTreeFLANN<PointType>());
+     laserCloudOri = pcl::PointCloud<PointType>::Ptr(new pcl::PointCloud<PointType>());
+@@ -25,10 +28,9 @@ ScanAligner::ScanAligner(int max_points, float knn_distance, int cores)
+     isDegenerate = false;
+ }
+ 
+-void ScanAligner::setMap(const pcl::PointCloud<PointType>::Ptr &map, const pcl::KdTreeFLANN<PointType>::Ptr &kdtree)
++void ScanAligner::setMap(const std::shared_ptr<lio::VoxelMap>& map)
+ {
+-    mapCloud = map;
+-    kdtreeMap = kdtree;
++    voxelMap = map;
+ }
+ 
+ void ScanAligner::pointAssociateToMap(PointType const *const pi, PointType *const po)
+@@ -107,120 +109,167 @@ AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &scan,
+ 
+ void ScanAligner::surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan)
+ {
+-    // throw an error if kdtreeMap is not set
+-    if (kdtreeMap->getInputCloud() == nullptr) {
+-        throw std::runtime_error("ScanAligner::surfOptimization - kdtreeMap input cloud is not set. Please call setMap() before surfOptimization().");
++    if (!voxelMap) {
++        throw std::runtime_error("ScanAligner::surfOptimization - voxelMap is not set.");
+     }
+ 
+     updatePointAssociateToMap();
+ 
+     const int scanSize = scan->points.size();
++    
++    if (scanSize > (int)laserCloudOriSurfVec.size()) {
++        laserCloudOriSurfVec.resize(scanSize);
++        coeffSelSurfVec.resize(scanSize);
++        laserCloudOriSurfFlag.resize(scanSize, false);
++        laserCloudSurfKnnPassFlag.resize(scanSize, 0);
++        laserCloudSurfPlaneValidFlag.resize(scanSize, 0);
++        laserCloudSurfDebugCode.resize(scanSize, SURF_DEBUG_NOT_OPTIMIZED);
++    }
++
+     std::fill(laserCloudSurfKnnPassFlag.begin(), laserCloudSurfKnnPassFlag.begin() + scanSize, 0);
+     std::fill(laserCloudSurfPlaneValidFlag.begin(), laserCloudSurfPlaneValidFlag.begin() + scanSize, 0);
+     std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.begin() + scanSize, SURF_DEBUG_NOT_OPTIMIZED);
++    std::fill(laserCloudOriSurfFlag.begin(), laserCloudOriSurfFlag.begin() + scanSize, false);
++
++    if (m_pko) {
++        m_pko->Reset(); // Reset GMM for each new LM iteration step
++    }
++
++    // ==========================================================
++    // PASS 1: Parallel Correspondence & Residual Collection
++    // ==========================================================
++    
++    // Pre-allocate to avoid thread locks during OpenMP parallel loop
++    std::vector<double> raw_residuals(scanSize, 0.0);
++    std::vector<Eigen::Vector3f> valid_normals(scanSize);
++    std::vector<float> valid_pd2(scanSize);
++    std::vector<bool> has_surfel(scanSize, false);
+ 
+     int knnPassCount = 0;
+-    int planeValidCount = 0;
+-    int matchedCount = 0;
+ 
+-    #pragma omp parallel for num_threads(numberOfCores) reduction(+:knnPassCount,planeValidCount,matchedCount)
++    #pragma omp parallel for num_threads(numberOfCores) reduction(+:knnPassCount)
+     for (int i = 0; i < scanSize; i++)
+     {
+-        PointType pointOri, pointSel, coeff;
+-        std::vector<int> pointSearchInd;
+-        std::vector<float> pointSearchSqDis;
++        PointType pointOri = scan->points[i];
++        PointType pointSel;
++        pointAssociateToMap(&pointOri, &pointSel);
+ 
+-        pointOri = scan->points[i];
+-        pointAssociateToMap(&pointOri, &pointSel); 
++        Eigen::Vector3f surfel_normal, surfel_centroid;
++        float planarity_score;
+ 
+-        laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_NEIGHBOR_COUNT;
+-        const int foundNeighbors = kdtreeMap->nearestKSearch(pointSel, 5, pointSearchInd, pointSearchSqDis);
+-        if (foundNeighbors < 5)
+-            continue;
+-
+-        Eigen::Matrix<float, 5, 3> matA0;
+-        Eigen::Matrix<float, 5, 1> matB0;
+-        Eigen::Vector3f matX0;
+-
+-        matA0.setZero();
+-        matB0.fill(-1);
+-        matX0.setZero();
+-
+-        const float knnGateDistanceSq = surfKnnMinDistance * surfKnnMinDistance;
+-
+-        if (pointSearchSqDis[4] >= knnGateDistanceSq)
+-        {
+-            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_KNN_DISTANCE;
++        // O(1) Surfel Lookup
++        bool found = voxelMap->GetSurfelAtPoint(pointSel, surfel_normal, surfel_centroid, planarity_score);
++        if (!found) {
++            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_NEIGHBOR_COUNT;
+             continue;
+         }
+ 
+-        laserCloudSurfKnnPassFlag[i] = 1;
++        // Calculate point-to-plane distance (residual)
++        Eigen::Vector3f pt_vec(pointSel.x, pointSel.y, pointSel.z);
++        float pd2 = surfel_normal.dot(pt_vec - surfel_centroid);
++
++        // Store attributes for Pass 2 to avoid re-lookup
++        valid_normals[i] = surfel_normal;
++        valid_pd2[i] = pd2;
++        raw_residuals[i] = static_cast<double>(pd2);
++        has_surfel[i] = true;
++        
+         knnPassCount++;
++    }
+ 
+-        for (int j = 0; j < 5; j++) {
+-            matA0(j, 0) = mapCloud->points[pointSearchInd[j]].x;
+-            matA0(j, 1) = mapCloud->points[pointSearchInd[j]].y;
+-            matA0(j, 2) = mapCloud->points[pointSearchInd[j]].z;
++    // ==========================================================
++    // PKO EVALUATION (Sequential Distribution Analysis)
++    // ==========================================================
++    
++    double adaptive_huber_delta = 1.0;
++    double residual_normalization_scale = 1.0;
++
++    if (knnPassCount > 0) {
++        // Compact the valid residuals into a dense vector
++        std::vector<double> compacted_residuals;
++        compacted_residuals.reserve(knnPassCount);
++        for (int i = 0; i < scanSize; i++) {
++            if (has_surfel[i]) {
++                compacted_residuals.push_back(raw_residuals[i]);
++            }
+         }
+ 
+-        matX0 = matA0.colPivHouseholderQr().solve(matB0);
+-
+-        float pa = matX0(0, 0);
+-        float pb = matX0(1, 0);
+-        float pc = matX0(2, 0);
+-        float pd = 1;
+-
+-        float ps = sqrt(pa * pa + pb * pb + pc * pc);
+-        const float planeNormEpsilon = 1e-6f;
+-        if (ps <= planeNormEpsilon) {
+-            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_PLANE_INVALID;
+-            continue;
++        // Calculate normalization scale (StdDev / 3.0) 
++        double mean = std::accumulate(compacted_residuals.begin(), compacted_residuals.end(), 0.0) / compacted_residuals.size();
++        double variance = 0.0;
++        for (double val : compacted_residuals) {
++            variance += (val - mean) * (val - mean);
+         }
+-        pa /= ps; pb /= ps; pc /= ps; pd /= ps;
+-
+-        bool planeValid = true;
+-        for (int j = 0; j < 5; j++) {
+-            if (fabs(pa * mapCloud->points[pointSearchInd[j]].x +
+-                     pb * mapCloud->points[pointSearchInd[j]].y +
+-                     pc * mapCloud->points[pointSearchInd[j]].z + pd) > 0.2) {
+-                planeValid = false;
+-                break;
+-            }
++        variance /= compacted_residuals.size();
++        double std_dev = std::sqrt(variance);
++        residual_normalization_scale = std::max(std_dev / 3.0, 1e-6);
++
++        // Normalize residuals for PKO
++        std::vector<double> normalized_residuals(compacted_residuals.size());
++        for (size_t i = 0; i < compacted_residuals.size(); ++i) {
++            normalized_residuals[i] = compacted_residuals[i] / residual_normalization_scale;
+         }
+ 
+-        if (!planeValid)
+-        {
+-            laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_PLANE_INVALID;
+-            continue;
++        // Fit GMM and calculate best alpha
++        if (m_pko) {
++            adaptive_huber_delta = m_pko->CalculateScaleFactor(normalized_residuals);
+         }
++    }
+ 
++    // ==========================================================
++    // PASS 2: Parallel Robust Weighting & Coefficient Assignment
++    // ==========================================================
++    
++    int planeValidCount = 0;
++    int matchedCount = 0;
++    float huber_threshold = static_cast<float>(adaptive_huber_delta);
++    float norm_scale = static_cast<float>(residual_normalization_scale);
++
++    #pragma omp parallel for num_threads(numberOfCores) reduction(+:planeValidCount,matchedCount)
++    for (int i = 0; i < scanSize; i++)
++    {
++        if (!has_surfel[i]) continue;
++
++        laserCloudSurfKnnPassFlag[i] = 1;
+         laserCloudSurfPlaneValidFlag[i] = 1;
+         planeValidCount++;
+ 
+-        float pd2 = pa * pointSel.x + pb * pointSel.y + pc * pointSel.z + pd;
++        float pd2 = valid_pd2[i];
++        Eigen::Vector3f surfel_normal = valid_normals[i];
++
++        // 1. Calculate normalized residual
++        float abs_normalized_residual = std::abs(pd2) / norm_scale;
++        
++        // 2. Apply Huber robust weighting
++        float weight = 1.0f;
++        if (abs_normalized_residual > huber_threshold) {
++            weight = huber_threshold / abs_normalized_residual;
++        }
+ 
+-        float s = 1 - 0.9 * fabs(pd2) / sqrt(pointOri.x * pointOri.x
+-                + pointOri.y * pointOri.y + pointOri.z * pointOri.z);
++        // 3. IRLS requires sqrt(weight) because coefficients directly multiply Jacobian
++        float s = std::sqrt(weight);
+ 
+-        coeff.x = s * pa;
+-        coeff.y = s * pb;
+-        coeff.z = s * pc;
+-        coeff.intensity = s * pd2;
++        PointType coeff;
++        coeff.x = s * surfel_normal.x();
++        coeff.y = s * surfel_normal.y();
++        coeff.z = s * surfel_normal.z();
++        coeff.intensity = s * pd2; // Store weighted residual
+ 
+-        if (s > 0.1) {
++        // Reject structurally horrible outliers
++        if (s > 0.1f) {
+             laserCloudSurfDebugCode[i] = SURF_DEBUG_ACCEPTED;
+-            laserCloudOriSurfVec[i] = pointOri;
+-            coeffSelSurfVec[i] = coeff;
+             laserCloudOriSurfFlag[i] = true;
++            laserCloudOriSurfVec[i] = scan->points[i];
++            coeffSelSurfVec[i] = coeff;
+             matchedCount++;
+         } else {
+             laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_LOW_WEIGHT;
+         }
+     }
+ 
+-    surfStageKnnPassCount = static_cast<uint32_t>(knnPassCount);
+-    surfStagePlaneValidCount = static_cast<uint32_t>(planeValidCount);
+-    surfStageMatchedCount = static_cast<uint32_t>(matchedCount);
++    surfStageKnnPassCount += knnPassCount;
++    surfStagePlaneValidCount += planeValidCount;
++    surfStageMatchedCount += matchedCount;
+ }
+ 
+ void ScanAligner::combineOptimizationCoeffs(int scanSize)
+@@ -341,4 +390,9 @@ bool ScanAligner::LMOptimization(int iterCount)
+         return true; 
+     }
+     return false;
++}
++
++void ScanAligner::cornerOptimization(const pcl::PointCloud<PointType>::Ptr &scan)
++{
++    (void)scan;
+ }
+\ No newline at end of file

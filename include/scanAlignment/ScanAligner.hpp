@@ -8,6 +8,7 @@
 #include "tictoc.h"
 #include "mapOptimization/VoxelMap.hpp"
 #include "scanAlignment/ProbabilisticKernelOptimizer.hpp" // Added PKO include
+#include "scanAlignment/IMappingBackend.hpp" // For AlignmentMetrics
 
 // Define the debug codes globally or inside the class
 constexpr int SURF_DEBUG_NOT_OPTIMIZED = 0;
@@ -17,18 +18,7 @@ constexpr int SURF_DEBUG_REJECTED_KNN_DISTANCE = 3;
 constexpr int SURF_DEBUG_REJECTED_PLANE_INVALID = 4;
 constexpr int SURF_DEBUG_REJECTED_LOW_WEIGHT = 5;
 
-struct AlignmentMetrics {
-    double surf_optimization_ms = 0.0;
-    double combine_ms = 0.0;
-    double lm_optimization_ms = 0.0;
-    int iterations = 0;
-    int final_correspondences = 0;
-    uint32_t surf_input_count = 0;
-    uint32_t surf_knn_pass_count = 0;
-    uint32_t surf_plane_valid_count = 0;
-    uint32_t surf_matched_count = 0;
-    bool is_degenerate = false;
-};
+// AlignmentMetrics is now defined in IMappingBackend.hpp
 
 class ScanAligner
 {
@@ -43,7 +33,7 @@ public:
     // Legacy setMap (can be removed if no longer used)
     void setMap(const pcl::PointCloud<PointType>::Ptr &map_cloud, const pcl::KdTreeFLANN<PointType>::Ptr &map_kdtree);
     
-    AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr &scan, float *transform);
+    lio::AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr &scan, float *transform);
 
     pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const { return laserCloudOri; }
     const std::vector<int> &getDebugCodes() const { return laserCloudSurfDebugCode; }

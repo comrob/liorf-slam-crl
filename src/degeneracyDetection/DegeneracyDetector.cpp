@@ -290,7 +290,7 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
     const float poseEulerArray[6],
     pcl::PointCloud<PointType>::Ptr cloud_scan,
     pcl::PointCloud<PointType>::Ptr cloud_map,
-    std::shared_ptr<ScanAligner> scanAlignerDegeneracy)
+    std::shared_ptr<lio::IMappingBackend> mappingBackend)
 {
     failed = false;
     fail_reason = "";
@@ -328,7 +328,7 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
             posePerturbedEuler[3], posePerturbedEuler[4], posePerturbedEuler[5],
             posePerturbedEuler[0], posePerturbedEuler[1], posePerturbedEuler[2]);
 
-        AlignmentMetrics metrics = scanAlignerDegeneracy->align(cloud_scan, posePerturbedEuler);
+        lio::AlignmentMetrics metrics = mappingBackend->align(cloud_scan, posePerturbedEuler, true);
         
         if (metrics.final_correspondences < 50) { 
             failed = true;

@@ -221,18 +221,16 @@ void mapOptimization::scan2MapOptimization()
 
     if (laserCloudSurfLastDSNum > 30)
     {
-        scanAlignerPrimary->setMap(voxelMap);
-        AlignmentMetrics metrics = scanAlignerPrimary->align(laserCloudSurfLastDS, transformTobeMapped);
+        lio::AlignmentMetrics metrics = mappingBackend->align(laserCloudSurfLastDS, transformTobeMapped, false);
         this->isDegenerate = metrics.is_degenerate;
 
         if (enableDegeneracyDetection)
         {
-            scanAlignerDegeneracy->setMap(voxelMap); // Share the exact same O(1) map
             degeneracyDetector->evalDegeneracyPerturbation(
                 transformTobeMapped,
                 laserCloudSurfLastDS,
                 laserCloudSurfLastDS, // Pass the scan itself to prevent the segfault
-                scanAlignerDegeneracy);
+                mappingBackend);
             
             // LOG THE FAILURE REASON IF ANY
             if (degeneracyDetector->isFailed()) {
@@ -256,13 +254,13 @@ void mapOptimization::scan2MapOptimization()
         {
             std::ostringstream oss;
             oss << "[SCAN2MAP_ITER] iter_used=" << metrics.iterations
-                << " surf_total_ms=" << std::fixed << std::setprecision(3) << metrics.surf_optimization_ms
+                << " surf_total_ms=" << std::fixed << std::setprecision(3) << metrics.optimization_ms
                 << " combine_total_ms=" << metrics.combine_ms
                 << " lm_total_ms=" << metrics.lm_optimization_ms
-                << " surf_input=" << metrics.surf_input_count
-                << " surf_knn_pass=" << metrics.surf_knn_pass_count
-                << " surf_plane_valid=" << metrics.surf_plane_valid_count
-                << " surf_matched=" << metrics.surf_matched_count;
+                << " surf_input=" << metrics.input_count
+                << " surf_knn_pass=" << metrics.knn_pass_count
+                << " surf_plane_valid=" << metrics.plane_valid_count
+                << " surf_matched=" << metrics.matched_count;
             diagnostics->logEventThrottle("scan2map_iter_summary", 1.0, oss.str());
         }
 

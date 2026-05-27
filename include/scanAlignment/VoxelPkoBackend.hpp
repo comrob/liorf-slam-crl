@@ -1,0 +1,54 @@
+#pragma once
+
+#include "scanAlignment/IMappingBackend.hpp"
+#include "scanAlignment/ScanAligner.hpp"
+#include "mapOptimization/VoxelMap.hpp"
+#include "mapOptimization/VoxelMapConfig.hpp"
+#include "scanAlignment/ProbabilisticKernelOptimizer.hpp"
+
+namespace lio {
+
+class VoxelPkoBackend : public IMappingBackend {
+public:
+    VoxelPkoBackend(const VoxelMapConfig& mapConfig, 
+                    const PKOConfig& pkoConfig,
+                    int max_points, 
+                    float knn_distance, 
+                    int cores,
+                    float truncationRadius);
+
+    ~VoxelPkoBackend() override = default;
+
+    void clearMap() override;
+
+    void rebuildLocalMap(const std::vector<int>& keyframeIndices,
+                         CloudRetriever getCloudFn,
+                         const Eigen::Vector3d& currentSensorPos) override;
+
+    void updateRollingMap(const pcl::PointCloud<PointType>::Ptr& alignedScan,
+                          const Eigen::Vector3d& sensorPos) override;
+
+    AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr& scan, 
+                           float* transformTobeMapped,
+                           bool isDegeneracyRun = false) override;
+
+    pcl::PointCloud<PointType>::Ptr getLocalMapCloud() const override;
+    
+    size_t getMapPointCount() const override;
+
+    const std::vector<int>& getDebugCodes() const override;
+    pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const override;
+
+private:
+    std::shared_ptr<lio::VoxelMap> voxelMap;
+    
+    // Primary aligner
+    std::shared_ptr<ScanAligner> scanAlignerPrimary;
+    
+    // Secondary aligner used strictly for degeneracy checks
+    std::shared_ptr<ScanAligner> scanAlignerDegeneracy;
+    
+    float localMapTruncationRadius;
+};
+
+} // namespace lio

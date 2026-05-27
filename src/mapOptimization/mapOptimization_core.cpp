@@ -1,4 +1,5 @@
 #include "mapOptimization/mapOptimization.hpp"
+#include "scanAlignment/VoxelPkoBackend.hpp"
 
 using gtsam::ISAM2;
 using gtsam::ISAM2Params;
@@ -173,11 +174,14 @@ void mapOptimization::allocateMemory()
     laserCloudSurfLast.reset(new pcl::PointCloud<PointType>());
     laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>());
 
-    voxelMap = std::make_shared<lio::VoxelMap>(voxel_map_config);
-    
-    scanAlignerPrimary = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores, pko_config);
-    scanAlignerDegeneracy = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores, pko_config);
-    
+    mappingBackend = std::make_shared<lio::VoxelPkoBackend>(
+        voxel_map_config, 
+        pko_config, 
+        N_SCAN * Horizon_SCAN, 
+        surfKnnMinDistance, 
+        numberOfCores,
+        localMapTruncationRadius
+    );
 
     DegeneracyParams dParams; // Optionally bind these to your ParamServer variables
     degeneracyDetector = std::make_shared<DegeneracyDetector>(dParams);

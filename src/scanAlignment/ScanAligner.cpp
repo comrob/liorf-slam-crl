@@ -46,8 +46,9 @@ void ScanAligner::updatePointAssociateToMap()
     transPointAssociateToMap = pcl::getTransformation(currentTransform[3], currentTransform[4], currentTransform[5], currentTransform[0], currentTransform[1], currentTransform[2]);
 }
 
-AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &scan, float transformIn[6])
+lio::AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &scan, float transformIn[6])
 {
+    lio::AlignmentMetrics metrics;
     auto scanSize = scan->points.size();
 
     // Re-introduce the safety check:
@@ -62,7 +63,6 @@ AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &scan,
 
     for(int i=0; i<6; ++i) currentTransform[i] = transformIn[i];
     
-    AlignmentMetrics metrics;
     metrics.iterations = 0;
 
     surfStageInputCount = static_cast<uint32_t>(scanSize);
@@ -80,7 +80,7 @@ AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &scan,
 
         TicToc t_surfOptimization;
         surfOptimization(scan);
-        metrics.surf_optimization_ms += t_surfOptimization.toc();
+        metrics.optimization_ms += t_surfOptimization.toc();
 
         TicToc t_combineOptimizationCoeffs;
         combineOptimizationCoeffs(scanSize);
@@ -96,10 +96,10 @@ AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &scan,
     }
 
     metrics.final_correspondences = laserCloudOri->size();
-    metrics.surf_input_count = surfStageInputCount;
-    metrics.surf_knn_pass_count = surfStageKnnPassCount;
-    metrics.surf_plane_valid_count = surfStagePlaneValidCount;
-    metrics.surf_matched_count = surfStageMatchedCount;
+    metrics.input_count = surfStageInputCount;
+    metrics.knn_pass_count = surfStageKnnPassCount;
+    metrics.plane_valid_count = surfStagePlaneValidCount;
+    metrics.matched_count = surfStageMatchedCount;
     metrics.is_degenerate = this->isDegenerate;
 
     for(int i=0; i<6; ++i) transformIn[i] = currentTransform[i];

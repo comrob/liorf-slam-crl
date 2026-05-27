@@ -100,6 +100,7 @@ add_executable(${PROJECT_NAME}_mapOptmization
   src/scanAlignment/ScanAligner.cpp
   src/scanAlignment/LieUtils.cpp
   src/scanAlignment/ProbabilisticKernelOptimizer.cpp
+  src/scanAlignment/VoxelPkoBackend.cpp
   src/degeneracyDetection/DegeneracyDetector.cpp
   ${common_lib}
   include/Scancontext.cpp)

@@ -3,7 +3,7 @@
 
 #include "utility.h"
 #include "TwistManipulation.hpp"
-#include "scanAlignment/ScanAligner.hpp"
+#include "scanAlignment/IMappingBackend.hpp"
 #include <pcl/common/transforms.h>
 #include <vector>
 #include <string>
@@ -35,7 +35,7 @@ public:
         const float poseEulerArray[6],
         pcl::PointCloud<PointType>::Ptr cloud_scan,
         pcl::PointCloud<PointType>::Ptr cloud_map,
-        std::shared_ptr<ScanAligner> scanAlignerDegeneracy);
+        std::shared_ptr<lio::IMappingBackend> mappingBackend);
 
     std::vector<TwistVector> getTwistsPerturbationsDegeneracy() const { return twists_perturbations_degeneration; }
     

@@ -1,5 +1,6 @@
 #include "mapOptimization/mapOptimization.hpp"
 #include "degeneracyDetection/TwistManipulation.hpp"
+#include "scanAlignment/ScanAligner.hpp"
 
 pcl::PointCloud<PointType>::Ptr mapOptimization::transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
 {
@@ -392,15 +393,13 @@ void mapOptimization::publishFrames()
     // Publish surrounding key frames (local map)
     if (pubRecentKeyFrames->get_subscription_count() != 0)
     {
-        pcl::PointCloud<PointType>::Ptr localMapCloud(new pcl::PointCloud<PointType>());
-        auto centroids = voxelMap->GetL0Centroids();
-        localMapCloud->reserve(centroids.size());
-        for (const auto& c : centroids) {
-            PointType p;
-            p.x = c.x(); p.y = c.y(); p.z = c.z();
-            localMapCloud->push_back(p);
+        static double lastPublishTime = -1.0;
+        if (timeLaserInfoCur - lastPublishTime >= 1.0) // Throttle to 1 Hz
+        {
+            pcl::PointCloud<PointType>::Ptr localMapCloud = mappingBackend->getLocalMapCloud();
+            publishCloud(pubRecentKeyFrames, localMapCloud, timeLaserInfoStamp, mapFrameLocal);
+            lastPublishTime = timeLaserInfoCur;
         }
-        publishCloud(pubRecentKeyFrames, localMapCloud, timeLaserInfoStamp, mapFrameLocal);
     }
     
     if (pubSurfDebugColored->get_subscription_count() != 0)
@@ -408,9 +407,10 @@ void mapOptimization::publishFrames()
         pcl::PointCloud<PointType>::Ptr transformedInput = transformPointCloud(laserCloudSurfLastDS, &thisPose6D);
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr coloredCloud(new pcl::PointCloud<pcl::PointXYZRGB>());
 
-        const int codeBound = laserCloudSurfLastDSNum < static_cast<int>(scanAlignerPrimary->laserCloudSurfDebugCode.size())
+        const auto& codes = mappingBackend->getDebugCodes();
+        const int codeBound = laserCloudSurfLastDSNum < static_cast<int>(codes.size())
                                   ? laserCloudSurfLastDSNum
-                                  : static_cast<int>(scanAlignerPrimary->laserCloudSurfDebugCode.size());
+                                  : static_cast<int>(codes.size());
         const int pointBound = codeBound < static_cast<int>(transformedInput->size())
                                    ? codeBound
                                    : static_cast<int>(transformedInput->size());
@@ -423,7 +423,7 @@ void mapOptimization::publishFrames()
             point.y = transformedInput->points[i].y;
             point.z = transformedInput->points[i].z;
 
-            switch (scanAlignerPrimary->laserCloudSurfDebugCode[i])
+            switch (codes[i])
             {
                 case SURF_DEBUG_ACCEPTED:
                     point.r = 0; point.g = 255; point.b = 0;      // green
@@ -478,7 +478,7 @@ void mapOptimization::publishFrames()
     if (pubMatchedSurfFeatures->get_subscription_count() != 0)
     {
         pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
-        *cloudOut += *transformPointCloud(scanAlignerPrimary->getLaserCloudOri(), &thisPose6D);
+        *cloudOut += *transformPointCloud(mappingBackend->getLaserCloudOri(), &thisPose6D);
         publishCloud(pubMatchedSurfFeatures, cloudOut, timeLaserInfoStamp, mapFrameLocal);
     }
     // publish registered high-res raw cloud

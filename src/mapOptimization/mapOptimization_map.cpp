@@ -14,7 +14,7 @@ void mapOptimization::markMapRebuildTriggered(const std::string &reason)
         oss << "[MAP_REBUILD_TRIGGER] reason=" << reason
             << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
             << " keyposes=" << cloudKeyPoses3D->size()
-            << " voxel_count=" << (voxelMap ? voxelMap->GetVoxelCount() : 0);
+            << " voxel_count=" << (mappingBackend ? mappingBackend->getMapPointCount() : 0);
         diagnostics->logEvent(oss.str());
     }
 }
@@ -28,8 +28,8 @@ void mapOptimization::logLocalMapStats(const std::string &stage)
     oss << "[LOCAL_MAP_STATS] stage=" << stage
         << " t=" << std::fixed << std::setprecision(3) << timeLaserInfoCur
         << " rebuild_pending=" << (require_map_rebuild ? 1 : 0)
-        << " voxels=" << (voxelMap ? voxelMap->GetVoxelCount() : 0)
-        << " local_map_pts=" << (voxelMap ? voxelMap->GetPointCount() : 0)
+        << " voxels=" << 0 // deprecated in generic interface
+        << " local_map_pts=" << (mappingBackend ? mappingBackend->getMapPointCount() : 0)
         << " cached_clouds=" << 0
         << " current_scan_pts=" << laserCloudSurfLastDSNum
         << " keyposes=" << cloudKeyPoses3D->size()
@@ -44,39 +44,39 @@ void mapOptimization::logLocalMapStats(const std::string &stage)
 void mapOptimization::manageLocalMap()
 {
     if (cloudKeyPoses3D->points.empty()) {
-        voxelMap->Clear();
+        mappingBackend->clearMap();
         require_map_rebuild = false;
         localMapDirty = false;
         return;
     }
 
-    if (require_map_rebuild || localMapDirty)
+    if (require_map_rebuild)
     {
-        voxelMap->Clear();
+        Eigen::Vector3d current_sensor_pos(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
+        
+        std::vector<int> keyframeIndices;
         int numPoses = cloudKeyPoses3D->size();
         
-        Eigen::Vector3d current_sensor_pos(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5]);
-
-        // When rebuilding, we need to gather nearby or recent keyframes 
-        // to re-populate the voxel map properly.
+        // Use the fast backward linear search for keyframes inside the search radius 
+        // to avoid expensive KD-Tree building/querying
         for (int i = numPoses - 1; i >= 0; --i)
         {
-            if (i >= 0 && i < static_cast<int>(keyframeScanAdmissible.size()) && !keyframeScanAdmissible[i])
-                continue;
-
-            // Simple distance check from the latest pose
             if (common_lib_->pointDistance(cloudKeyPoses3D->points[i], cloudKeyPoses3D->back()) > surroundingKeyframeSearchRadius)
                 continue;
-
-            pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(surfCloudKeyFrames[i], &cloudKeyPoses6D->points[i]);
-
-            // Add straight to voxel map, keeping the bounding box centered at the latest position
-            voxelMap->UpdateVoxelMap(transformedCurrentScan, current_sensor_pos, localMapTruncationRadius, true);
+                
+            keyframeIndices.push_back(i);
         }
+
+        auto getCloudFn = [this](int index) -> pcl::PointCloud<PointType>::Ptr {
+            if (index >= 0 && index < static_cast<int>(keyframeScanAdmissible.size()) && !keyframeScanAdmissible[index])
+                return nullptr;
+            return transformPointCloud(surfCloudKeyFrames[index], &cloudKeyPoses6D->points[index]);
+        };
+
+        mappingBackend->rebuildLocalMap(keyframeIndices, getCloudFn, current_sensor_pos);
 
         require_map_rebuild = false;
         localMapDirty = false;
-        
     }
 }
 
@@ -89,8 +89,7 @@ void mapOptimization::updateRollingMap()
     PointTypePose poseForTransform = trans2PointTypePose(transformTobeMapped);
     pcl::PointCloud<PointType>::Ptr transformedCurrentScan = transformPointCloud(laserCloudSurfLastDS, &poseForTransform);
 
-    // VoxelMap handles distance pruning and insertion in O(1)
-    voxelMap->UpdateVoxelMap(transformedCurrentScan, sensor_pos, localMapTruncationRadius, true);
+    mappingBackend->updateRollingMap(transformedCurrentScan, sensor_pos);
 
     logLocalMapStats("updateRollingMap");
 }
