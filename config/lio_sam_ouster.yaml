@@ -16,7 +16,7 @@
     reject_fast_turn_scans: true
     fast_turn_max_angular_speed_rad_s: 0.5
 
-    enableDegeneracyDetection: true
+    enableDegeneracyDetection: false
     
     # Topics
     pointCloudTopic: "/os1/points"               # Point cloud data
@@ -128,3 +128,12 @@
     globalMapVisualizationSearchRadius: 1000.0    # meters, global map visualization radius
     globalMapVisualizationPoseDensity: 1.0       # meters, global map visualization keyframe density
     globalMapVisualizationLeafSize: 0.5           # meters, global map visualization cloud density
+    
+    pko:
+      use_adaptive: true
+      min_scale_factor: 0.001
+      max_scale_factor: 10.0
+      num_alpha_segments: 25
+      truncated_threshold: 10.0
+      gmm_components: 2
+      gmm_sample_size: 100

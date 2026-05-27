@@ -2,9 +2,10 @@
 #include "scanAlignment/ScanAligner.hpp"
 #include <omp.h>
 
-ScanAligner::ScanAligner(int max_points, float knn_distance, int cores) 
+ScanAligner::ScanAligner(int max_points, float knn_distance, int cores, const lio::PKOConfig& pko_config)
     : surfKnnMinDistance(knn_distance), numberOfCores(cores)
 {
+    m_pko = std::make_shared<lio::ProbabilisticKernelOptimizer>(pko_config);
     mapCloud = pcl::PointCloud<PointType>::Ptr(new pcl::PointCloud<PointType>());
     kdtreeMap = pcl::KdTreeFLANN<PointType>::Ptr(new pcl::KdTreeFLANN<PointType>());
     laserCloudOri = pcl::PointCloud<PointType>::Ptr(new pcl::PointCloud<PointType>());
@@ -126,17 +127,30 @@ void ScanAligner::surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan)
     std::fill(laserCloudSurfKnnPassFlag.begin(), laserCloudSurfKnnPassFlag.begin() + scanSize, 0);
     std::fill(laserCloudSurfPlaneValidFlag.begin(), laserCloudSurfPlaneValidFlag.begin() + scanSize, 0);
     std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.begin() + scanSize, SURF_DEBUG_NOT_OPTIMIZED);
+    std::fill(laserCloudOriSurfFlag.begin(), laserCloudOriSurfFlag.begin() + scanSize, false);
+
+    if (m_pko) {
+        m_pko->Reset(); // Reset GMM for each new LM iteration step
+    }
+
+    // ==========================================================
+    // PASS 1: Parallel Correspondence & Residual Collection
+    // ==========================================================
+    
+    // Pre-allocate to avoid thread locks during OpenMP parallel loop
+    std::vector<double> raw_residuals(scanSize, 0.0);
+    std::vector<Eigen::Vector3f> valid_normals(scanSize);
+    std::vector<float> valid_pd2(scanSize);
+    std::vector<bool> has_surfel(scanSize, false);
 
     int knnPassCount = 0;
-    int planeValidCount = 0;
-    int matchedCount = 0;
 
-    #pragma omp parallel for num_threads(numberOfCores) reduction(+:knnPassCount,planeValidCount,matchedCount)
+    #pragma omp parallel for num_threads(numberOfCores) reduction(+:knnPassCount)
     for (int i = 0; i < scanSize; i++)
     {
         PointType pointOri = scan->points[i];
         PointType pointSel;
-        pointAssociateToMap(&pointOri, &pointSel); 
+        pointAssociateToMap(&pointOri, &pointSel);
 
         Eigen::Vector3f surfel_normal, surfel_centroid;
         float planarity_score;
@@ -148,18 +162,90 @@ void ScanAligner::surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan)
             continue;
         }
 
-        laserCloudSurfKnnPassFlag[i] = 1;
-        knnPassCount++;
-        
-        laserCloudSurfPlaneValidFlag[i] = 1;
-        planeValidCount++;
-
         // Calculate point-to-plane distance (residual)
         Eigen::Vector3f pt_vec(pointSel.x, pointSel.y, pointSel.z);
         float pd2 = surfel_normal.dot(pt_vec - surfel_centroid);
 
-        // Robust weighting (Placeholder until Phase 3 PKO integration)
-        float s = 1 - 0.9 * std::abs(pd2) / std::sqrt(pointOri.x * pointOri.x + pointOri.y * pointOri.y + pointOri.z * pointOri.z);
+        // Store attributes for Pass 2 to avoid re-lookup
+        valid_normals[i] = surfel_normal;
+        valid_pd2[i] = pd2;
+        raw_residuals[i] = static_cast<double>(pd2);
+        has_surfel[i] = true;
+        
+        knnPassCount++;
+    }
+
+    // ==========================================================
+    // PKO EVALUATION (Sequential Distribution Analysis)
+    // ==========================================================
+    
+    double adaptive_huber_delta = 1.0;
+    double residual_normalization_scale = 1.0;
+
+    if (knnPassCount > 0) {
+        // Compact the valid residuals into a dense vector
+        std::vector<double> compacted_residuals;
+        compacted_residuals.reserve(knnPassCount);
+        for (int i = 0; i < scanSize; i++) {
+            if (has_surfel[i]) {
+                compacted_residuals.push_back(raw_residuals[i]);
+            }
+        }
+
+        // Calculate normalization scale (StdDev / 3.0) 
+        double mean = std::accumulate(compacted_residuals.begin(), compacted_residuals.end(), 0.0) / compacted_residuals.size();
+        double variance = 0.0;
+        for (double val : compacted_residuals) {
+            variance += (val - mean) * (val - mean);
+        }
+        variance /= compacted_residuals.size();
+        double std_dev = std::sqrt(variance);
+        residual_normalization_scale = std::max(std_dev / 3.0, 1e-6);
+
+        // Normalize residuals for PKO
+        std::vector<double> normalized_residuals(compacted_residuals.size());
+        for (size_t i = 0; i < compacted_residuals.size(); ++i) {
+            normalized_residuals[i] = compacted_residuals[i] / residual_normalization_scale;
+        }
+
+        // Fit GMM and calculate best alpha
+        if (m_pko) {
+            adaptive_huber_delta = m_pko->CalculateScaleFactor(normalized_residuals);
+        }
+    }
+
+    // ==========================================================
+    // PASS 2: Parallel Robust Weighting & Coefficient Assignment
+    // ==========================================================
+    
+    int planeValidCount = 0;
+    int matchedCount = 0;
+    float huber_threshold = static_cast<float>(adaptive_huber_delta);
+    float norm_scale = static_cast<float>(residual_normalization_scale);
+
+    #pragma omp parallel for num_threads(numberOfCores) reduction(+:planeValidCount,matchedCount)
+    for (int i = 0; i < scanSize; i++)
+    {
+        if (!has_surfel[i]) continue;
+
+        laserCloudSurfKnnPassFlag[i] = 1;
+        laserCloudSurfPlaneValidFlag[i] = 1;
+        planeValidCount++;
+
+        float pd2 = valid_pd2[i];
+        Eigen::Vector3f surfel_normal = valid_normals[i];
+
+        // 1. Calculate normalized residual
+        float abs_normalized_residual = std::abs(pd2) / norm_scale;
+        
+        // 2. Apply Huber robust weighting
+        float weight = 1.0f;
+        if (abs_normalized_residual > huber_threshold) {
+            weight = huber_threshold / abs_normalized_residual;
+        }
+
+        // 3. IRLS requires sqrt(weight) because coefficients directly multiply Jacobian
+        float s = std::sqrt(weight);
 
         PointType coeff;
         coeff.x = s * surfel_normal.x();
@@ -167,20 +253,21 @@ void ScanAligner::surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan)
         coeff.z = s * surfel_normal.z();
         coeff.intensity = s * pd2; // Store weighted residual
 
-        if (s > 0.1) {
+        // Reject structurally horrible outliers
+        if (s > 0.1f) {
             laserCloudSurfDebugCode[i] = SURF_DEBUG_ACCEPTED;
-            laserCloudOriSurfVec[i] = pointOri;
-            coeffSelSurfVec[i] = coeff;
             laserCloudOriSurfFlag[i] = true;
+            laserCloudOriSurfVec[i] = scan->points[i];
+            coeffSelSurfVec[i] = coeff;
             matchedCount++;
         } else {
             laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_LOW_WEIGHT;
         }
     }
 
-    surfStageKnnPassCount = static_cast<uint32_t>(knnPassCount);
-    surfStagePlaneValidCount = static_cast<uint32_t>(planeValidCount);
-    surfStageMatchedCount = static_cast<uint32_t>(matchedCount);
+    surfStageKnnPassCount += knnPassCount;
+    surfStagePlaneValidCount += planeValidCount;
+    surfStageMatchedCount += matchedCount;
 }
 
 void ScanAligner::combineOptimizationCoeffs(int scanSize)

@@ -178,8 +178,9 @@ void mapOptimization::allocateMemory()
     voxelMap->SetPlanarityThreshold(0.1f); // Relaxed planarity constraint for L0/L1 surfel calculation
     voxelMap->SetMinSurfelInliers(3); // Relaxed from 5 to 3 because points are deeply downsampled!
 
-    scanAlignerPrimary = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
-    scanAlignerDegeneracy = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores);
+    scanAlignerPrimary = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores, pko_config);
+    scanAlignerDegeneracy = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores, pko_config);
+    
     
     DegeneracyParams dParams; // Optionally bind these to your ParamServer variables
     degeneracyDetector = std::make_shared<DegeneracyDetector>(dParams);

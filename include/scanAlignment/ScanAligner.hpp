@@ -7,6 +7,7 @@
 #include <chrono>
 #include "tictoc.h"
 #include "mapOptimization/VoxelMap.hpp"
+#include "scanAlignment/ProbabilisticKernelOptimizer.hpp" // Added PKO include
 
 // Define the debug codes globally or inside the class
 constexpr int SURF_DEBUG_NOT_OPTIMIZED = 0;
@@ -34,7 +35,7 @@ class ScanAligner
 public:
     std::vector<int> laserCloudSurfDebugCode; // Needs to be public for the publisher
 
-    ScanAligner(int max_points, float knn_distance, int cores);
+    ScanAligner(int max_points, float knn_distance, int cores, const lio::PKOConfig& pko_config = lio::PKOConfig());
     ~ScanAligner() = default;
 
     void setMap(const std::shared_ptr<lio::VoxelMap>& map);
@@ -49,6 +50,8 @@ public:
 
 private:
     std::shared_ptr<lio::VoxelMap> voxelMap;
+    std::shared_ptr<lio::ProbabilisticKernelOptimizer> m_pko;
+
     int numberOfCores;
     float surfKnnMinDistance;
     float currentTransform[6];

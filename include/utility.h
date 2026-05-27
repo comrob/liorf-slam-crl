@@ -59,6 +59,8 @@
 #include <thread>
 #include <mutex>
 
+#include "scanAlignment/ProbabilisticKernelOptimizer.hpp"
+
 using namespace std;
 
 typedef pcl::PointXYZI PointType;
@@ -225,6 +227,8 @@ public:
     float globalMapVisualizationLeafSize;
 
     bool enableDegeneracyDetection;
+
+    lio::PKOConfig pko_config;
 
     ParamServer(std::string node_name, const rclcpp::NodeOptions & options) : Node(node_name, options)
     {   
@@ -495,12 +499,29 @@ public:
         get_parameter("gps_max_constraint_dt_sec", gps_max_constraint_dt_sec);
 
 
-       declare_parameter<float>("globalMapVisualizationSearchRadius", 1e3f);
+        declare_parameter<float>("globalMapVisualizationSearchRadius", 1e3f);
         get_parameter("globalMapVisualizationSearchRadius", globalMapVisualizationSearchRadius);
         declare_parameter<float>("globalMapVisualizationPoseDensity", 10.0);
         get_parameter("globalMapVisualizationPoseDensity", globalMapVisualizationPoseDensity);
         declare_parameter<float>("globalMapVisualizationLeafSize", 1.0f);
         get_parameter("globalMapVisualizationLeafSize", globalMapVisualizationLeafSize);
+        
+        declare_parameter("pko.use_adaptive", true);
+        declare_parameter("pko.min_scale_factor", 0.001);
+        declare_parameter("pko.max_scale_factor", 10.0);
+        declare_parameter("pko.num_alpha_segments", 25);
+        declare_parameter("pko.truncated_threshold", 10.0);
+        declare_parameter("pko.gmm_components", 2);
+        declare_parameter("pko.gmm_sample_size", 100);
+
+        get_parameter("pko.use_adaptive", pko_config.use_adaptive);
+        get_parameter("pko.min_scale_factor", pko_config.min_scale_factor);
+        get_parameter("pko.max_scale_factor", pko_config.max_scale_factor);
+        get_parameter("pko.num_alpha_segments", pko_config.num_alpha_segments);
+        get_parameter("pko.truncated_threshold", pko_config.truncated_threshold);
+        get_parameter("pko.gmm_components", pko_config.gmm_components);
+        get_parameter("pko.gmm_sample_size", pko_config.gmm_sample_size);
+        
 
         usleep(100);
     }
