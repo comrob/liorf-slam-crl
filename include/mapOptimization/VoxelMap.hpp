@@ -6,12 +6,17 @@
 #ifndef VOXEL_MAP_HPP
 #define VOXEL_MAP_HPP
 
-#include "utility.h"
+#include <pcl/point_types.h>
+#include <pcl/point_cloud.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <mutex>
 #include <Eigen/Dense>
+
+#include "mapOptimization/VoxelMapConfig.hpp"
+
+using PointType = pcl::PointXYZI;
 
 namespace lio {
 
@@ -59,7 +64,8 @@ public:
 
 class VoxelMap {
 public:
-    explicit VoxelMap(float voxel_size = 0.5f);
+    // explicit VoxelMap(float voxel_size = 0.5f);
+    explicit VoxelMap(const VoxelMapConfig& config);
     void SetVoxelSize(float size);
     void SetMaxHitCount(int max_count) { m_max_hit_count = max_count; }
     int GetMaxHitCount() const { return m_max_hit_count; }

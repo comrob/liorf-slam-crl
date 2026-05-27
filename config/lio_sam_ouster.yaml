@@ -16,56 +16,56 @@
     reject_fast_turn_scans: true
     fast_turn_max_angular_speed_rad_s: 0.5
 
-    enableDegeneracyDetection: false
+    enableDegeneracyDetection: true
     
     # Topics
-    pointCloudTopic: "/os1/points"               # Point cloud data
-    imuTopic: "/os1/imu"                         # IMU data
-    odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
-    gpsTopic: "/gnss/septentrio/fix"                   # GPS odometry topic from navsat, see module_navsat.launch file
+    pointCloudTopic: "/ouster/points"               # Point cloud data
+    imuTopic: "/ouster/imu"                         # IMU data
+    odomTopic: "odometry/imu"                       # IMU pre-preintegration odometry
+    gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
 
     # Frames
-    lidarFrame: "os1/os_lidar"
-    baselinkFrame: "os1/os_sensor"
+    lidarFrame: "os_lidar"
+    baselinkFrame: "os_sensor"
     odometryFrame: "odom"
     mapFrameLocal: "map"
     mapFrameEnu: "map_enu"
     mapFrameNed: "map_ned"
     ECEFframe: "earth"
-    debugTFs: true
+    debugTFs: false
 
     # GPS Settings
-    useImuHeadingInitialization: true           # if using GPS data, set to "true"
-    useGpsElevation: false                      # if GPS elevation is bad, set to "false"
-    gpsCovThreshold: 2.0                        # m^2, threshold for using GPS data
-    poseCovThreshold: 25.0                      # m^2, threshold for using GPS data
-    gps_processing_delay_sec: 1.0               # process GPS constraints only after this ROS-time delay from GPS stamp
-    gps_covariance_inflation_m: 2.0             # extra GPS factor std-dev [m] added as variance inflation (m^2) on XYZ
-    gps_reject_on_invalid_status: false         # if true, reject GPS measurements with status < 0; if false, accept them anyway
-    gps_keyframe_search_window: 10              # number of recent keyframes to search for GPS alignment (larger = more lenient)
-    gps_max_constraint_dt_sec: 0.30             # max time difference [s] between GPS and closest keyframe (smaller = more strict)
+    useImuHeadingInitialization: true           
+    useGpsElevation: false                      
+    gpsCovThreshold: 2.0                        
+    poseCovThreshold: 25.0                      
+    gps_processing_delay_sec: 1.0               
+    gps_covariance_inflation_m: 2.0             
+    gps_reject_on_invalid_status: false         
+    gps_keyframe_search_window: 10              
+    gps_max_constraint_dt_sec: 0.30             
     
     force_initial_gps: true
-    manual_gps_origin: [50.0763, 14.41, 252.6]   # LLA GPS origin for manual georeference initialization (if `force_initial_gps` enabled)
-    manual_global_heading: 0.0                   # global yaw heading in degrees to rotate EN
+    manual_gps_origin: [50.0763, 14.41, 252.6]  
+    manual_global_heading: 0.0                   
 
     # Export settings
-    savePCD: false                              # https://github.com/TixiaoShan/LIO-SAM/issues/3
-    savePCDDirectory: "/Downloads/LOAM/"        # in your home folder, starts and ends with "/". Warning: the code deletes "LOAM" folder then recreates it. See "mapOptimization" for implementation
-    save_dense_gps_trajectory: true             # keep full raw GPS history in memory for save-time CSV export
-    save_dense_odom_trajectory: true            # keep full mapping odometry history in memory for save-time CSV export
+    savePCD: false                              
+    savePCDDirectory: "/Downloads/LOAM/"        
+    save_dense_gps_trajectory: true             
+    save_dense_odom_trajectory: true            
 
     # Sensor Settings
-    sensor: ouster                            # lidar sensor type, 'velodyne' or 'ouster' or 'livox' or 'robosense'
-    N_SCAN: 128                                  # number of lidar channel (i.e., Velodyne/Ouster: 16, 32, 64, 128, Livox Horizon: 6)
-    Horizon_SCAN: 1024                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048, Livox Horizon: 4000)
-    downsampleRate: 1                           # default: 1. Downsample your data if too many points(line). i.e., 16 = 64 / 4, 16 = 16 / 1
-    point_filter_num: 5                         # default: 3. Downsample your data if too many points(point). e.g., 16: 1, 32: 5, 64: 8
-    lidarMinRange: 1.0                          # default: 1.0, minimum lidar range to be used
-    lidarMaxRange: 100.0                       # default: 1000.0, maximum lidar range to be used
+    sensor: ouster                            
+    N_SCAN: 128                                  
+    Horizon_SCAN: 1024                          
+    downsampleRate: 1                           
+    point_filter_num: 5                         
+    lidarMinRange: 1.0                          
+    lidarMaxRange: 100.0                       
 
     # IMU Settings
-    imuType: 0                                  # 0: 6-axis  1: 9-axis
+    imuType: 0                                  
     imuRate: 500.0
     imuAccNoise: 3.9939570888238808e-03
     imuGyrNoise: 1.5636343949698187e-03
@@ -80,60 +80,75 @@
                     0.0, -1.0, 0.0,
                     0.0, 0.0, 1.0]
 
-    # This parameter is set only when the 9-axis IMU is used, but it must be a high-precision IMU. e.g. MTI-680
     extrinsicRPY: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]
 
-    # voxel filter paprams
-    mappingSurfLeafSize: 0.2                      # default: 0.4 - outdoor, 0.2 - indoor
-    surfKnnMinDistance: 5.0                       # meters, max allowed distance to 5th kNN neighbor for surf matching
-    useSorFilter: false                           # enable Statistical Outlier Removal on current scan surf cloud
-    sorMeanK: 5                                   # number of neighbors to analyze in SoR
-    sorStddevMulThresh: 1.0                       # SoR standard deviation multiplier
+    # voxel filter paprams (Legacy/Global variables)
+    mappingSurfLeafSize: 0.2                      
+    surfKnnMinDistance: 5.0    
+                     
+    useSorFilter: false                           
+    sorMeanK: 5                                   
+    sorStddevMulThresh: 1.0                       
 
-    # robot motion constraint (in case you are using a 2D robot)
-    z_tollerance: 1000.0                            # meters
-    rotation_tollerance: 1000.0                     # radians
+    # robot motion constraint
+    z_tollerance: 1000.0                            
+    rotation_tollerance: 1000.0                     
 
     # CPU Params
-    numberOfCores: 16                              # number of cores for mapping optimization
-    mappingProcessInterval: 0.0                  # seconds, regulate mapping frequency
+    numberOfCores: 16                              
+    mappingProcessInterval: 0.0                  
 
     # Surrounding map
-    surroundingkeyframeAddingDistThreshold: 1.0   # meters, regulate keyframe adding threshold
-    surroundingkeyframeAddingAngleThreshold: 0.2  # radians, regulate keyframe adding threshold
-    surroundingKeyframeDensity: 2.0               # meters, downsample surrounding keyframe poses   
-    surroundingKeyframeSearchRadius: 50.0         # meters, radius for keyframe neighbor search
-    localMapTruncationRadius: 150.0               # meters, radius for voxel map pruning (local map truncation)
-    surroundingKeyframeMapLeafSize: 0.3           # downsample local map point cloud
+    surroundingkeyframeAddingDistThreshold: 1.0   
+    surroundingkeyframeAddingAngleThreshold: 0.2  
+    surroundingKeyframeDensity: 2.0               
+    surroundingKeyframeSearchRadius: 50.0         
+    localMapTruncationRadius: 150.0               
+    surroundingKeyframeMapLeafSize: 0.3           
 
     # Loop closure
     loopClosureEnableFlag: true
-    loopClosureFrequency: 0.1                     # Hz, regulate loop closure constraint add frequency
-    surroundingKeyframeSize: 50                   # submap size (when loop closure enabled)
-    historyKeyframeSearchRadius: 15.0             # meters, key frame that is within n meters from current pose will be considerd for loop closure
-    historyKeyframeSearchTimeDiff: 200.0          # seconds, key frame that is n seconds older will be considered for loop closure
-    historyKeyframeSearchNum: 25                  # number of history key frames will be fused into a submap for loop closure
-    loopClosureICPSurfLeafSize: 0.5               # downsample icp point cloud  
-    historyKeyframeFitnessScore: 0.3              # icp threshold, the smaller the better alignment
-    rebuild_on_loop_closure: true                 # trigger rolling local-map rebuild when loop constraints are added
-    rebuild_on_gps_jump: false                     # trigger rolling local-map rebuild on accepted GPS factor (time-gated)
-    transformed_cloud_cache_max_age_sec: 0.5      # keep transformed keyframe cloud cache only for the last N seconds
-    cloud_info_queue_depth: 5                     # CloudInfo subscriber queue depth (smaller -> less backlog, more frame drops)
-    drop_stale_lidar_frames: true                 # drop LiDAR frames that are already too old when callback runs
-    max_lidar_processing_lag_sec: 0.5             # maximum allowed LiDAR processing lag before dropping frame
+    loopClosureFrequency: 0.1                     
+    surroundingKeyframeSize: 50                   
+    historyKeyframeSearchRadius: 15.0             
+    historyKeyframeSearchTimeDiff: 200.0          
+    historyKeyframeSearchNum: 25                  
+    loopClosureICPSurfLeafSize: 0.5               
+    historyKeyframeFitnessScore: 0.3              
+    rebuild_on_loop_closure: true                 
+    rebuild_on_gps_jump: false                    
+    transformed_cloud_cache_max_age_sec: 0.5      
+    cloud_info_queue_depth: 5                     
+    drop_stale_lidar_frames: true                 
+    max_lidar_processing_lag_sec: 0.5             
 
     # Visualization
-    globalMapVisualizationSearchRadius: 1000.0    # meters, global map visualization radius
-    globalMapVisualizationPoseDensity: 1.0       # meters, global map visualization keyframe density
-    globalMapVisualizationLeafSize: 0.5           # meters, global map visualization cloud density
+    globalMapVisualizationSearchRadius: 1000.0    
+    globalMapVisualizationPoseDensity: 1.0       
+    globalMapVisualizationLeafSize: 0.5           
     
-    pko:
-      use_adaptive: true
-      min_scale_factor: 0.001
-      max_scale_factor: 10.0
-      num_alpha_segments: 25
-      truncated_threshold: 10.0
-      gmm_components: 2
-      gmm_sample_size: 100
+    # ==========================================================
+    # Algorithmic Configurations (Decoupled Architecture)
+    # ==========================================================
+    mapping:
+      
+      # Spatial Hashing & Surfel Map Parameters
+      voxel_map:
+        hierarchy_factor: 3
+        planarity_threshold: 0.1
+        point_to_surfel_threshold: 0.1
+        min_surfel_inliers: 3
+        min_linearity_ratio: 0.3
+        map_box_multiplier: 2.0
+      
+      # Probabilistic Kernel Optimizer (Robust IRLS) Parameters
+      pko:
+        use_adaptive: true
+        min_scale_factor: 0.001
+        max_scale_factor: 10.0
+        num_alpha_segments: 25
+        truncated_threshold: 10.0
+        gmm_components: 2
+        gmm_sample_size: 100

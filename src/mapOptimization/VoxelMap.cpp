@@ -12,11 +12,17 @@
 
 namespace lio {
 
-VoxelMap::VoxelMap(float voxel_size) 
-    : m_voxel_size(voxel_size)
-    , m_max_hit_count(10)
-    , m_hierarchy_factor(3)
+VoxelMap::VoxelMap(const VoxelMapConfig& config) 
+    : m_voxel_size(config.voxel_size)
+    , m_max_hit_count(10) // default hardcoded
+    , m_hierarchy_factor(config.hierarchy_factor)
+    , m_planarity_threshold(config.planarity_threshold)
+    , m_point_to_surfel_threshold(config.point_to_surfel_threshold)
+    , m_min_surfel_inliers(config.min_surfel_inliers)
+    , m_min_linearity_ratio(config.min_linearity_ratio)
+    , m_map_box_multiplier(config.map_box_multiplier)
 {
+    
 }
 
 void VoxelMap::SetVoxelSize(float size) {

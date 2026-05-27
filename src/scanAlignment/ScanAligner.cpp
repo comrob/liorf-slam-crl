@@ -3,8 +3,10 @@
 #include <omp.h>
 
 ScanAligner::ScanAligner(int max_points, float knn_distance, int cores, const lio::PKOConfig& pko_config)
-    : surfKnnMinDistance(knn_distance), numberOfCores(cores)
 {
+    numberOfCores = cores;    
+    surfKnnMinDistance = knn_distance;
+
     m_pko = std::make_shared<lio::ProbabilisticKernelOptimizer>(pko_config);
     mapCloud = pcl::PointCloud<PointType>::Ptr(new pcl::PointCloud<PointType>());
     kdtreeMap = pcl::KdTreeFLANN<PointType>::Ptr(new pcl::KdTreeFLANN<PointType>());

@@ -173,15 +173,12 @@ void mapOptimization::allocateMemory()
     laserCloudSurfLast.reset(new pcl::PointCloud<PointType>());
     laserCloudSurfLastDS.reset(new pcl::PointCloud<PointType>());
 
-    voxelMap = std::make_shared<lio::VoxelMap>(surroundingKeyframeMapLeafSize);
-    voxelMap->SetMapBoxMultiplier(2.0f); // Default sliding window box multiplier
-    voxelMap->SetPlanarityThreshold(0.1f); // Relaxed planarity constraint for L0/L1 surfel calculation
-    voxelMap->SetMinSurfelInliers(3); // Relaxed from 5 to 3 because points are deeply downsampled!
-
+    voxelMap = std::make_shared<lio::VoxelMap>(voxel_map_config);
+    
     scanAlignerPrimary = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores, pko_config);
     scanAlignerDegeneracy = std::make_shared<ScanAligner>(N_SCAN * Horizon_SCAN, surfKnnMinDistance, numberOfCores, pko_config);
     
-    
+
     DegeneracyParams dParams; // Optionally bind these to your ParamServer variables
     degeneracyDetector = std::make_shared<DegeneracyDetector>(dParams);
 
