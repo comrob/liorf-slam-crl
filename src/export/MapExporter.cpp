@@ -103,6 +103,7 @@ bool MapExporter::executeSave(
     const std::string saveMapDirectory = saveDir.string();
     const fs::path mapsDir = saveDir / "maps";
     const fs::path trajectoriesDir = saveDir / "trajectories";
+    const fs::path keyframeCloudsDir = trajectoriesDir / "keyframes_deskewed_ds";
 
     res.save_directory = saveMapDirectory;
     res.enu_map_saved = false;
@@ -137,6 +138,15 @@ bool MapExporter::executeSave(
           RCLCPP_ERROR(logger, "Failed to create save directory '%s': %s", saveMapDirectory.c_str(), ec.message().c_str());
           res.success = false;
           res.message = std::string("failed to create save directory: ") + ec.message();
+          return true;
+      }
+
+      fs::create_directories(keyframeCloudsDir, ec);
+      if (ec)
+      {
+          RCLCPP_ERROR(logger, "Failed to create keyframe directory '%s': %s", keyframeCloudsDir.string().c_str(), ec.message().c_str());
+          res.success = false;
+          res.message = std::string("failed to create keyframe directory: ") + ec.message();
           return true;
       }
     }
@@ -291,10 +301,23 @@ bool MapExporter::executeSave(
         if (keyframe_ofs.is_open())
         {
             keyframe_ofs << std::fixed << std::setprecision(9);
-            keyframe_ofs << "timestamp_sec,index,x_local,y_local,z_local,roll,pitch,yaw\n";
+            keyframe_ofs << "timestamp_sec,index,x_local,y_local,z_local,roll,pitch,yaw,cloud_relpath,cloud_points\n";
             for (size_t i = 0; i < cloudKeyPoses6D->size(); ++i)
             {
                 const auto &pose6D = cloudKeyPoses6D->points[i];
+
+                std::ostringstream cloudName;
+                cloudName << "kf_" << std::setw(6) << std::setfill('0') << i << ".pcd";
+                const fs::path cloudPath = keyframeCloudsDir / cloudName.str();
+                const fs::path cloudRelPath = fs::path("trajectories") / "keyframes_deskewed_ds" / cloudName.str();
+
+                size_t cloudPointCount = 0;
+                if (i < surfCloudKeyFrames.size() && surfCloudKeyFrames[i])
+                {
+                    pcl::io::savePCDFileBinary(cloudPath.string(), *surfCloudKeyFrames[i]);
+                    cloudPointCount = surfCloudKeyFrames[i]->size();
+                }
+
                 keyframe_ofs << pose6D.time << ","
                              << i << ","
                              << pose6D.x << ","
@@ -302,7 +325,9 @@ bool MapExporter::executeSave(
                              << pose6D.z << ","
                              << pose6D.roll << ","
                              << pose6D.pitch << ","
-                             << pose6D.yaw << "\n";
+                             << pose6D.yaw << ","
+                             << cloudRelPath.string() << ","
+                             << cloudPointCount << "\n";
             }
             keyframe_ofs.close();
         }

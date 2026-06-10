@@ -270,6 +270,8 @@ bool mapOptimization::saveKeyFramesAndFactor()
     // save key frame cloud
     surfCloudKeyFrames.push_back(thisSurfKeyFrame);
     keyframeScanAdmissible.push_back(cloudInfo.scan_admission_ok ? 1 : 0);
+    publishKeyframeDeskewedDownsampled(thisSurfKeyFrame);
+    publishKeyframeDeskewedDownsampledDebug(thisSurfKeyFrame);
 
     if (!cloudInfo.scan_admission_ok && diagnostics)
     {

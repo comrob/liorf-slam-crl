@@ -50,8 +50,10 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubIcpKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/icp_loop_closure_corrected_cloud", QosPolicy(history_policy, reliability_policy));
     pubLoopConstraintEdge = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf/mapping/loop_closure_constraints", QosPolicy(history_policy, reliability_policy));
     pubGpsConstraintViz = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf/mapping/gps_constraints", QosPolicy(history_policy, reliability_policy));
-    pubRecentKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/map_local", QosPolicy(history_policy, reliability_policy));
-    pubRecentKeyFrame = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
+    pubLocalMapCloud = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/map_local", QosPolicy(history_policy, reliability_policy));
+    pubRegisteredCloud = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
+    pubKeyframeDeskewedDownsampled = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/keyframes/cloud_deskewed_downsampled", QosPolicy(history_policy, reliability_policy));
+    pubKeyframeDeskewedDownsampledDebug = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/keyframes/cloud_deskewed_downsampled_debug", QosPolicy(history_policy, reliability_policy));
     pubMatchedSurfFeatures = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/matched_surface_features", QosPolicy(history_policy, reliability_policy));
     pubSurfDebugColored = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/surf_debug_colored", QosPolicy(history_policy, reliability_policy));
     pubSurfDebugLegend = create_publisher<std_msgs::msg::String>("liorf/mapping/surf_debug_legend", QosPolicy(history_policy, reliability_policy));

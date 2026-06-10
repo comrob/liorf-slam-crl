@@ -19,14 +19,14 @@
     enableDegeneracyDetection: false
     
     # Topics
-    pointCloudTopic: "/os1/points"               # Point cloud data
-    imuTopic: "/os1/imu"                         # IMU data
+    pointCloudTopic: "/ouster/points"               # Point cloud data
+    imuTopic: "/ouster/imu"                         # IMU data
     odomTopic: "odometry/imu"                       # IMU pre-preintegration odometry
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
 
     # Frames
     lidarFrame: "os_lidar"
-    baselinkFrame: "os_sensor"
+    baselinkFrame: "os_lidar"
     odometryFrame: "odom"
     mapFrameLocal: "map"
     mapFrameEnu: "map_enu"

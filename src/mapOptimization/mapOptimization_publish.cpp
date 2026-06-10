@@ -2,6 +2,22 @@
 #include "degeneracyDetection/TwistManipulation.hpp"
 #include "scanAlignment/ScanAligner.hpp"
 
+struct EIGEN_ALIGN16 PointTypeWithDebugCode
+{
+    PCL_ADD_POINT4D;
+    float intensity;
+    std::uint8_t debug_code;
+    EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+} EIGEN_ALIGN16;
+
+POINT_CLOUD_REGISTER_POINT_STRUCT(
+    PointTypeWithDebugCode,
+    (float, x, x)
+    (float, y, y)
+    (float, z, z)
+    (float, intensity, intensity)
+    (std::uint8_t, debug_code, debug_code))
+
 pcl::PointCloud<PointType>::Ptr mapOptimization::transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose* transformIn)
 {
     pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
@@ -381,6 +397,43 @@ void mapOptimization::publishOdometry()
     mapLocalToOdomInitialized = true;
 }
 
+void mapOptimization::publishKeyframeDeskewedDownsampled(const pcl::PointCloud<PointType>::Ptr &cloud)
+{
+    if (!pubKeyframeDeskewedDownsampled || pubKeyframeDeskewedDownsampled->get_subscription_count() == 0)
+        return;
+
+    if (!cloud || cloud->empty())
+        return;
+
+    publishCloud(pubKeyframeDeskewedDownsampled, cloud, timeLaserInfoStamp, lidarFrame);
+}
+
+void mapOptimization::publishKeyframeDeskewedDownsampledDebug(const pcl::PointCloud<PointType>::Ptr &cloud)
+{
+    if (!pubKeyframeDeskewedDownsampledDebug || pubKeyframeDeskewedDownsampledDebug->get_subscription_count() == 0)
+        return;
+
+    if (!cloud || cloud->empty())
+        return;
+
+    const auto &codes = mappingBackend->getDebugCodes();
+    pcl::PointCloud<PointTypeWithDebugCode>::Ptr cloudWithDebug(new pcl::PointCloud<PointTypeWithDebugCode>());
+    cloudWithDebug->reserve(cloud->size());
+
+    for (size_t i = 0; i < cloud->size(); ++i)
+    {
+        PointTypeWithDebugCode point;
+        point.x = cloud->points[i].x;
+        point.y = cloud->points[i].y;
+        point.z = cloud->points[i].z;
+        point.intensity = cloud->points[i].intensity;
+        point.debug_code = (i < codes.size() && codes[i] >= 0) ? static_cast<std::uint8_t>(codes[i]) : 0;
+        cloudWithDebug->push_back(point);
+    }
+
+    publishCloud(pubKeyframeDeskewedDownsampledDebug, cloudWithDebug, timeLaserInfoStamp, lidarFrame);
+}
+
 void mapOptimization::publishFrames()
 {
     if (cloudKeyPoses3D->points.empty())
@@ -391,13 +444,13 @@ void mapOptimization::publishFrames()
     // publish key poses
     publishCloud(pubKeyPoses, cloudKeyPoses3D, timeLaserInfoStamp, mapFrameLocal);
     // Publish surrounding key frames (local map)
-    if (pubRecentKeyFrames->get_subscription_count() != 0)
+    if (pubLocalMapCloud->get_subscription_count() != 0)
     {
         static double lastPublishTime = -1.0;
         if (timeLaserInfoCur - lastPublishTime >= 1.0) // Throttle to 1 Hz
         {
             pcl::PointCloud<PointType>::Ptr localMapCloud = mappingBackend->getLocalMapCloud();
-            publishCloud(pubRecentKeyFrames, localMapCloud, timeLaserInfoStamp, mapFrameLocal);
+            publishCloud(pubLocalMapCloud, localMapCloud, timeLaserInfoStamp, mapFrameLocal);
             lastPublishTime = timeLaserInfoCur;
         }
     }
@@ -467,12 +520,12 @@ void mapOptimization::publishFrames()
         
     }
 
-    // publish registered key frame
-    if (pubRecentKeyFrame->get_subscription_count() != 0)
+    // publish registered cloud (per processed frame)
+    if (pubRegisteredCloud->get_subscription_count() != 0)
     {
         pcl::PointCloud<PointType>::Ptr cloudOut(new pcl::PointCloud<PointType>());
         *cloudOut += *transformPointCloud(laserCloudSurfLastDS,    &thisPose6D);
-        publishCloud(pubRecentKeyFrame, cloudOut, timeLaserInfoStamp, mapFrameLocal);
+        publishCloud(pubRegisteredCloud, cloudOut, timeLaserInfoStamp, mapFrameLocal);
     }
     // publish matched surf features used in the final scan-to-map iteration
     if (pubMatchedSurfFeatures->get_subscription_count() != 0)
