@@ -207,49 +207,10 @@ void mapOptimization::allocateMemory()
     lastIncrementalDeltaPoseLocal = Eigen::Affine3f::Identity();
     hasLastIncrementalDeltaPoseLocal = false;
 
-    downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);    downSizeFilterLocalMapSurf.setLeafSize(surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize);
+    downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);
+    downSizeFilterLocalMapSurf.setLeafSize(surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize, surroundingKeyframeMapLeafSize);
     downSizeFilterICP.setLeafSize(loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize, loopClosureICPSurfLeafSize);
     downSizeFilterSurroundingKeyPoses.setLeafSize(surroundingKeyframeDensity, surroundingKeyframeDensity, surroundingKeyframeDensity); // for surrounding key poses of scan-to-map optimization
-
-
-    br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
-    tfBuffer = std::make_shared<tf2_ros::Buffer>(get_clock());
-    tfListener = std::make_shared<tf2_ros::TransformListener>(*tfBuffer);
-
-    tf2::Transform identity;
-    identity.setIdentity();
-    lidar2Baselink.setData(identity);
-
-    // Initialize lidar<->baselink transform relationship
-    if (lidarFrame == baselinkFrame)
-    {
-        // Frames are identical: lidar2baselink is identity by definition
-        hasLidar2Baselink = true;
-        RCLCPP_INFO_STREAM(
-            get_logger(),
-            "[TF_INIT] lidarFrame == baselinkFrame ('" << lidarFrame << "'): "
-            << "lidar2baselink is identity by definition, hasLidar2Baselink=true"
-        );
-    }
-    else
-    {
-        // Frames differ: need to lookup the actual transform
-        RCLCPP_INFO_STREAM(
-            get_logger(),
-            "[TF_INIT] lidarFrame != baselinkFrame ('" << lidarFrame << "' vs '" << baselinkFrame << "'): "
-            << "attempting initial lookup"
-        );
-        tryLookupLidarToBaselinkTf("ctor");
-    }
-
-    if (force_initial_gps && manual_gps_origin.size() == 3)
-    {
-        initializeDatum(
-            manual_gps_origin[0],
-            manual_gps_origin[1],
-            manual_gps_origin[2],
-            manual_global_heading);
-    }
 }
 
 void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedPtr msgIn)
