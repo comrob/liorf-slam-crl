@@ -671,7 +671,7 @@ inline rclcpp::QoS QosPolicy(const string &history_policy, const string &reliabi
     else if (reliability_policy == "reliability_best_effort")
         qos_profile.reliability = rmw_qos_reliability_policy_t::RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT;
 
-    qos_profile.depth = 2000;
+    qos_profile.depth = 5;
 
     qos_profile.durability = rmw_qos_durability_policy_t::RMW_QOS_POLICY_DURABILITY_VOLATILE;
     qos_profile.deadline = RMW_QOS_DEADLINE_DEFAULT;
