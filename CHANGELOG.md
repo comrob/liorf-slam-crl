@@ -39,6 +39,7 @@ For active iterative work, prefer updating the current top entry instead of appe
 - [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
 - [src/export/MapExporter.cpp](src/export/MapExporter.cpp)
 - [src/imuPreintegration.cpp](src/imuPreintegration.cpp)
+- [src/imageProjection.cpp](src/imageProjection.cpp)
 - [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
 - [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
 - [scripts/save_map.sh](scripts/save_map.sh)
@@ -69,6 +70,7 @@ For active iterative work, prefer updating the current top entry instead of appe
 - added non-positive frame-delta skip handling in [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp) to avoid processing duplicate/backward LiDAR timestamps and to log the reason in diagnostics.
 - extended mapOptimization failure logs with absolute ROS stamp and wall-clock context (`frame_stamp_s`, `last_frame_stamp_s`, `wall_now_s`) for translation-prediction exceptions and skip/clamp events.
 - wrapped IMU preintegration optimization in exception handling in [src/imuPreintegration.cpp](src/imuPreintegration.cpp) so GTSAM failures now log `ros_stamp_s`, `wall_now_s`, queue sizes, and IMU timestamps before resetting state instead of terminating the process.
+- added optional one-time auto lookup for IMU/LiDAR extrinsics from live message header frames in [include/utility.h](include/utility.h), [src/imageProjection.cpp](src/imageProjection.cpp), and [src/imuPreintegration.cpp](src/imuPreintegration.cpp); when `autoLookupLidarToImuTf` is enabled and the TF is unavailable, deskewing and IMU-based localization outputs are suppressed and a retry/error is emitted every 5 seconds suggesting manual `extrinsicRot`/`extrinsicRPY`/`extrinsicTrans`.
 - added zero-integration guard and timing-window diagnostics in [src/imuPreintegration.cpp](src/imuPreintegration.cpp): track `integrated_imu_count`, `first_used_imu_stamp_s`, and `last_used_imu_stamp_s`; when no IMU falls into the optimization window, skip factor-graph update and emit `[IMU_PREINTEGRATION_SKIPPED_NO_IMU_IN_WINDOW]` with correction/queue timing context.
 - added explicit FastCDR CMake/package dependency wiring in [CMakeLists.txt](CMakeLists.txt) and [package.xml](package.xml) so the diagnostics library links against the current imported `fastcdr` target instead of inheriting a stale versioned library path.
 - added comprehensive GPS intake diagnostics in [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp) logging every GPS input and every rejection/acceptance decision with timestamps, ENU coordinates, covariances, time differences, and rejection reason; throttled debug events include `gps_input_raw`, `gps_enu_converted`, `gps_rejected_*` (too_old, high_noise, uninitialized, sparsity, time_alignment), `gps_pending_not_yet_eligible`, and `gps_constraint_added` with full uncertainty context.

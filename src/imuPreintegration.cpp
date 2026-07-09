@@ -149,6 +149,7 @@ public:
     std::mutex mtx;
 
     rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr subImu;
+    rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subLidarFrameObserver;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subOdometry;
 
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubImuOdometry;
@@ -189,10 +190,8 @@ public:
 
     int key = 1;
     
-    // T_bl: tramsform points from lidar frame to imu frame 
-    gtsam::Pose3 imu2Lidar = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(-extTrans.x(), -extTrans.y(), -extTrans.z()));
-    // T_lb: tramsform points from imu frame to lidar frame
-    gtsam::Pose3 lidar2Imu = gtsam::Pose3(gtsam::Rot3(1, 0, 0, 0), gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
+    gtsam::Pose3 imu2Lidar;
+    gtsam::Pose3 lidar2Imu;
 
     IMUPreintegration(const rclcpp::NodeOptions & options) :
             ParamServer("liorf_imu_preintegration", options)
@@ -203,10 +202,18 @@ public:
             std::bind(&IMUPreintegration::imuHandler, this, std::placeholders::_1)
         );
 
+        subLidarFrameObserver = create_subscription<sensor_msgs::msg::PointCloud2>(
+            pointCloudTopic,
+            rclcpp::SensorDataQoS(),
+            std::bind(&IMUPreintegration::lidarFrameObserverHandler, this, std::placeholders::_1)
+        );
+
         subOdometry = create_subscription<nav_msgs::msg::Odometry>("liorf/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy),
                     std::bind(&IMUPreintegration::odometryHandler, this, std::placeholders::_1));
 
         pubImuOdometry = create_publisher<nav_msgs::msg::Odometry>(odomTopic+"_incremental", QosPolicy(history_policy, reliability_policy));
+
+        updateImuLidarPosesFromExtrinsics();
 
         boost::shared_ptr<gtsam::PreintegrationParams> p = gtsam::PreintegrationParams::MakeSharedU(imuGravity);
         p->accelerometerCovariance  = gtsam::Matrix33::Identity(3,3) * pow(imuAccNoise, 2); // acc white noise in continuous
@@ -223,6 +230,25 @@ public:
         
         imuIntegratorImu_ = new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias); // setting up the IMU integration for IMU message thread
         imuIntegratorOpt_ = new gtsam::PreintegratedImuMeasurements(p, prior_imu_bias); // setting up the IMU integration for optimization        
+    }
+
+    void updateImuLidarPosesFromExtrinsics()
+    {
+        // Preserve the current pose-bridge semantics: translation comes from lidar->imu,
+        // while IMU sample rotation continues to be handled in imuConverter().
+        imu2Lidar = gtsam::Pose3(
+            gtsam::Rot3(1, 0, 0, 0),
+            gtsam::Point3(-extTrans.x(), -extTrans.y(), -extTrans.z()));
+        lidar2Imu = gtsam::Pose3(
+            gtsam::Rot3(1, 0, 0, 0),
+            gtsam::Point3(extTrans.x(), extTrans.y(), extTrans.z()));
+    }
+
+    void lidarFrameObserverHandler(const sensor_msgs::msg::PointCloud2::SharedPtr laserCloudMsg)
+    {
+        noteLidarMessageFrameId(laserCloudMsg->header.frame_id);
+        if (ensureImuLidarExtrinsicsResolved("IMUPreintegration::lidarFrameObserverHandler"))
+            updateImuLidarPosesFromExtrinsics();
     }
 
     void resetOptimization()
@@ -249,6 +275,10 @@ public:
     void odometryHandler(const nav_msgs::msg::Odometry::SharedPtr odomMsg)
     {
         std::lock_guard<std::mutex> lock(mtx);
+
+        if (!ensureImuLidarExtrinsicsResolved("IMUPreintegration::odometryHandler"))
+            return;
+        updateImuLidarPosesFromExtrinsics();
 
         double currentCorrectionTime = ROS_TIME(odomMsg->header.stamp);
         const double wallNowSec = this->now().seconds();
@@ -593,6 +623,11 @@ public:
     void imuHandler(const sensor_msgs::msg::Imu::SharedPtr imu_raw)
     {
         std::lock_guard<std::mutex> lock(mtx);
+
+        noteImuMessageFrameId(imu_raw->header.frame_id);
+        if (!ensureImuLidarExtrinsicsResolved("IMUPreintegration::imuHandler"))
+            return;
+        updateImuLidarPosesFromExtrinsics();
 
         sensor_msgs::msg::Imu thisImu = imuConverter(*imu_raw);
 

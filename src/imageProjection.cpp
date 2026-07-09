@@ -186,6 +186,10 @@ public:
 
     void imuHandler(const sensor_msgs::msg::Imu::SharedPtr imuMsg)
     {
+        noteImuMessageFrameId(imuMsg->header.frame_id);
+        if (!ensureImuLidarExtrinsicsResolved("ImageProjection::imuHandler"))
+            return;
+
         sensor_msgs::msg::Imu thisImu = imuConverter(*imuMsg);
 
         std::lock_guard<std::mutex> lock1(imuLock);
@@ -217,6 +221,10 @@ public:
 
     void cloudHandler(const sensor_msgs::msg::PointCloud2::SharedPtr laserCloudMsg)
     {
+        noteLidarMessageFrameId(laserCloudMsg->header.frame_id);
+        if (!ensureImuLidarExtrinsicsResolved("ImageProjection::cloudHandler"))
+            return;
+
         if (!cachePointCloud(laserCloudMsg))
             return;
 
