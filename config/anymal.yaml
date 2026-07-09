@@ -1,7 +1,5 @@
 /**:
   ros__parameters:
-    history_policy: "history_keep_last"
-    reliability_policy: "reliability_reliable"
     diagnostics_write_files_master: true
     diagnostics_write_timing_stats: true
     diagnostics_write_event: true
@@ -10,21 +8,22 @@
     diagnostics_write_time_deltas: true
     diagnostics_write_frame_metrics: true
 
-    
-    
-    translationPredictionSource: constant_velocity
-    maxTranslationPrediction: 5.0
-    minTranslationPredictionSpeed: 0.0
-    reject_fast_turn_scans: false
-    fast_turn_max_angular_speed_rad_s: 0.5
-
-    enableDegeneracyDetection: false
-    
     # Topics
     pointCloudTopic: "/lidar/point_cloud"               # Point cloud data
     imuTopic: "/sensors/imu"                         # IMU data
-    odomTopic: "odometry/imu"                       # IMU pre-preintegration odometry
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
+
+    enableDegeneracyDetection: false
+
+    translationPredictionSource: constant_velocity
+    maxTranslationPrediction: 5.0
+    minTranslationPredictionSpeed: 0.0
+
+    # enable this if deskewing is not working well, e.g. for fast turns, but works well for smooth platforms such as husky.
+    # disable this for legged robots.
+    reject_fast_turn_scans: false
+    fast_turn_max_angular_speed_rad_s: 0.5
+
 
     # Frames
     lidarFrame: ""
@@ -133,6 +132,11 @@
     globalMapVisualizationPoseDensity: 1.0       
     globalMapVisualizationLeafSize: 0.5           
     
+    odomTopic: "odometry/imu"                       # IMU pre-preintegration odometry
+    history_policy: "history_keep_last"
+    reliability_policy: "reliability_reliable"
+
+
     # ==========================================================
     # Algorithmic Configurations (Decoupled Architecture)
     # ==========================================================

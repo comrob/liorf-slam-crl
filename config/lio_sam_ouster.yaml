@@ -13,7 +13,7 @@
     translationPredictionSource: constant_velocity
     maxTranslationPrediction: 5.0
     minTranslationPredictionSpeed: 0.0
-    reject_fast_turn_scans: true
+    reject_fast_turn_scans: false
     fast_turn_max_angular_speed_rad_s: 0.5
 
     enableDegeneracyDetection: false
