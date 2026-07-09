@@ -117,6 +117,8 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubIcpKeyFrames;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLocalMapCloud;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubRegisteredCloud;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudPreviousPose;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudPredictedPose;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubKeyframeDeskewedDownsampled;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubKeyframeDeskewedDownsampledDebug;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubMatchedSurfFeatures;
@@ -237,6 +239,8 @@ public:
 
     Eigen::Affine3f incrementalOdometryAffineFront;
     Eigen::Affine3f incrementalOdometryAffineBack;
+    Eigen::Affine3f poseBeforePredictionLocal{Eigen::Affine3f::Identity()};
+    Eigen::Affine3f poseAfterPredictionLocal{Eigen::Affine3f::Identity()};
     Eigen::Affine3f lastIncrementalDeltaPoseLocal{Eigen::Affine3f::Identity()};
     bool hasLastIncrementalDeltaPoseLocal{false};
 
@@ -312,6 +316,7 @@ public:
     void publishMapOptimizationTFs(const rclcpp::Time &stamp);
     void publishLidarGpsFix();
     void publishOdometry();
+    void publishPredictionDebugClouds(const pcl::PointCloud<PointType>::Ptr &cloud);
     void publishKeyframeDeskewedDownsampled(const pcl::PointCloud<PointType>::Ptr &cloud);
     void publishKeyframeDeskewedDownsampledDebug(const pcl::PointCloud<PointType>::Ptr &cloud);
     void publishFrames();

@@ -52,6 +52,8 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubGpsConstraintViz = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf/mapping/gps_constraints", QosPolicy(history_policy, reliability_policy));
     pubLocalMapCloud = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/map_local", QosPolicy(history_policy, reliability_policy));
     pubRegisteredCloud = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
+    pubCloudPreviousPose = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/debug/cloud_previous_pose", QosPolicy(history_policy, reliability_policy));
+    pubCloudPredictedPose = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/debug/cloud_predicted_pose", QosPolicy(history_policy, reliability_policy));
     pubKeyframeDeskewedDownsampled = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/keyframes/cloud_deskewed_downsampled", QosPolicy(history_policy, reliability_policy));
     pubKeyframeDeskewedDownsampledDebug = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/keyframes/cloud_deskewed_downsampled_debug", QosPolicy(history_policy, reliability_policy));
     pubMatchedSurfFeatures = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/matched_surface_features", QosPolicy(history_policy, reliability_policy));
@@ -214,9 +216,11 @@ void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedP
             diagnostics->recordTimeDelta(curTimeDiff);
 
         timeLastProcessing = timeLaserInfoCur;
+        poseBeforePredictionLocal = trans2Affine3f(transformTobeMapped);
 
         TicToc t_updateInitialGuess;
         updateInitialGuess();
+        poseAfterPredictionLocal = trans2Affine3f(transformTobeMapped);
         if (diagnostics)
             diagnostics->recordSlice("updateInitialGuess", t_updateInitialGuess.toc());
 
@@ -230,6 +234,7 @@ void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedP
 
         TicToc t_downsampleCurrentScan;
         downsampleCurrentScan();
+        publishPredictionDebugClouds(laserCloudSurfLastDS);
         if (diagnostics)
             diagnostics->recordSlice("downsampleCurrentScan", t_downsampleCurrentScan.toc());
 

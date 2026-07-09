@@ -141,6 +141,45 @@ void mapOptimization::updatePath(const PointTypePose& pose_in)
     globalPath.poses.push_back(pose_stamped);
 }
 
+void mapOptimization::publishPredictionDebugClouds(const pcl::PointCloud<PointType>::Ptr &cloud)
+{
+    const bool publishPrevious = pubCloudPreviousPose && pubCloudPreviousPose->get_subscription_count() != 0;
+    const bool publishPredicted = pubCloudPredictedPose && pubCloudPredictedPose->get_subscription_count() != 0;
+
+    if (!publishPrevious && !publishPredicted)
+        return;
+
+    if (!cloud || cloud->empty())
+        return;
+
+    auto affineToPose = [](const Eigen::Affine3f &affine) {
+        PointTypePose pose;
+        pcl::getTranslationAndEulerAngles(
+            affine,
+            pose.x,
+            pose.y,
+            pose.z,
+            pose.roll,
+            pose.pitch,
+            pose.yaw);
+        return pose;
+    };
+
+    if (publishPrevious)
+    {
+        PointTypePose beforePose = affineToPose(poseBeforePredictionLocal);
+        pcl::PointCloud<PointType>::Ptr cloudOut = transformPointCloud(cloud, &beforePose);
+        publishCloud(pubCloudPreviousPose, cloudOut, timeLaserInfoStamp, mapFrameLocal);
+    }
+
+    if (publishPredicted)
+    {
+        PointTypePose predictedPose = affineToPose(poseAfterPredictionLocal);
+        pcl::PointCloud<PointType>::Ptr cloudOut = transformPointCloud(cloud, &predictedPose);
+        publishCloud(pubCloudPredictedPose, cloudOut, timeLaserInfoStamp, mapFrameLocal);
+    }
+}
+
 void mapOptimization::publishMapOptimizationTFs(const rclcpp::Time &stamp)
 {
     tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);
