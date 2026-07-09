@@ -245,16 +245,8 @@ public:
     SCManager scManager;
 
     std::unique_ptr<tf2_ros::TransformBroadcaster> br;
-    std::shared_ptr<tf2_ros::Buffer> tfBuffer;
-    std::shared_ptr<tf2_ros::TransformListener> tfListener;
-    tf2::Stamped<tf2::Transform> lidar2Baselink;
-    bool hasLidar2Baselink = false;
-    double lastTfLookupAttemptWall = -1.0;
-    const double tfLookupRetryPeriodSec = 1.0;
 
     mapOptimization(const rclcpp::NodeOptions &options);
-
-    bool tryLookupLidarToBaselinkTf(const char *context);
     void allocateMemory();
     void laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedPtr msgIn);
 

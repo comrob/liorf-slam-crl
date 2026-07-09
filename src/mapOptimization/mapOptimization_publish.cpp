@@ -144,6 +144,7 @@ void mapOptimization::updatePath(const PointTypePose& pose_in)
 void mapOptimization::publishMapOptimizationTFs(const rclcpp::Time &stamp)
 {
     tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);
+    const bool canPublishBaselinkFrame = runtimeTfCoordinator->allowBaselinkFramePublishing("publishMapOptimizationTFs");
 
     if (T_EM_initialized) {
         tf2::Quaternion q_ecef_map_enu;
@@ -248,29 +249,24 @@ void mapOptimization::publishMapOptimizationTFs(const rclcpp::Time &stamp)
     }
 
     // ========== TRANSFORM 2: odom -> baselinkFrame (smooth incremental base-link pose) ==========
-    if (lidarFrame != baselinkFrame)
+    if (canPublishBaselinkFrame && lidarFrame != baselinkFrame)
     {
         // Frames differ: attempt lookup if we don't have it yet
-        if (!hasLidar2Baselink)
+        if (!runtimeTfCoordinator->hasLidarToBaselinkTransform())
         {
-            const double nowWall = this->now().seconds();
-            if (lastTfLookupAttemptWall < 0.0 || (nowWall - lastTfLookupAttemptWall) >= tfLookupRetryPeriodSec)
+            if (debugTFs)
             {
-                lastTfLookupAttemptWall = nowWall;
-                if (debugTFs)
-                {
-                    RCLCPP_INFO_STREAM_THROTTLE(
-                        get_logger(), *get_clock(), 10000,
-                        "[TF_DEBUG] retry lookupTransform target='" << lidarFrame
-                        << "' source='" << baselinkFrame << "'"
-                    );
-                }
-                tryLookupLidarToBaselinkTf("publishMapOptimizationTFs/retry");
+                RCLCPP_INFO_STREAM_THROTTLE(
+                    get_logger(), *get_clock(), 10000,
+                    "[TF_DEBUG] retry lookupTransform target='" << lidarFrame
+                    << "' source='" << baselinkFrame << "'"
+                );
             }
+            runtimeTfCoordinator->tryLookupLidarToBaselinkTf("publishMapOptimizationTFs/retry");
         }
 
         // Publish to baselink if we have the transform
-        if (hasLidar2Baselink)
+        if (runtimeTfCoordinator->hasLidarToBaselinkTransform())
         {
             tf2::Transform t_odom_to_baselink = tfFromAffine(odomToBaseAffine);
             tf2::Stamped<tf2::Transform> stamped_odom_to_baselink(t_odom_to_baselink, time_point, odometryFrame);
@@ -282,6 +278,7 @@ void mapOptimization::publishMapOptimizationTFs(const rclcpp::Time &stamp)
             if (debugTFs)
             {
                 // Extract transform details for logging
+                const tf2::Transform lidar2Baselink = runtimeTfCoordinator->lidarToBaselinkTransform();
                 const auto &tr = lidar2Baselink.getOrigin();
                 tf2::Quaternion q = lidar2Baselink.getRotation();
                 double roll, pitch, yaw;
@@ -305,7 +302,7 @@ void mapOptimization::publishMapOptimizationTFs(const rclcpp::Time &stamp)
             );
         }
     }
-    else
+    else if (canPublishBaselinkFrame)
     {
         // Frames are identical: base-link and lidar share the same smooth odometry state.
         tf2::Transform t_odom_to_baselink = tfFromAffine(odomToBaseAffine);
@@ -325,20 +322,29 @@ void mapOptimization::publishMapOptimizationTFs(const rclcpp::Time &stamp)
             );
         }
     }
+    else if (debugTFs)
+    {
+        RCLCPP_INFO_STREAM_THROTTLE(
+            get_logger(), *get_clock(), 10000,
+            "[TF_DEBUG] publish [2/2] SKIPPED " << odometryFrame << "->" << baselinkFrame
+            << " (baselink frame publishing suppressed due to existing external TF parent)"
+        );
+    }
 }
 
 
 void mapOptimization::publishOdometry()
 {
     const Eigen::Affine3f mapLocalToLidarAffine = trans2Affine3f(transformTobeMapped);
-    const Eigen::Affine3f lidarToBaselinkAffine = affineFromTf(lidar2Baselink);
+    const Eigen::Affine3f lidarToBaselinkAffine = affineFromTf(runtimeTfCoordinator->lidarToBaselinkTransform());
+    const bool canPublishBaselinkFrame = runtimeTfCoordinator->allowBaselinkFramePublishing("publishOdometry");
 
     nav_msgs::msg::Odometry laserOdometryROS =
         odometryMsgFromAffine(mapLocalToLidarAffine, timeLaserInfoStamp, mapFrameLocal, "lidar_link");
 
     Eigen::Affine3f mapLocalToBaselinkAffine = mapLocalToLidarAffine;
     bool canPublishBaselinkPose = false;
-    if (lidarFrame == baselinkFrame || hasLidar2Baselink)
+    if (canPublishBaselinkFrame && (lidarFrame == baselinkFrame || runtimeTfCoordinator->hasLidarToBaselinkTransform()))
     {
         mapLocalToBaselinkAffine = mapLocalToLidarAffine * lidarToBaselinkAffine;
         canPublishBaselinkPose = true;

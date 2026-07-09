@@ -62,6 +62,7 @@
 #include "scanAlignment/ProbabilisticKernelOptimizer.hpp"
 #include "mapOptimization/VoxelMapConfig.hpp"
 #include "scanAlignment/KdTreeLmBackend.hpp"
+#include "tf_runtime.hpp"
 
 using namespace std;
 
@@ -179,15 +180,7 @@ public:
     Eigen::Vector3d extTrans;
     Eigen::Quaterniond extQRPY;
     bool autoLookupLidarToImuTf;
-    std::string imuMessageFrameId;
-    std::string lidarMessageFrameId;
-    bool imuLidarExtrinsicsResolved = false;
-    double lastImuLidarLookupAttemptWall = -1.0;
-    double lastImuLidarWaitingLogWall = -1.0;
-    const double imuLidarLookupRetryPeriodSec = 5.0;
-    std::mutex imuLidarExtrinsicsMutex;
-    std::shared_ptr<tf2_ros::Buffer> imuLidarTfBuffer;
-    std::shared_ptr<tf2_ros::TransformListener> imuLidarTfListener;
+    std::unique_ptr<RuntimeTfCoordinator> runtimeTfCoordinator;
 
     // voxel filter paprams
     float mappingSurfLeafSize ;
@@ -441,19 +434,19 @@ public:
         extRPY = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extRPYV.data(), 3, 3);
         extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(extTransV.data(), 3, 1);
         extQRPY = Eigen::Quaterniond(extRPY).inverse();
-
-        if (autoLookupLidarToImuTf)
-        {
-            imuLidarTfBuffer = std::make_shared<tf2_ros::Buffer>(get_clock());
-            imuLidarTfListener = std::make_shared<tf2_ros::TransformListener>(*imuLidarTfBuffer);
-            RCLCPP_INFO_STREAM(
-                get_logger(),
-                "[IMU_LIDAR_TF_INIT] auto lookup enabled; awaiting IMU and LiDAR message frame ids");
-        }
-        else
-        {
-            imuLidarExtrinsicsResolved = true;
-        }
+        runtimeTfCoordinator = std::make_unique<RuntimeTfCoordinator>(
+            get_logger(),
+            get_clock(),
+            lidarFrame,
+            baselinkFrame,
+            autoLookupLidarToImuTf,
+            extRot,
+            extRPY,
+            extTrans,
+            extQRPY,
+            extRotV,
+            extRPYV,
+            extTransV);
 
         declare_parameter<float>("mappingSurfLeafSize", 0.2f);
         get_parameter("mappingSurfLeafSize", mappingSurfLeafSize);
@@ -594,154 +587,6 @@ public:
         
 
         usleep(100);
-    }
-
-    void noteImuMessageFrameId(const std::string &frameId)
-    {
-        if (!autoLookupLidarToImuTf || frameId.empty())
-            return;
-
-        std::lock_guard<std::mutex> lock(imuLidarExtrinsicsMutex);
-        if (imuMessageFrameId == frameId)
-            return;
-
-        if (!imuMessageFrameId.empty() && imuMessageFrameId != frameId)
-        {
-            RCLCPP_WARN_STREAM(
-                get_logger(),
-                "[IMU_LIDAR_TF_FRAME_CHANGE] imu frame changed from '" << imuMessageFrameId
-                << "' to '" << frameId << "' before extrinsics were resolved");
-        }
-
-        imuMessageFrameId = frameId;
-    }
-
-    void noteLidarMessageFrameId(const std::string &frameId)
-    {
-        if (!autoLookupLidarToImuTf || frameId.empty())
-            return;
-
-        std::lock_guard<std::mutex> lock(imuLidarExtrinsicsMutex);
-        if (lidarMessageFrameId == frameId)
-            return;
-
-        if (!lidarMessageFrameId.empty() && lidarMessageFrameId != frameId)
-        {
-            RCLCPP_WARN_STREAM(
-                get_logger(),
-                "[IMU_LIDAR_TF_FRAME_CHANGE] lidar frame changed from '" << lidarMessageFrameId
-                << "' to '" << frameId << "' before extrinsics were resolved");
-        }
-
-        lidarMessageFrameId = frameId;
-    }
-
-    bool ensureImuLidarExtrinsicsResolved(const char *context)
-    {
-        if (!autoLookupLidarToImuTf)
-            return true;
-
-        std::lock_guard<std::mutex> lock(imuLidarExtrinsicsMutex);
-        if (imuLidarExtrinsicsResolved)
-            return true;
-
-        const auto logWaitingState = [&](const std::string &reason) {
-            const double nowWallSec = this->now().seconds();
-            if (lastImuLidarWaitingLogWall >= 0.0 &&
-                (nowWallSec - lastImuLidarWaitingLogWall) < imuLidarLookupRetryPeriodSec)
-            {
-                return;
-            }
-            lastImuLidarWaitingLogWall = nowWallSec;
-
-            std::ostringstream ss;
-            ss << "[IMU_LIDAR_TF_LOOKUP_WAIT] (" << context << ") " << reason;
-            if (!imuMessageFrameId.empty() || !lidarMessageFrameId.empty())
-            {
-                ss << " imu_frame='" << (imuMessageFrameId.empty() ? "<unset>" : imuMessageFrameId) << "'"
-                   << " lidar_frame='" << (lidarMessageFrameId.empty() ? "<unset>" : lidarMessageFrameId) << "'";
-            }
-            RCLCPP_WARN_STREAM(get_logger(), ss.str());
-        };
-
-        if (imuMessageFrameId.empty() || lidarMessageFrameId.empty())
-        {
-            logWaitingState("awaiting IMU and LiDAR message frame ids");
-            return false;
-        }
-
-        const double nowWallSec = this->now().seconds();
-        if (lastImuLidarLookupAttemptWall >= 0.0 &&
-            (nowWallSec - lastImuLidarLookupAttemptWall) < imuLidarLookupRetryPeriodSec)
-        {
-            logWaitingState("waiting before the next static TF lookup retry");
-            return false;
-        }
-        lastImuLidarLookupAttemptWall = nowWallSec;
-
-        try
-        {
-            geometry_msgs::msg::TransformStamped imuToLidarMsg =
-                imuLidarTfBuffer->lookupTransform(lidarMessageFrameId, imuMessageFrameId, rclcpp::Time(0));
-
-            tf2::Transform imuToLidarTf;
-            tf2::fromMsg(imuToLidarMsg.transform, imuToLidarTf);
-            tf2::Transform lidarToImuTf = imuToLidarTf.inverse();
-            tf2::Matrix3x3 imuToLidarRot(imuToLidarTf.getRotation());
-
-            for (int row = 0; row < 3; ++row)
-            {
-                for (int col = 0; col < 3; ++col)
-                {
-                    extRot(row, col) = imuToLidarRot[row][col];
-                    extRPY(row, col) = imuToLidarRot[row][col];
-                }
-            }
-
-            extTrans = Eigen::Vector3d(
-                lidarToImuTf.getOrigin().x(),
-                lidarToImuTf.getOrigin().y(),
-                lidarToImuTf.getOrigin().z());
-            extQRPY = Eigen::Quaterniond(extRPY).inverse();
-
-            extRotV.clear();
-            extRPYV.clear();
-            for (int row = 0; row < 3; ++row)
-            {
-                for (int col = 0; col < 3; ++col)
-                {
-                    extRotV.push_back(extRot(row, col));
-                    extRPYV.push_back(extRPY(row, col));
-                }
-            }
-            extTransV = {extTrans.x(), extTrans.y(), extTrans.z()};
-
-            imuLidarExtrinsicsResolved = true;
-
-            const auto &rot = imuToLidarMsg.transform.rotation;
-            RCLCPP_INFO_STREAM(
-                get_logger(),
-                "[IMU_LIDAR_TF_LOOKUP_OK] (" << context << ") imu_frame='" << imuMessageFrameId
-                << "' lidar_frame='" << lidarMessageFrameId << "'"
-                << " resolved_tf=lookupTransform(target='" << lidarMessageFrameId
-                << "', source='" << imuMessageFrameId << "')"
-                << " -> imu_to_lidar"
-                << " extTrans_lidar_to_imu=(" << extTrans.x() << ", " << extTrans.y() << ", " << extTrans.z() << ")"
-                << " extRot_imu_to_lidar_quat_xyzw=(" << rot.x << ", " << rot.y << ", " << rot.z << ", " << rot.w << ")");
-            return true;
-        }
-        catch (const tf2::TransformException &ex)
-        {
-            logWaitingState(std::string("static TF lookup failed: ") + ex.what());
-            RCLCPP_ERROR_STREAM(
-                get_logger(),
-                "[IMU_LIDAR_TF_LOOKUP_FAIL] (" << context << ")"
-                << " imu_frame='" << imuMessageFrameId << "'"
-                << " lidar_frame='" << lidarMessageFrameId << "'"
-                << " reason=" << ex.what()
-                << "; localization outputs remain disabled; specify manual extrinsicRot/extrinsicRPY/extrinsicTrans if this TF is not published");
-            return false;
-        }
     }
 
     sensor_msgs::msg::Imu imuConverter(const sensor_msgs::msg::Imu& imu_in)

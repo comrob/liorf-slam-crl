@@ -21,12 +21,12 @@
     # Topics
     pointCloudTopic: "/ouster/points"               # Point cloud data
     imuTopic: "/ouster/imu"                         # IMU data
-    odomTopic: "odometry/imu"                       # IMU pre-preintegration odometry
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
+    
 
     # Frames
-    lidarFrame: "os_lidar"
-    baselinkFrame: "os_lidar"
+    lidarFrame: "" # defaults to pointcloud's topic from header
+    baselinkFrame: "" # defaults to lidarFrame if not set
     odometryFrame: "odom"
     mapFrameLocal: "map"
     mapFrameEnu: "map_enu"
@@ -78,6 +78,7 @@
     imuRPYWeight: 0.01
 
     autoLookupLidarToImuTf: true
+    # below is only used if autoLookupLidarToImuTf is false
     # Extrinsics: T_lb (lidar -> imu)
     extrinsicTrans: [0.0, 0.0, 0.0]
     extrinsicRot: [-1.0, 0.0, 0.0,
@@ -129,7 +130,10 @@
     # Visualization
     globalMapVisualizationSearchRadius: 1000.0    
     globalMapVisualizationPoseDensity: 1.0       
-    globalMapVisualizationLeafSize: 0.5           
+    globalMapVisualizationLeafSize: 0.5       
+
+    # irrelevant topic
+    odomTopic: "odometry/imu"                       # IMU pre-preintegration odometry    
     
     # ==========================================================
     # Algorithmic Configurations (Decoupled Architecture)

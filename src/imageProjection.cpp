@@ -186,8 +186,8 @@ public:
 
     void imuHandler(const sensor_msgs::msg::Imu::SharedPtr imuMsg)
     {
-        noteImuMessageFrameId(imuMsg->header.frame_id);
-        if (!ensureImuLidarExtrinsicsResolved("ImageProjection::imuHandler"))
+        runtimeTfCoordinator->noteImuMessageFrameId(imuMsg->header.frame_id);
+        if (!runtimeTfCoordinator->ensureImuLidarExtrinsicsResolved("ImageProjection::imuHandler"))
             return;
 
         sensor_msgs::msg::Imu thisImu = imuConverter(*imuMsg);
@@ -221,8 +221,8 @@ public:
 
     void cloudHandler(const sensor_msgs::msg::PointCloud2::SharedPtr laserCloudMsg)
     {
-        noteLidarMessageFrameId(laserCloudMsg->header.frame_id);
-        if (!ensureImuLidarExtrinsicsResolved("ImageProjection::cloudHandler"))
+        runtimeTfCoordinator->noteLidarMessageFrameId(laserCloudMsg->header.frame_id);
+        if (!runtimeTfCoordinator->ensureImuLidarExtrinsicsResolved("ImageProjection::cloudHandler"))
             return;
 
         if (!cachePointCloud(laserCloudMsg))

@@ -78,9 +78,12 @@ add_library(${PROJECT_NAME}_diagnostics src/liorf_diagnostics.cpp)
 ament_target_dependencies(${PROJECT_NAME}_diagnostics rclcpp std_msgs)
 target_link_libraries(${PROJECT_NAME}_diagnostics fastcdr)
 
+add_library(${PROJECT_NAME}_tf_runtime src/tf_runtime.cpp)
+ament_target_dependencies(${PROJECT_NAME}_tf_runtime ${ros2_lib})
+
 add_executable(${PROJECT_NAME}_imageProjection src/imageProjection.cpp ${common_lib})
 ament_target_dependencies(${PROJECT_NAME}_imageProjection ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_imageProjection ${PROJECT_NAME}_diagnostics "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
+target_link_libraries(${PROJECT_NAME}_imageProjection ${PROJECT_NAME}_diagnostics ${PROJECT_NAME}_tf_runtime "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES})
 
 # # Mapping Optimization
 add_library(${PROJECT_NAME}_mapExporter src/export/MapExporter.cpp)
@@ -114,12 +117,12 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU"
   target_compile_options(${PROJECT_NAME}_mapOptmization PRIVATE -Wno-array-bounds)
 endif()
 ament_target_dependencies(${PROJECT_NAME}_mapOptmization ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_mapOptmization ${PROJECT_NAME}_diagnostics ${PROJECT_NAME}_mapExporter Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_mapOptmization ${PROJECT_NAME}_diagnostics ${PROJECT_NAME}_mapExporter ${PROJECT_NAME}_tf_runtime Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} ${OpenMP_CXX_FLAGS} ${GeographicLib_LIBRARIES} gtsam)
 
 # # IMU Preintegration
 add_executable(${PROJECT_NAME}_imuPreintegration src/imuPreintegration.cpp ${common_lib})
 ament_target_dependencies(${PROJECT_NAME}_imuPreintegration ${ros2_lib})
-target_link_libraries(${PROJECT_NAME}_imuPreintegration ${PROJECT_NAME}_diagnostics Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
+target_link_libraries(${PROJECT_NAME}_imuPreintegration ${PROJECT_NAME}_diagnostics ${PROJECT_NAME}_tf_runtime Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
 install(
   DIRECTORY launch config rviz scripts
@@ -129,6 +132,7 @@ install(
 install(
   TARGETS 
   ${PROJECT_NAME}_diagnostics
+  ${PROJECT_NAME}_tf_runtime
 	${PROJECT_NAME}_imageProjection
 	${PROJECT_NAME}_imuPreintegration
 	${PROJECT_NAME}_mapOptmization

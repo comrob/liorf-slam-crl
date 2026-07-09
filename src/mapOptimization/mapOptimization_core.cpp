@@ -84,34 +84,8 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     downSizeFilterSurroundingKeyPoses.setLeafSize(surroundingKeyframeDensity, surroundingKeyframeDensity, surroundingKeyframeDensity); // for surrounding key poses of scan-to-map optimization
 
     br = std::make_unique<tf2_ros::TransformBroadcaster>(this);
-    tfBuffer = std::make_shared<tf2_ros::Buffer>(get_clock());
-    tfListener = std::make_shared<tf2_ros::TransformListener>(*tfBuffer);
-
-    tf2::Transform identity;
-    identity.setIdentity();
-    lidar2Baselink.setData(identity);
-
-    // Initialize lidar<->baselink transform relationship
-    if (lidarFrame == baselinkFrame)
-    {
-        // Frames are identical: lidar2baselink is identity by definition
-        hasLidar2Baselink = true;
-        RCLCPP_INFO_STREAM(
-            get_logger(),
-            "[TF_INIT] lidarFrame == baselinkFrame ('" << lidarFrame << "'): "
-            << "lidar2baselink is identity by definition, hasLidar2Baselink=true"
-        );
-    }
-    else
-    {
-        // Frames differ: need to lookup the actual transform
-        RCLCPP_INFO_STREAM(
-            get_logger(),
-            "[TF_INIT] lidarFrame != baselinkFrame ('" << lidarFrame << "' vs '" << baselinkFrame << "'): "
-            << "attempting initial lookup"
-        );
-        tryLookupLidarToBaselinkTf("ctor");
-    }
+    runtimeTfCoordinator->initializeLidarBaselinkTfRelationship("ctor");
+    runtimeTfCoordinator->tryLookupLidarToBaselinkTf("ctor");
 
     allocateMemory();
 
@@ -122,46 +96,6 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
             manual_gps_origin[1],
             manual_gps_origin[2],
             manual_global_heading);
-    }
-}
-
-bool mapOptimization::tryLookupLidarToBaselinkTf(const char *context)
-{
-    try
-    {
-        geometry_msgs::msg::TransformStamped lidar_to_base_msg =
-            tfBuffer->lookupTransform(lidarFrame, baselinkFrame, rclcpp::Time(0));
-
-        tf2::fromMsg(lidar_to_base_msg, lidar2Baselink);
-        hasLidar2Baselink = true;
-
-        const auto &tr = lidar_to_base_msg.transform.translation;
-        const auto &qr = lidar_to_base_msg.transform.rotation;
-        double roll, pitch, yaw;
-        tf2::Quaternion q(qr.x, qr.y, qr.z, qr.w);
-        tf2::Matrix3x3(q).getRPY(roll, pitch, yaw);
-
-        RCLCPP_INFO_STREAM(
-            get_logger(),
-            "[TF_LOOKUP_OK] (" << context << ") lookupTransform success target='" << lidarFrame
-            << "' source='" << baselinkFrame << "'"
-            << " stamp=" << std::fixed << std::setprecision(6) << ROS_TIME(lidar_to_base_msg.header.stamp)
-            << " xyz=(" << tr.x << ", " << tr.y << ", " << tr.z << ")"
-            << " quat_xyzw=(" << qr.x << ", " << qr.y << ", " << qr.z << ", " << qr.w << ")"
-            << " rpy=(" << roll << ", " << pitch << ", " << yaw << ")"
-        );
-
-        return true;
-    }
-    catch (tf2::TransformException &ex)
-    {
-        hasLidar2Baselink = false;
-        RCLCPP_WARN_STREAM(
-            get_logger(),
-            "[TF_LOOKUP_FAIL] (" << context << ") lookupTransform failed target='" << lidarFrame
-            << "' source='" << baselinkFrame << "' reason=" << ex.what()
-        );
-        return false;
     }
 }
 
@@ -215,6 +149,12 @@ void mapOptimization::allocateMemory()
 
 void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedPtr msgIn)
 {
+    runtimeTfCoordinator->noteLidarMessageFrameId(msgIn->cloud_deskewed.header.frame_id);
+    if (!runtimeTfCoordinator->hasLidarToBaselinkTransform() && !lidarFrame.empty() && lidarFrame != baselinkFrame)
+    {
+        runtimeTfCoordinator->tryLookupLidarToBaselinkTf("laserCloudInfoHandler/frame_resolved");
+    }
+
     // extract time stamp
     timeLaserInfoStamp = msgIn->header.stamp;
     timeLaserInfoCur = ROS_TIME(msgIn->header.stamp);

@@ -706,7 +706,8 @@ void mapOptimization::publishLidarGpsFix()
         pubLidarGpsNedPose->publish(pose_msg);
     }
 
-    if ((lidarFrame == baselinkFrame || hasLidar2Baselink) &&
+    if (runtimeTfCoordinator->allowBaselinkFramePublishing("publishGpsDerivedBaselinkOdometry") &&
+        (lidarFrame == baselinkFrame || runtimeTfCoordinator->hasLidarToBaselinkTransform()) &&
         (pubBaselinkGpsEnuOdometry->get_subscription_count() != 0 ||
          pubBaselinkGpsNedOdometry->get_subscription_count() != 0))
     {
@@ -715,6 +716,7 @@ void mapOptimization::publishLidarGpsFix()
 
         tf2::Transform t_enu_to_lidar(q_enu_tf, tf2::Vector3(p_enu.x(), p_enu.y(), p_enu.z()));
         tf2::Transform t_ned_to_lidar(q_ned_tf, tf2::Vector3(p_ned.x(), p_ned.y(), p_ned.z()));
+        const tf2::Transform lidar2Baselink = runtimeTfCoordinator->lidarToBaselinkTransform();
         tf2::Transform t_enu_to_baselink = t_enu_to_lidar * lidar2Baselink;
         tf2::Transform t_ned_to_baselink = t_ned_to_lidar * lidar2Baselink;
 

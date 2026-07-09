@@ -246,8 +246,8 @@ public:
 
     void lidarFrameObserverHandler(const sensor_msgs::msg::PointCloud2::SharedPtr laserCloudMsg)
     {
-        noteLidarMessageFrameId(laserCloudMsg->header.frame_id);
-        if (ensureImuLidarExtrinsicsResolved("IMUPreintegration::lidarFrameObserverHandler"))
+        runtimeTfCoordinator->noteLidarMessageFrameId(laserCloudMsg->header.frame_id);
+        if (runtimeTfCoordinator->ensureImuLidarExtrinsicsResolved("IMUPreintegration::lidarFrameObserverHandler"))
             updateImuLidarPosesFromExtrinsics();
     }
 
@@ -276,7 +276,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(mtx);
 
-        if (!ensureImuLidarExtrinsicsResolved("IMUPreintegration::odometryHandler"))
+        if (!runtimeTfCoordinator->ensureImuLidarExtrinsicsResolved("IMUPreintegration::odometryHandler"))
             return;
         updateImuLidarPosesFromExtrinsics();
 
@@ -624,8 +624,8 @@ public:
     {
         std::lock_guard<std::mutex> lock(mtx);
 
-        noteImuMessageFrameId(imu_raw->header.frame_id);
-        if (!ensureImuLidarExtrinsicsResolved("IMUPreintegration::imuHandler"))
+        runtimeTfCoordinator->noteImuMessageFrameId(imu_raw->header.frame_id);
+        if (!runtimeTfCoordinator->ensureImuLidarExtrinsicsResolved("IMUPreintegration::imuHandler"))
             return;
         updateImuLidarPosesFromExtrinsics();
 

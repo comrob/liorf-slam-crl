@@ -27,8 +27,8 @@
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
 
     # Frames
-    lidarFrame: "os_lidar"
-    baselinkFrame: "os_lidar"
+    lidarFrame: ""
+    baselinkFrame: "base"
     odometryFrame: "odom"
     mapFrameLocal: "map"
     mapFrameEnu: "map_enu"
