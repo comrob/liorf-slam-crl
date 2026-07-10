@@ -435,6 +435,20 @@ std::vector<TwistVector> DegeneracyDetector::extractBasisFromTwists(
         last_sparsified_basis[i].segment<3>(3) /= medianDistancefromCenter;
     }
 
+    ++consistency_stats.eval_count;
+    consistency_stats.detected = !last_sparsified_basis.empty();
+    if (consistency_stats.detected)
+    {
+        ++consistency_stats.hit_count;
+        ++consistency_stats.hit_streak;
+        consistency_stats.miss_streak = 0;
+    }
+    else
+    {
+        ++consistency_stats.miss_streak;
+        consistency_stats.hit_streak = 0;
+    }
+
     // Return the final, fully scaled basis for actual projection
     return scaleBasis(last_sparsified_basis, cloud_scan);
 }

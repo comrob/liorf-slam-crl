@@ -13,7 +13,7 @@
     imuTopic: "/sensors/imu"                         # IMU data
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
 
-    enableDegeneracyDetection: false
+    enableDegeneracyDetection: true
 
     translationPredictionSource: constant_velocity
     maxTranslationPrediction: 5.0

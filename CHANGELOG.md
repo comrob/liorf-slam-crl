@@ -14,7 +14,9 @@ For every change, add a section with:
 
 Keep entries in reverse chronological order (newest first).
 
-For active iterative work, prefer updating the current top entry instead of appending a new entry for each small adjustment.
+Session rule: keep one entry per development session.
+If the same feature continues in a new session, create a new entry for that session.
+Within one session, update that session entry in place instead of appending micro-entries.
 
 ---
 
@@ -22,191 +24,78 @@ For active iterative work, prefer updating the current top entry instead of appe
 
 ### Files changed
 
-- [CMakeLists.txt](CMakeLists.txt)
-- [package.xml](package.xml)
-- [srv/SaveMap.srv](srv/SaveMap.srv)
-- [include/utility.h](include/utility.h)
-- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
-- [include/export/MapExporter.hpp](include/export/MapExporter.hpp)
-- [include/export/map_types.hpp](include/export/map_types.hpp)
-- [src/mapOptimization/main.cpp](src/mapOptimization/main.cpp)
-- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
-- [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp)
-- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
-- [src/mapOptimization/mapOptimization_graph.cpp](src/mapOptimization/mapOptimization_graph.cpp)
-- [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp)
-- [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp)
-- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
-- [src/export/MapExporter.cpp](src/export/MapExporter.cpp)
-- [src/imuPreintegration.cpp](src/imuPreintegration.cpp)
-- [src/imageProjection.cpp](src/imageProjection.cpp)
-- [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
-- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
-- [scripts/save_map.sh](scripts/save_map.sh)
-- [scripts/build_liorf.sh](scripts/build_liorf.sh)
-- [scripts/saved_map_output_README.md](scripts/saved_map_output_README.md)
-- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py)
-- [README.md](README.md)
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [CHANGELOG.md](CHANGELOG.md)
-- [AGENTS.md](AGENTS.md)
+- Build and packaging:
+	- [CMakeLists.txt](CMakeLists.txt)
+	- [package.xml](package.xml)
+- Core SLAM and runtime:
+	- [include/utility.h](include/utility.h)
+	- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+	- [include/degeneracyDetection/DegeneracyDetector.hpp](include/degeneracyDetection/DegeneracyDetector.hpp)
+	- [src/degeneracyDetection/DegeneracyDetector.cpp](src/degeneracyDetection/DegeneracyDetector.cpp)
+	- [src/mapOptimization/main.cpp](src/mapOptimization/main.cpp)
+	- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+	- [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp)
+	- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+	- [src/mapOptimization/mapOptimization_graph.cpp](src/mapOptimization/mapOptimization_graph.cpp)
+	- [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp)
+	- [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp)
+	- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+	- [src/imuPreintegration.cpp](src/imuPreintegration.cpp)
+	- [src/imageProjection.cpp](src/imageProjection.cpp)
+- Export, interfaces, and tooling:
+	- [srv/SaveMap.srv](srv/SaveMap.srv)
+	- [include/export/MapExporter.hpp](include/export/MapExporter.hpp)
+	- [include/export/map_types.hpp](include/export/map_types.hpp)
+	- [src/export/MapExporter.cpp](src/export/MapExporter.cpp)
+	- [scripts/save_map.sh](scripts/save_map.sh)
+	- [scripts/saved_map_output_README.md](scripts/saved_map_output_README.md)
+	- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py)
+- Diagnostics, docs, and policy:
+	- [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
+	- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+	- [README.md](README.md)
+	- [ARCHITECTURE.md](ARCHITECTURE.md)
+	- [AGENTS.md](AGENTS.md)
+	- [CHANGELOG.md](CHANGELOG.md)
 
 
 ### Behavior impact
 
-- added additive keyframe deskewed-downsampled cloud pipeline without changing existing per-frame topics: new subscription-gated publisher `liorf/mapping/keyframes/cloud_deskewed_downsampled` emits `laserCloudSurfLastDS` (XYZI in `lidarFrame`) only when a keyframe is accepted, wired in [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp), [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp), and [src/mapOptimization/mapOptimization_graph.cpp](src/mapOptimization/mapOptimization_graph.cpp).
-- save-map export now persists per-keyframe deskewed-downsampled XYZI clouds to `trajectories/keyframes_deskewed_ds/kf_XXXXXX.pcd` and extends `trajectories/trajectory_keyframes_local.csv` with `cloud_relpath` and `cloud_points` columns in [src/export/MapExporter.cpp](src/export/MapExporter.cpp).
-- added optional keyframe debug companion topic `liorf/mapping/keyframes/cloud_deskewed_downsampled_debug` that keeps `x,y,z,intensity` and appends per-point `debug_code` (uint8) on a separate stream, so standard consumers can continue using the unchanged base topic `liorf/mapping/keyframes/cloud_deskewed_downsampled` in [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp), [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp), and [src/mapOptimization/mapOptimization_graph.cpp](src/mapOptimization/mapOptimization_graph.cpp).
-- renamed misleading per-frame publisher member names for clarity only (no topic/runtime behavior changes): `pubRecentKeyFrames` -> `pubLocalMapCloud` and `pubRecentKeyFrame` -> `pubRegisteredCloud` in [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp), [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), and [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp).
-- renamed incremental-motion state variables for clearer intent in `mapOptimization`: `lastLidarOdometryIncrement` -> `lastIncrementalDeltaPoseLocal` and `increOdomAffine` -> `poseAcumulatedIncremental`; no algorithmic behavior change intended.
-- refactored non-GPS factor-graph orchestration methods out of [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp) into [src/mapOptimization/mapOptimization_graph.cpp](src/mapOptimization/mapOptimization_graph.cpp): `addOdomFactor`, `addLoopFactor`, `saveKeyFramesAndFactor`, and `correctPoses`.
-- updated [CMakeLists.txt](CMakeLists.txt) target sources to compile the new graph translation unit while preserving runtime node behavior.
-- added matched-feature visualization publisher `liorf/mapping/matched_surface_features` in [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp) and [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp), publishing the final selected surface features used by scan-to-map optimization in `mapFrameLocal`.
-- added per-stage surf matching observability in [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp), [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp), and [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp): stage counters (`input`, `kNN-pass`, `plane-valid`, `matched`) plus subscription-gated debug clouds on `liorf/mapping/surf_stage_input`, `liorf/mapping/surf_stage_knn_pass`, and `liorf/mapping/surf_stage_plane_valid`.
-- added subscription-gated consolidated colored debug cloud `liorf/mapping/surf_debug_colored` in [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp), with accepted surface features in green and rejected features color-coded by rejection reason (neighbor count, kNN distance, plane validity, low weight) from per-point reason tracking in [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp).
-- added legend publisher `liorf/mapping/surf_debug_legend` (`std_msgs/msg/String`) in [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp) and [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp), published with throttled logging when `surf_debug_colored` is active, to document color-to-rejection-reason mapping.
-- added subscription-gated prediction-stage debug clouds in [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp), [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), and [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp): `liorf/mapping/debug/cloud_previous_pose` (scan transformed with pose before `updateInitialGuess`) and `liorf/mapping/debug/cloud_predicted_pose` (scan transformed with predicted pose right after `updateInitialGuess`), both using `laserCloudSurfLastDS` and `mapFrameLocal`.
-- hardened constant-velocity translation prediction in [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp) to skip prediction when timing is invalid (`curTimeDiff <= 0`, `lastTimeDiff < 1e-3`, non-finite values, or missing previous incremental delta), and added throttled diagnostics events for skipped/clamped prediction conditions.
-- initialized incremental-delta prediction state in [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp), [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), and [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp) so constant-velocity prediction never consumes uninitialized `lastIncrementalDeltaPoseLocal`.
-- added non-positive frame-delta skip handling in [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp) to avoid processing duplicate/backward LiDAR timestamps and to log the reason in diagnostics.
-- extended mapOptimization failure logs with absolute ROS stamp and wall-clock context (`frame_stamp_s`, `last_frame_stamp_s`, `wall_now_s`) for translation-prediction exceptions and skip/clamp events.
-- wrapped IMU preintegration optimization in exception handling in [src/imuPreintegration.cpp](src/imuPreintegration.cpp) so GTSAM failures now log `ros_stamp_s`, `wall_now_s`, queue sizes, and IMU timestamps before resetting state instead of terminating the process.
-- added optional one-time auto lookup for IMU/LiDAR extrinsics from live message header frames in [include/utility.h](include/utility.h), [src/imageProjection.cpp](src/imageProjection.cpp), and [src/imuPreintegration.cpp](src/imuPreintegration.cpp); when `autoLookupLidarToImuTf` is enabled and the TF is unavailable, deskewing and IMU-based localization outputs are suppressed and a retry/error is emitted every 5 seconds suggesting manual `extrinsicRot`/`extrinsicRPY`/`extrinsicTrans`.
-- when `lidarFrame` is left empty, the successful auto-lookup now adopts the resolved LiDAR frame as the node's effective `lidarFrame` so downstream frame checks and publications stay consistent.
-- when `lidarFrame` is empty, the first observed LiDAR message frame now becomes the effective `lidarFrame` even when auto-lookup is disabled.
-- `mapOptimization` now defers its lidar-to-baselink TF initialization when `lidarFrame` starts empty, then retries after the first deskewed LiDAR message resolves the frame name, avoiding invalid empty-frame TF lookups at startup.
-- if `baselinkFrame` is empty, it now defaults to the resolved LiDAR frame; `mapOptimization` also warns when the selected baselink frame already has a TF parent, since publishing odometry TFs into that child would create an invalid multi-parent tree.
-- refactored runtime TF/frame-resolution policy out of [include/utility.h](include/utility.h) and [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp) into a dedicated shared module [include/tf_runtime.hpp](include/tf_runtime.hpp) and [src/tf_runtime.cpp](src/tf_runtime.cpp), keeping one runtime-TF ownership surface while preserving existing node behavior.
-- removed the transitional `ParamServer` forwarding wrappers so node implementations now call `runtimeTfCoordinator` directly, making TF runtime ownership explicit at the call sites.
-- changed baselink parent validation into a one-time pre-publication gate in the shared TF runtime module: LIORF now checks for an existing external parent before publishing baselink TF/odometry outputs, suppresses those outputs on conflict, and no longer warns on its own published TF chain.
-- added zero-integration guard and timing-window diagnostics in [src/imuPreintegration.cpp](src/imuPreintegration.cpp): track `integrated_imu_count`, `first_used_imu_stamp_s`, and `last_used_imu_stamp_s`; when no IMU falls into the optimization window, skip factor-graph update and emit `[IMU_PREINTEGRATION_SKIPPED_NO_IMU_IN_WINDOW]` with correction/queue timing context.
-- added explicit FastCDR CMake/package dependency wiring in [CMakeLists.txt](CMakeLists.txt) and [package.xml](package.xml) so the diagnostics library links against the current imported `fastcdr` target instead of inheriting a stale versioned library path.
-- added comprehensive GPS intake diagnostics in [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp) logging every GPS input and every rejection/acceptance decision with timestamps, ENU coordinates, covariances, time differences, and rejection reason; throttled debug events include `gps_input_raw`, `gps_enu_converted`, `gps_rejected_*` (too_old, high_noise, uninitialized, sparsity, time_alignment), `gps_pending_not_yet_eligible`, and `gps_constraint_added` with full uncertainty context.
-- replaced fixed surf kNN distance gate in [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp) with simple configurable threshold `surfKnnMinDistance`; added parameter in [include/utility.h](include/utility.h) and [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml).
-
-- split monolithic map optimization implementation into a dedicated module layout under [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp) and [src/mapOptimization/main.cpp](src/mapOptimization/main.cpp), [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp), [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp), [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp), [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp), and [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp).
-- moved the build target for `liorf_mapOptmization` in [CMakeLists.txt](CMakeLists.txt) to compile from the new split sources; runtime behavior is intended to remain unchanged with lower refactor-risk by preserving the original `mapOptimization` state and method logic.
-- fixed post-split linker ODR issues in [include/utility.h](include/utility.h) by marking header-defined shared symbols as `inline` (`common_lib_` variable and `QosPolicy(...)`), allowing safe inclusion from multiple `mapOptimization` translation units.
-- fixed compiler warning cleanup in split sources: `yawDiffRad` marked `[[maybe_unused]]` in [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp), removed unused `lastSLAMInfoPubSize` in [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp), and initialized QoS profile from `rmw_qos_profile_default` in [include/utility.h](include/utility.h) to avoid `-Wmaybe-uninitialized`.
-- added GCC-only suppression `-Wno-array-bounds` for target `liorf_mapOptmization` in [CMakeLists.txt](CMakeLists.txt) to silence known Eigen/PCL template false positives emitted from external headers during optimization builds.
-- fixed `-Wreturn-type` warning in [include/Scancontext.cpp](include/Scancontext.cpp) by adding an explicit fallback return path in `xy2theta(...)` for degenerate/unexpected numeric cases.
-- follow-up review hardening: [include/Scancontext.cpp](include/Scancontext.cpp) now computes heading with `atan2` and normalizes to `[0, 360)` to avoid division-by-zero/NaN-prone quadrant math.
-- follow-up review hardening: removed global `using namespace gtsam;` and symbol-shorthand `using` declarations from public header [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp), and qualified remaining GTSAM member types.
-- follow-up review hardening: [CMakeLists.txt](CMakeLists.txt) now gates `-Wno-array-bounds` behind `LIORF_SUPPRESS_GNU_ARRAY_BOUNDS_WARNINGS` and Release+GNU conditions instead of unconditional GNU application.
-
-Adds fused GPS publishers to `mapOptimization`:
-
-- added translation-prediction safety params in [include/utility.h](include/utility.h): `maxTranslationPrediction` (default `5.0 m`) and `minTranslationPredictionSpeed` (default `0.0 m/s`, disabled).
-- constant-velocity translation prediction in [src/mapOptmization.cpp](src/mapOptmization.cpp) now clamps to zero on threshold violations and emits explicit logs (`[TRANSLATION_PREDICTION_EXCEEDED]`, `[TRANSLATION_PREDICTION_SPEED_TOO_LOW]`).
-- added warning publication topic `/liorf/warnings` in [include/liorf_diagnostics.h](include/liorf_diagnostics.h), and wired guard messages to publish there.
-- diagnostics telemetry JSON now includes `max_translation_delta_last_batch_m`, and the max is tracked per diagnostics publish batch.
-- diagnostics now write per-processed-frame time deltas to `time_deltas.csv` under each run folder.
-- diagnostics now write unified frame metrics to `frame_metrics.csv` with columns: `stamp_sec,time_delta_s,prediction_delta_m,optimized_delta_m` — logging the frame processing interval, predicted motion magnitude, and actual optimized motion magnitude per frame.
-- diagnostics now publish per-frame metrics as `std_msgs/msg/String` on `/liorf/frame_metrics` with JSON fields: `stamp_sec`, `time_delta_s`, `prediction_delta_m`, `optimized_delta_m`.
-- `/liorf/frame_metrics` now publishes all numeric fields with fixed dot-decimal formatting at 3 digits after the decimal point.
-- `stamp_sec` in `/liorf/frame_metrics` and `frame_metrics.csv` now uses LiDAR header time (frame stamp) instead of node/system wall time.
-- split diagnostics implementation into [include/liorf_diagnostics.h](include/liorf_diagnostics.h) declarations + [src/liorf_diagnostics.cpp](src/liorf_diagnostics.cpp) definitions.
-- added dedicated CMake target `liorf_diagnostics` and linked it to node executables so diagnostics-only changes rebuild a smaller compilation unit.
-- unified diagnostics debug topics under `/liorf/debug/<log_name>` naming: telemetry, timing_stats, time_deltas, frame_metrics, event, warnings.
-- diagnostics event log file renamed from `events.log` to `event.txt`; each event line now corresponds to one published message on `/liorf/debug/event`.
-- each diagnostics stream now has one-to-one topic/file correspondence and publishes one message per appended file row/line.
-- added ROS params for diagnostics file-writing control: master switch `diagnostics_write_files_master` and per-log switches `diagnostics_write_timing_stats`, `diagnostics_write_event`, `diagnostics_write_warnings`, `diagnostics_write_telemetry`, `diagnostics_write_time_deltas`, `diagnostics_write_frame_metrics`.
-- parameter metadata file (`run_parameters.yaml`) remains always written regardless of diagnostics file-write switches.
-- moved `[FRAME_TIME_DELTA]` details from event stream into per-frame diagnostics (`frame_metrics`) to reduce event noise.
-- per-frame diagnostics now include `last_time_delta_s` and `estimated_velocity_mps` (`estimated_velocity_mps = last_optimized_delta_m / last_time_delta_s` when last dt > 0).
-- configured primary Ouster profile [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml) with `maxTranslationPrediction: 5.0` and `minTranslationPredictionSpeed: 0.0`.
-
- - diagnostics now persist runtime staleness telemetry in [include/liorf_diagnostics.h](include/liorf_diagnostics.h) to `telemetry.csv` (`time_since_last_lidar_s`, `time_since_last_gps_s`) inside each run folder under `~/.ros/liorf_logs/run_*`.
- - added [scripts/plot_telemetry_staleness.py](scripts/plot_telemetry_staleness.py) to visualize LiDAR/GPS staleness signals from `telemetry.csv` (latest-run auto-discovery supported).
- - documented telemetry staleness log location and plotting usage in [README.md](README.md).
-`liorf/mapping/lidar_gps_ned_pose` (`geometry_msgs/PoseStamped`, frame = `mapFrameNed`) is also published as the NED-frame equivalent.
-
-Publishing now uses a two-stage policy tied to GPS factor observability:
-
-
-GPS-derived transform/offset publications are also gated by the same readiness condition.
-
- updated [launch/save_map.launch.py](launch/save_map.launch.py) to invoke `scripts/save_map.sh` after service-availability wait, so launch-triggered exports print the same clean response summary as the helper script.
- updated [CMakeLists.txt](CMakeLists.txt) to install `scripts/` into package share so `save_map.launch.py` can resolve and run `save_map.sh` from installed package paths.
- updated [scripts/save_map.sh](scripts/save_map.sh) with explicit default variables for resolution/destination (plus env overrides) and clearer runtime messaging that node `savePCDDirectory` defaults are interpreted as HOME-relative for compatibility.
-
-Added RViz visualization topic `/liorf/mapping/gps_constraints` (`visualization_msgs/MarkerArray`) with:
-
-- received GPS ENU points (`SPHERE_LIST`)
-- associated LiDAR key poses transformed to ENU (`SPHERE_LIST`)
-- line connections from each accepted GPS factor measurement to its corresponding LiDAR key pose (`LINE_LIST`)
-
-Improved GPS-LiDAR synchronization for GPS factor insertion and visualization:
-
-- each stored GPS-LiDAR association now carries GPS timestamp metadata,
-- GPS constraints are associated to the closest recent LiDAR keyframe by timestamp (instead of always the latest keyframe index),
-- throttled warnings are emitted when GPS-to-keyframe association offset exceeds 2.0 seconds.
-- each accepted GPS factor now emits a structured `[GPS_CONSTRAINT_ADDED]` log line to both terminal and diagnostics `events.log`, including GPS time, matched keyframe time, and their delta.
-- matching now explicitly includes the current in-flight keyframe candidate (`timeLaserInfoCur`) so constraints can bind to the just-created factor-graph key instead of only previously saved keyframes.
-- a hard gate now rejects GPS constraints when `|gps_t - keyframe_t| > 0.30 s`; skipped constraints are logged as `[GPS_CONSTRAINT_SKIPPED_TIME]` in diagnostics, and warnings are emitted in terminal.
-- added `gps_processing_delay_sec` parameter (loaded in `ParamServer`): GPS measurements are now processed only after `gps_stamp + gps_processing_delay_sec` enters the processing window, enabling intentional ROS-time holdback before factor insertion.
-- added configurable `gps_covariance_inflation_m` (default `2.0`) to inflate GPS factor variance on XYZ by `gps_covariance_inflation_m^2`, reducing short-term GPS pull when timing misalignment is present while still bounding long-term drift.
-- set `gps_processing_delay_sec: 1.0` in the primary Ouster profile [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml) for immediate testing.
-- set `gps_covariance_inflation_m: 2.0` in [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml).
-- propagated remaining declared transport QoS parameters into [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml): `history_policy` and `reliability_policy`.
-- local-frame map save outputs now use `_local` suffix for unambiguous naming: `SurfMap_local.pcd`, `GlobalMap_local.pcd`, `trajectory_local.pcd`, `transformations_local.pcd`.
-- map save now also exports ENU-frame artifacts next to local-frame outputs when `T_enu_local` is initialized: `SurfaceMap_ENU.pcd`, `FullMap_ENU.pcd`, and `trajectory_ENU.pcd`.
-- if `T_enu_local` is not initialized, ENU export is skipped with a warning while local-frame exports remain unchanged.
-- `saveMapService()` path resolution now uses `std::filesystem`: `req->destination` is treated as absolute if it starts with `/`, HOME-expanded if it starts with `~/`, or HOME-relative otherwise; `getenv("HOME")` null-safety added; `system()` calls replaced with `std::filesystem::remove_all` / `create_directories`.
-- added [scripts/save_map.sh](scripts/save_map.sh) helper to call `liorf/save_map` with CLI arguments for map resolution (`-r/--resolution`) and destination path (`-d/--destination`).
-- [scripts/save_map.sh](scripts/save_map.sh) now prints the resolved save directory after a successful response; when destination is empty, it queries `/liorf_mapOptimization` parameter `savePCDDirectory` and resolves it with the same HOME-relative semantics as `saveMapService()`.
-- extended [srv/SaveMap.srv](srv/SaveMap.srv) response with useful save metadata: `save_directory`, `enu_map_saved`, `keyframes_used`, `surf_points_local`, `surf_points_enu`, and `message`.
-- [src/mapOptmization.cpp](src/mapOptmization.cpp) now populates these response fields from actual save execution state, including absolute destination path and ENU export status.
-- on successful map save, [src/mapOptmization.cpp](src/mapOptmization.cpp) now writes the absolute map directory to `~/.liorf_last_saved_map_path`.
-- [scripts/save_map.sh](scripts/save_map.sh) adds `-a/--absolute-path` and prints the detailed response summary after success.
-- added global map point counters to [srv/SaveMap.srv](srv/SaveMap.srv) response: `global_points_local` and `global_points_enu`, and populated them in [src/mapOptmization.cpp](src/mapOptmization.cpp).
-- added [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) to render saved map trajectory and surf density over satellite imagery into an interactive HTML map.
-- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now supports omitted `--map-dir` and resolves in order: `~/.liorf_last_saved_map_path`, then default `~/Downloads/LOAM`, otherwise exits with a clear error.
-- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now logs how map directory was resolved (user input, last-saved file, or default path), including a resolution trace.
-- added Poetry environment file [scripts/pyproject.toml](scripts/pyproject.toml) for map tools dependencies (`folium`, `numpy`) and console script entrypoint `visualize-saved-map-satellite`.
-- documented satellite overlay usage in [README.md](README.md).
-- refreshed [README.md](README.md) map-saving section with `scripts/save_map.sh` usage, detailed `SaveMap` response fields, and persisted last-saved-path behavior (`~/.liorf_last_saved_map_path`).
-- added [launch/save_map.launch.py](launch/save_map.launch.py) to trigger `liorf/save_map` via `ros2 launch` with arguments `resolution`, `destination`, `service_name`, and `wait_timeout_sec`.
-- map-save outputs are now structured into subfolders: `maps/` and `trajectories/`.
-- local/global map naming now uses `SurfaceMap_*` and `FullMap_*` files (replacing previous `SurfMap_*` / `GlobalMap_*` names in new exports).
-- root georeference file is now `goereference.yaml`.
-- georeference keys are now explicit: `gps_origin_enu` and `T_enu_local`.
-- dedicated `gps_origin.yaml` export was removed (origin is now represented directly in `goereference.yaml`).
-- save-map now also writes `save_summary.yaml` with ROS save time, keyframe count, dense trajectory count, GPS count, and map point counters.
-- save-map default `resolution` is now controlled at the call sites (`scripts/save_map.sh` and `launch/save_map.launch.py`) with default value `0.2` (overridable via `LIORF_SAVE_MAP_DEFAULT_RESOLUTION`), and request value `0` remains a literal value meaning no downsampling.
-- save-map now copies project template [scripts/saved_map_output_README.md](scripts/saved_map_output_README.md) into output root as `README.md`.
-- added dense export toggles in ROS params: `save_dense_gps_trajectory` and `save_dense_odom_trajectory` (default `true`), loaded by `ParamServer` and set in [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml).
-- added save-time trajectory exports in `trajectories/`:
-	- `gps_raw_geodetic.csv`
-	- `trajectory_keyframes_local.csv`
-	- `trajectory_dense_local.csv`
-- `mapOptimization` now buffers full raw GPS and dense odometry histories in RAM and writes them at save time; older poses are not popped from these buffers.
-- SaveMap response counters were renamed from `global_points_local/global_points_enu` to `full_points_local/full_points_enu`, and helper script parsing/output was updated accordingly.
-- SaveMap response now also reports dense saved lengths: `trajectory_points_saved` and `gps_points_saved`.
-- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now reads `goereference.yaml`, supports `gps_origin_enu`/`T_enu_local`, and keeps legacy metadata/path fallbacks.
-- `goereference.yaml` now stores `T_enu_local` orientation as quaternion (`qx/qy/qz/qw`) instead of RPY, and [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now supports quaternion metadata with legacy RPY fallback.
-- fixed TF publication regression in [src/mapOptmization.cpp](src/mapOptmization.cpp): `odometryFrame -> lidar_link` is now built directly from `transformTobeMapped` (matching `publishOdometry()`), and `odometryFrame -> baselinkFrame` is derived from that LiDAR pose using `lidar2Baselink`.
-- refactored [src/mapOptmization.cpp](src/mapOptmization.cpp) so smooth odom-side TF now comes from the incremental LiDAR odometry accumulator instead of the jump-prone optimized pose, and `mapFrameLocal -> odometryFrame` absorbs loop-closure/GPS corrections upstream.
-- promoted incremental odometry publication state in [src/mapOptmization.cpp](src/mapOptmization.cpp) from static locals to class members so TF publication and odometry topics share a single smooth-motion source.
-- removed IMU roll/pitch blending from incremental LiDAR odometry in [src/mapOptmization.cpp](src/mapOptmization.cpp), so `liorf/mapping/odometry_incremental` now reflects pure LiDAR scan-to-scan motion.
-- `liorf/mapping/odometry_incremental` now keeps LiDAR-frame semantics but uses `child_frame_id = lidar_link` for consistency with the published TF branch.
-- `liorf/mapping/odometry` now publishes the graph-optimized LiDAR pose in `mapFrameLocal -> lidar_link`.
-- added new base-link odometry topics in [src/mapOptmization.cpp](src/mapOptmization.cpp): `liorf/mapping/baselink_odometry` (`mapFrameLocal -> baselinkFrame`) and `liorf/mapping/baselink_odometry_incremental` (`odometryFrame -> baselinkFrame`).
-- added GPS-fused base-link odometry topics in [src/mapOptmization.cpp](src/mapOptmization.cpp): `liorf/mapping/baselink_gps_enu_odometry` and `liorf/mapping/baselink_gps_ned_odometry`.
-- relabeled map-local visualization and map products in [src/mapOptmization.cpp](src/mapOptmization.cpp) to `mapFrameLocal` so published clouds, path, and loop-closure markers remain numerically consistent after the odometry split.
-- updated [src/imuPreintegration.cpp](src/imuPreintegration.cpp) `TransformFusion` output headers/path frame to follow the incoming LiDAR odometry frame instead of hardcoding `odometryFrame`, keeping the fused topic labeling correct after `liorf/mapping/odometry` moved to `mapFrameLocal`.
-- documented the LiDAR/base-link odometry split and smooth-odom TF behavior in [README.md](README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
-- added manual GPS datum bootstrap in [include/utility.h](include/utility.h) and [src/mapOptmization.cpp](src/mapOptmization.cpp): new params `force_initial_gps`, `manual_gps_origin`, and `manual_global_heading` allow early ENU/LLA publishing and TF readiness before first sensor `NavSatFix`; first real GPS factor now inserts the floating-anchor prior exactly once while preserving manual yaw when enabled.
-- documented manual GPS bootstrap usage and troubleshooting in [README.md](README.md), including parameter semantics (`force_initial_gps`, `manual_gps_origin`, `manual_global_heading`) and note about launching from the correct built/installed config.
-- map-save file I/O/formatting logic was extracted from `mapOptimization::saveMapService()` into dedicated exporter utility files: [include/export/MapExporter.hpp](include/export/MapExporter.hpp) and [src/export/MapExporter.cpp](src/export/MapExporter.cpp).
-- `mapOptimization::saveMapService()` now performs lightweight snapshot/locking and delegates heavy export work through `MapExporter`.
-- shared keyframe pose point type was moved to [include/export/map_types.hpp](include/export/map_types.hpp) so exporter and map optimization use a common definition.
-- CMake target graph now builds exporter implementation as a separate library target (`liorf_mapExporter`) linked into `liorf_mapOptmization`, so exporter `.cpp` changes avoid recompiling `mapOptmization.cpp` (relink still required).
-- fixed `liorf_mapExporter` build wiring to link ROS interface typesupport target so generated headers like `liorf/srv/save_map.hpp` resolve during exporter-library compilation.
-- added mandatory commit-message guidance in [AGENTS.md](AGENTS.md): short scoped header, required blank-line separator, concise body bullets for algorithmic/architectural changes, and max body line length of 72 characters.
-- added explicit agent hint in [AGENTS.md](AGENTS.md) to avoid literal `\\n` in `git commit -m` messages and prefer `-F`/multi-`-m` usage for reliable bullet formatting.
-- [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) now matches current save outputs by preferring `trajectories/trajectory_dense_local.csv` and `trajectory_keyframes_local.csv` before falling back to legacy trajectory PCD files.
-- fixed [scripts/visualize_saved_map_satellite.py](scripts/visualize_saved_map_satellite.py) legacy georeference parsing: RPY-only `goereference.yaml` files are no longer misdetected as quaternion exports, which previously caused identity rotation to be applied to trajectories.
+- Refactored map optimization into split translation units under [src/mapOptimization](src/mapOptimization) with explicit role separation (core/map/scan/gps/loop/publish/graph), preserving runtime behavior while improving maintainability and build isolation.
+- Added and hardened observability across scan-to-map and runtime health:
+	- stage-level scan matching metrics and debug clouds,
+	- diagnostics CSV/event telemetry improvements,
+	- prediction safety logs with timestamp context,
+	- throttled summaries for optimization and timing slices.
+- Improved prediction and frame-processing robustness:
+	- safer constant-velocity translation prediction guards,
+	- non-positive frame-delta skip handling,
+	- stale-frame/backlog protection and queue-depth controls.
+- Improved runtime TF/frame handling:
+	- dedicated runtime TF coordination module,
+	- safer lidar/baselink frame resolution and startup behavior,
+	- conflict checks for externally parented baselink frames.
+- Expanded map export pipeline and tooling:
+	- structured output layout and richer save metadata,
+	- ENU/local artifact support and georeference cleanup,
+	- save service/CLI/launch tooling alignment,
+	- satellite visualization helper updates.
+- GPS fusion and publication flow was strengthened:
+	- floating-anchor based global-local alignment pipeline,
+	- improved GPS-LiDAR association gating and diagnostics,
+	- better publication readiness behavior for GPS-derived outputs.
+- Added additional runtime products for debugging and consumers:
+	- keyframe downsampled cloud exports and debug companion stream,
+	- matched-feature and colored surface debug visualizations,
+	- baselink and GPS-fused odometry publication variants.
+- Integrated degeneracy direction workflow in scan-to-map:
+	- basis extraction now runs before visualization publish,
+	- detector-owned consistency accounting (hit-rate/streaks),
+	- throttled detection/consistency log events now reflect detector state.
+- Build and toolchain hardening:
+	- diagnostics linkage/dependency cleanup,
+	- ODR/warning cleanup and guarded compiler-warning suppression,
+	- exporter target isolation to reduce unnecessary recompilation.
 
 ### Migration/runtime risk
 

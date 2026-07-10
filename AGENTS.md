@@ -192,6 +192,9 @@ This loop is intentional and is the first place to inspect when timing or drift 
 
 ## 4) Where to edit for common tasks
 
+Update this file when new, relevant, and non-obvious insights are discovered.
+Ask the user for consent before adding such insights.
+
 ### Add/change parameters
 
 1. Add in `ParamServer` declarations/loading in [include/utility.h](include/utility.h).
@@ -240,11 +243,13 @@ This loop is intentional and is the first place to inspect when timing or drift 
 
 ## 5) Operational guidance for future agents
 
-1. Prefer minimal, localized changes.
-2. Keep topic names and frame IDs coherent across YAML + launch + C++.
-3. If changing frame transforms/TF ownership, inspect `mapOptimization` TF publication first.
-4. Avoid editing cached files under [docker/cache/](docker/cache).
-5. If changing architecture-level flow, update this file and changelog in the same change.
+1. Prefer minimal, localized changes, as long as this does not create spaghetti code.
+2. Keep functionality in files where it logically belongs, so file ownership remains clear.
+3. Keep topic names and frame IDs coherent across YAML + launch + C++.
+4. If changing frame transforms/TF ownership, inspect `mapOptimization` TF publication first.
+5. Avoid editing cached files under [docker/cache/](docker/cache).
+6. If changing architecture-level flow, update this file and changelog in the same change.
+7. If a solution seems bloated or hacky instead of an elegant addition, ask for user consent before implementation, explain the concerns, and suggest alternatives.
 
 ---
 
@@ -260,8 +265,12 @@ Required for each entry:
 - Summary of behavior impact
 - Notes for migration/runtime risk (if any)
 
-For the active development cycle, do **not** append a new entry for every small iteration.
-Instead, keep updating the current top entry in [CHANGELOG.md](CHANGELOG.md) until a clear milestone/release boundary is reached.
+Session policy (mandatory):
+
+- Use **one changelog entry per development session**.
+- If the same feature is continued in a **new session**, create a **new entry** for that new session.
+- Within one session, do **not** append multiple micro-entries; keep editing the session's top entry to reflect the current final state of that session.
+- Prefer concise, deduplicated summaries over raw iterative history.
 
 Use newest-first order (latest entry at top).
 
@@ -279,14 +288,16 @@ Use newest-first order (latest entry at top).
 
 For the current development context, treat the following as the primary runtime entrypoint and parameter set:
 
-- Primary launch file: [launch/run_lio_sam_ouster.launch.py](launch/run_lio_sam_ouster.launch.py)
+- Primary launch file: [launch/liorf.launch.py](launch/liorf.launch.py)
 - Primary config file: [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+
+When relevant parameters are changed, also update [config/anymal.yaml](config/anymal.yaml) if it is in scope for the user's task.
 
 When making iterative changes, prefer validating behavior against this launch/config pair first unless the task explicitly targets another dataset/sensor profile.
 
 ---
 
-## 9) Commit message guidelines (mandatory)
+## 9) Commit message guidelines (mandatory) - only if asked to commit
 
 Use modern, review-friendly commit messages (Conventional-Commit style is preferred).
 

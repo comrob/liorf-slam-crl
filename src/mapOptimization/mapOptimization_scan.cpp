@@ -231,21 +231,59 @@ void mapOptimization::scan2MapOptimization()
                 laserCloudSurfLastDS,
                 laserCloudSurfLastDS, // Pass the scan itself to prevent the segfault
                 mappingBackend);
+
+            const auto perturbationTwists = degeneracyDetector->getTwistsPerturbationsDegeneracy();
+            degeneracyDetector->extractBasisFromTwists(perturbationTwists, laserCloudSurfLastDS);
+
+            const auto rawTwists = degeneracyDetector->getRawTwists();
+            const auto pcaBasis = degeneracyDetector->getPcaBasis();
+            const auto sparsifiedBasis = degeneracyDetector->getSparsifiedBasis();
+            const auto consistencyStats = degeneracyDetector->getConsistencyStats();
+            const bool degeneracyDetected = consistencyStats.detected;
             
             // LOG THE FAILURE REASON IF ANY
             if (degeneracyDetector->isFailed()) {
                 RCLCPP_WARN(this->get_logger(), "Degeneracy failed: %s", degeneracyDetector->getFailReason().c_str());
             }
 
-            if (enableDegeneracyDetection) {
-                publishTwistMarkers(pubDegeneracyRaw, "raw", degeneracyDetector->getRawTwists(), timeLaserInfoStamp, 
-                                    1.0, 0.0, 0.0,   1.0, 1.0, 0.0); // Red/Yellow
-                publishTwistMarkers(pubDegeneracyPCA, "pca", degeneracyDetector->getPcaBasis(), timeLaserInfoStamp, 
-                                    0.0, 0.5, 1.0,   0.0, 1.0, 1.0); // Blue/Cyan
-                publishTwistMarkers(pubDegeneracyBasis, "basis", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp, 
-                                    0.0, 1.0, 0.0,   1.0, 0.0, 1.0); // Green/Magenta
-                publishDegeneracyPaths(pubDegeneracyPaths, "degeneracy_paths", degeneracyDetector->getSparsifiedBasis(), timeLaserInfoStamp);
+            if (degeneracyDetected)
+            {
+                std::ostringstream oss;
+                oss << "[DEGENERACY_DETECTED]"
+                    << " raw=" << rawTwists.size()
+                    << " pca=" << pcaBasis.size()
+                    << " basis=" << sparsifiedBasis.size()
+                    << " eval_count=" << consistencyStats.eval_count
+                    << " hit_count=" << consistencyStats.hit_count
+                    << " hit_rate=" << std::fixed << std::setprecision(3) << consistencyStats.hitRate()
+                    << " hit_streak=" << consistencyStats.hit_streak;
+                RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, oss.str());
+                if (diagnostics)
+                    diagnostics->logEventThrottle("degeneracy_detected", 1.0, oss.str());
             }
+
+            {
+                std::ostringstream oss;
+                oss << "[DEGENERACY_CONSISTENCY]"
+                    << " detected=" << (degeneracyDetected ? 1 : 0)
+                    << " eval_count=" << consistencyStats.eval_count
+                    << " hit_count=" << consistencyStats.hit_count
+                    << " miss_count=" << (consistencyStats.eval_count - consistencyStats.hit_count)
+                    << " hit_rate=" << std::fixed << std::setprecision(3) << consistencyStats.hitRate()
+                    << " hit_streak=" << consistencyStats.hit_streak
+                    << " miss_streak=" << consistencyStats.miss_streak;
+                RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, oss.str());
+                if (diagnostics)
+                    diagnostics->logEventThrottle("degeneracy_consistency", 5.0, oss.str());
+            }
+
+            publishTwistMarkers(pubDegeneracyRaw, "raw", rawTwists, timeLaserInfoStamp,
+                                1.0, 0.0, 0.0,   1.0, 1.0, 0.0); // Red/Yellow
+            publishTwistMarkers(pubDegeneracyPCA, "pca", pcaBasis, timeLaserInfoStamp,
+                                0.0, 0.5, 1.0,   0.0, 1.0, 1.0); // Blue/Cyan
+            publishTwistMarkers(pubDegeneracyBasis, "basis", sparsifiedBasis, timeLaserInfoStamp,
+                                0.0, 1.0, 0.0,   1.0, 0.0, 1.0); // Green/Magenta
+            publishDegeneracyPaths(pubDegeneracyPaths, "degeneracy_paths", sparsifiedBasis, timeLaserInfoStamp);
         }
         
         transformUpdate();
