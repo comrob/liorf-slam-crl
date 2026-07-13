@@ -58,10 +58,12 @@ public:
     std::string getDegeneracyDirectionsString() const;
     std::string getFinalBasisString() const;
 
+
     std::vector<TwistVector> extractBasisFromTwists(
         const std::vector<TwistVector> &twists,
         pcl::PointCloud<PointType>::Ptr cloud_scan);
-    
+    std::vector<TwistVector> orthonormalizeBasis(const std::vector<TwistVector> &basis) const;
+
     std::vector<TwistVector> getRawTwists() const { return last_raw_twists; }
     std::vector<TwistVector> getPcaBasis() const { return last_pca_basis; }
     std::vector<TwistVector> getSparsifiedBasis() const { return last_sparsified_basis; }

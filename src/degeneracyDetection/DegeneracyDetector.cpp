@@ -172,28 +172,6 @@ float computeMedianLinearVelocity(
     return computeMedian(linear_velocity_magnitudes);
 }
 
-std::vector<TwistVector> orthonormalizeBasis(const std::vector<TwistVector> &basis)
-{
-    if (basis.empty()) return {};
-
-    std::vector<TwistVector> orthonormal_basis;
-    for (const auto &v : basis)
-    {
-        TwistVector u = v;
-        for (const auto &b : orthonormal_basis)
-        {
-            u -= (b.dot(u) / b.dot(b)) * b;
-        }
-
-        float norm = u.norm();
-        if (norm > 1e-6f)
-        {
-            orthonormal_basis.push_back(u / norm);
-        }
-    }
-    return orthonormal_basis;
-}
-
 std::vector<TwistVector> scaleBasis(const std::vector<TwistVector> &basis,
                                         const pcl::PointCloud<PointType>::Ptr &chunk_cloud,
                                         const float perturbation_amount = 1.0f)
@@ -283,6 +261,28 @@ std::vector<TwistVector> sparsifyBasisPreservingSubspace(const std::vector<Twist
 }
 
 } // End anonymous namespace
+
+std::vector<TwistVector> DegeneracyDetector::orthonormalizeBasis(const std::vector<TwistVector> &basis) const
+{
+    if (basis.empty()) return {};
+
+    std::vector<TwistVector> orthonormal_basis;
+    for (const auto &v : basis)
+    {
+        TwistVector u = v;
+        for (const auto &b : orthonormal_basis)
+        {
+            u -= (b.dot(u) / b.dot(b)) * b;
+        }
+
+        float norm = u.norm();
+        if (norm > 1e-6f)
+        {
+            orthonormal_basis.push_back(u / norm);
+        }
+    }
+    return orthonormal_basis;
+}
 
 DegeneracyDetector::DegeneracyDetector(const DegeneracyParams &parameters) : params(parameters), failed(false) {}
 

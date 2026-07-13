@@ -235,6 +235,19 @@ public:
 
     bool enableDegeneracyDetection;
 
+    // --- Additional odometry fusion parameters ---
+    string addOdomTopic;
+    double addOdomMinDeltaTime;
+    string addOdomDegeneracyMode; // "none", "identity", or "add_odom"
+
+    bool autoLookupLidarToAddOdomTf;
+    string addOdomFrame;
+    vector<double> addOdomExtRotV;
+    vector<double> addOdomExtTransV;
+    Eigen::Matrix3d addOdomExtRot;
+    Eigen::Vector3d addOdomExtTrans;
+
+
     std::string backend_type;
     lio::PKOConfig pko_config;
     lio::VoxelMapConfig voxel_map_config;
@@ -318,6 +331,7 @@ public:
         declare_parameter<bool>("save_dense_odom_trajectory", true);
         get_parameter("save_dense_odom_trajectory", save_dense_odom_trajectory);
 
+        
         // degeneracy detection and handling
         declare_parameter<bool>("enableDegeneracyDetection", false);
         get_parameter("enableDegeneracyDetection", enableDegeneracyDetection);
@@ -584,6 +598,37 @@ public:
 
         declare_parameter<float>("mapping.kdtree_lm.surfFeatureMinValidNum", 100.0f);
         get_parameter("mapping.kdtree_lm.surfFeatureMinValidNum", kdtree_lm_config.surfFeatureMinValidNum);
+
+        // additional odometry parameters
+        declare_parameter<string>("addOdomTopic", "/gnss/odom");
+        get_parameter("addOdomTopic", addOdomTopic);
+
+        declare_parameter<double>("addOdomMinDeltaTime", 0.1);
+        get_parameter("addOdomMinDeltaTime", addOdomMinDeltaTime);
+
+        declare_parameter<string>("addOdomDegeneracyMode", "add_odom");
+        get_parameter("addOdomDegeneracyMode", addOdomDegeneracyMode);
+
+        declare_parameter<bool>("autoLookupLidarToAddOdomTf", true);
+        get_parameter("autoLookupLidarToAddOdomTf", autoLookupLidarToAddOdomTf);
+
+        declare_parameter<string>("addOdomFrame", "");
+        get_parameter("addOdomFrame", addOdomFrame);
+
+        double id_rot[] = { 1.0, 0.0, 0.0,
+                            0.0, 1.0, 0.0,
+                            0.0, 0.0, 1.0 };
+        std::vector<double> default_rot(id_rot, std::end(id_rot));
+        declare_parameter("addOdomExtrinsicRot", default_rot);
+        get_parameter("addOdomExtrinsicRot", addOdomExtRotV);
+
+        double zero_trans[] = { 0.0, 0.0, 0.0 };
+        std::vector<double> default_trans(zero_trans, std::end(zero_trans));
+        declare_parameter("addOdomExtrinsicTrans", default_trans);
+        get_parameter("addOdomExtrinsicTrans", addOdomExtTransV);
+
+        addOdomExtRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(addOdomExtRotV.data(), 3, 3);
+        addOdomExtTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(addOdomExtTransV.data(), 3, 1);
         
 
         usleep(100);

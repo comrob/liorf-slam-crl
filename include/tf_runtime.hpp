@@ -33,7 +33,8 @@ public:
         std::vector<double> &extRotV,
         std::vector<double> &extRPYV,
         std::vector<double> &extTransV);
-
+    
+    std::shared_ptr<tf2_ros::Buffer> getTfBuffer() const { return tfBuffer_; }
     void noteImuMessageFrameId(const std::string &frameId);
     void noteLidarMessageFrameId(const std::string &frameId);
     bool ensureImuLidarExtrinsicsResolved(const char *context);

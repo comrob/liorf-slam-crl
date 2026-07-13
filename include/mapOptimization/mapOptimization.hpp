@@ -105,6 +105,7 @@ public:
     rclcpp::Subscription<liorf::msg::CloudInfo>::SharedPtr subCloud;
     rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr subGPS;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr subLoop;
+    rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subAddOdom;
 
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubLaserCloudSurround;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubLaserOdometryGlobal;
@@ -140,6 +141,7 @@ public:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyPCA;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyBasis;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyPaths;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubAddOdomCorrectionDirection;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
     bool T_EL_initialized = false;
@@ -320,4 +322,15 @@ public:
     void publishKeyframeDeskewedDownsampled(const pcl::PointCloud<PointType>::Ptr &cloud);
     void publishKeyframeDeskewedDownsampledDebug(const pcl::PointCloud<PointType>::Ptr &cloud);
     void publishFrames();
+
+    std::deque<nav_msgs::msg::Odometry> addOdomQueue;
+    std::mutex addOdomMutex;
+
+    bool addOdomTfResolved = false;
+    Eigen::Matrix4f T_add_to_lidar = Eigen::Matrix4f::Identity();
+
+    void addOdomHandler(const nav_msgs::msg::Odometry::SharedPtr msg);
+    bool resolveAddOdomExtrinsics(const std::string &msgFrameId);
+    void publishAddOdomDisplacementDebug(const Eigen::Affine3f &T_base_abs, const Eigen::Affine3f &T_raw_abs, const Eigen::Affine3f &T_proj_abs);
+    void applyDegeneracyStateOverride(double dt_scan);
 };

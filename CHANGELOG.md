@@ -20,6 +20,34 @@ Within one session, update that session entry in place instead of appending micr
 
 ---
 
+## 2026-07-13 - Additional odometry degeneracy aiding fixes and debug topics
+
+### Files changed
+
+- [include/utility.h](include/utility.h)
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [config/anymal.yaml](config/anymal.yaml)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Renamed feature surface from external odometry to additional odometry in code and configuration.
+- Fixed degeneracy override timing to use scan delta (`curTimeDiff`) instead of a value that could collapse to zero.
+- Corrected motion-frame conjugation for additional-odometry delta projection into LiDAR frame.
+- Updated correction logic to keep the optimized pose in non-degenerate directions and apply only the projected optimized-to-predicted displacement in degenerate directions.
+- Added correction-direction marker visualization topic for additional-odometry degeneracy correction:
+	- `liorf/mapping/additional_odom/correction_direction`
+- Added throttled runtime logging of inferred additional-odometry twist (linear/angular components and norms).
+- Added a staleness gate to skip outdated additional-odometry samples during correction.
+- Changed additional-odometry sample pairing to nearest timestamp matching against previous/current LiDAR stamps (instead of min-delta-time pairing).
+- Removed unused additional-odometry Odometry/Path debug topics to keep only direction-focused visualization.
+
+### Migration/runtime risk
+
+Low. Runtime behavior is unchanged for users already using `addOdom*` keys; old `extOdom*` keys are no longer supported.
+
 ## 2026-04-09 — Publish LiDAR-estimated GPS fix + ENU orientation
 
 ### Files changed

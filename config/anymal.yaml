@@ -14,6 +14,18 @@
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
 
     enableDegeneracyDetection: true
+    # Additional Odometry Degeneracy Aiding
+    addOdomTopic: "/t265/odom/sample"              # Additional odometry topic
+    addOdomMinDeltaTime: 0.1                # Minimum delta time (s) between samples
+    addOdomDegeneracyMode: "add_odom"      # Options: "none", "identity", "add_odom"
+
+    autoLookupLidarToAddOdomTf: false
+    addOdomFrame: ""                        # Inferred from message if empty
+    addOdomExtrinsicTrans: [0.0, 0.0, 0.0]
+    addOdomExtrinsicRot: [1.0, 0.0, 0.0,
+                          0.0, 1.0, 0.0,
+                          0.0, 0.0, 1.0]
+
 
     translationPredictionSource: constant_velocity
     maxTranslationPrediction: 5.0
