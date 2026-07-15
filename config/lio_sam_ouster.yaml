@@ -139,7 +139,7 @@
     # Algorithmic Configurations (Decoupled Architecture)
     # ==========================================================
     mapping:
-      backend_type: "voxel_pko" # Options: "voxel_pko" or "kdtree_lm"
+      backend_type: "kdtree_lm" # Options: "voxel_pko" or "kdtree_lm"
       
       # Parameters for VoxelMap + Probabilistic Kernel Optimizer
       voxel_pko:
