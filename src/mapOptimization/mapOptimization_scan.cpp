@@ -422,15 +422,17 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
 
     // 3. Build prediction and preserve optimized solution in non-degenerate directions.
     Eigen::Affine3f T_optimized = trans2Affine3f(transformTobeMapped);
-    Eigen::Affine3f T_predicted = incrementalOdometryAffineFront;
+
+    Eigen::Affine3f T_previous = incrementalOdometryAffineFront;
+    Eigen::Affine3f T_additional_odom = T_previous;
     if (hasAdditionalPrediction)
     {
         const Eigen::Matrix4f T_raw_corr = expMap(xi_lidar, static_cast<float>(dt_scan));
-        T_predicted = Eigen::Affine3f(incrementalOdometryAffineFront.matrix() * T_raw_corr);
+        T_additional_odom = Eigen::Affine3f(incrementalOdometryAffineFront.matrix() * T_raw_corr);
     }
 
     // 4. Project only the optimized-to-predicted displacement onto degenerate subspace.
-    const Eigen::Matrix4f T_diff = T_optimized.matrix().inverse() * T_predicted.matrix();
+    const Eigen::Matrix4f T_diff = T_optimized.matrix().inverse() * T_additional_odom.matrix();
     const TwistVector xi_diff = matrixToTwist(T_diff);
     const TwistVector xi_proj = projectOntoBasis(xi_diff, orthoBasis);
 
@@ -438,7 +440,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
     Eigen::Affine3f T_corrected(T_optimized.matrix() * T_proj_motion);
 
     // 5. Publish debug arrows/poses from optimized base to predicted and projected endpoints.
-    publishAddOdomDisplacementDebug(T_optimized, T_predicted, T_corrected);
+    publishAddOdomDisplacementDebug(T_optimized, T_additional_odom, T_corrected);
 
     float roll, pitch, yaw, x, y, z;
     pcl::getTranslationAndEulerAngles(T_corrected, x, y, z, roll, pitch, yaw);
