@@ -20,6 +20,26 @@ Within one session, update that session entry in place instead of appending micr
 
 ---
 
+## 2026-07-17 - Degeneracy perturbation map input and transform-update consistency fixes
+
+### Files changed
+
+- [include/degeneracyDetection/DegeneracyDetector.hpp](include/degeneracyDetection/DegeneracyDetector.hpp)
+- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Degeneracy perturbation detection now uses the active backend local map cloud instead of the current scan as the map proxy.
+- Added a safe fallback to use the scan cloud only when the backend local map is unavailable or empty.
+- Removed duplicate `transformUpdate()` invocation in scan-to-map optimization so IMU blending and constraints are applied once per frame.
+- Ensured `transformUpdate()` still executes on low-feature frames to keep pose constraints and incremental state updates consistent.
+- Updated the perturbation descriptive-number default threshold from `0.5` to `0.1` to match the reference defaults.
+
+### Migration/runtime risk
+
+Low to medium. Degeneracy detection sensitivity will increase due to the lower threshold, and map-based perturbation scaling may alter when degeneracy is triggered compared to prior behavior.
+
 ## 2026-07-13 - Additional odometry degeneracy aiding fixes and debug topics
 
 ### Files changed

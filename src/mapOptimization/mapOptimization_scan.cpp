@@ -226,10 +226,14 @@ void mapOptimization::scan2MapOptimization()
 
         if (enableDegeneracyDetection)
         {
+            auto localMapForDegeneracy = mappingBackend->getLocalMapCloud();
+            if (!localMapForDegeneracy || localMapForDegeneracy->empty())
+                localMapForDegeneracy = laserCloudSurfLastDS;
+
             degeneracyDetector->evalDegeneracyPerturbation(
                 transformTobeMapped,
                 laserCloudSurfLastDS,
-                laserCloudSurfLastDS, // Pass the scan itself to prevent the segfault
+                localMapForDegeneracy,
                 mappingBackend);
 
             const auto perturbationTwists = degeneracyDetector->getTwistsPerturbationsDegeneracy();
@@ -292,8 +296,6 @@ void mapOptimization::scan2MapOptimization()
             }
         }
         
-        transformUpdate();
-
         if (true)
         {
             std::ostringstream oss;
@@ -307,14 +309,14 @@ void mapOptimization::scan2MapOptimization()
                 << " surf_matched=" << metrics.matched_count;
             diagnostics->logEventThrottle("scan2map_iter_summary", 1.0, oss.str());
         }
-
-        TicToc t_transformUpdate;
-        transformUpdate();
-        if (diagnostics)
-            diagnostics->recordSlice("scan2MapOptimization.transformUpdate", t_transformUpdate.toc());
     } else {
         RCLCPP_WARN(get_logger(), "Not enough features! Only %d planar features available.", laserCloudSurfLastDSNum);
     }
+
+    TicToc t_transformUpdate;
+    transformUpdate();
+    if (diagnostics)
+        diagnostics->recordSlice("scan2MapOptimization.transformUpdate", t_transformUpdate.toc());
 }
 
 void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
