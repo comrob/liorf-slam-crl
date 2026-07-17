@@ -77,6 +77,9 @@ private:
     uint32_t surfStageMatchedCount = 0;
 
     AlignmentTrace lastAlignmentTrace;
+    JacobianDegeneracyInfo lastJacobianDegeneracyInfo;
+    bool computeJacobianDegeneracyThisRun = true;
+    float jacobianDegeneracyThresholdThisRun = 1e-3f;
 
     static constexpr uint8_t SURF_DEBUG_ACCEPTED = 1;
     static constexpr uint8_t SURF_DEBUG_REJECTED_NEIGHBOR_COUNT = 2;

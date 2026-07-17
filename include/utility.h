@@ -245,6 +245,9 @@ public:
 
     bool enableDegeneracyDetection;
     PerturbationDegeneracyDetectionParameters perturbationDegeneracyDetection;
+    bool computeJacobianDegeneracy;
+    bool logJacobianDegeneracy;
+    float jacobianDegeneracyThreshold;
 
     // --- Additional odometry fusion parameters ---
     string addOdomTopic;
@@ -346,6 +349,15 @@ public:
         // degeneracy detection and handling
         declare_parameter<bool>("enableDegeneracyDetection", false);
         get_parameter("enableDegeneracyDetection", enableDegeneracyDetection);
+
+        declare_parameter<bool>("liorf.degeneracyDetection.jacobianBased.compute", true);
+        get_parameter("liorf.degeneracyDetection.jacobianBased.compute", computeJacobianDegeneracy);
+
+        declare_parameter<bool>("liorf.degeneracyDetection.jacobianBased.log", true);
+        get_parameter("liorf.degeneracyDetection.jacobianBased.log", logJacobianDegeneracy);
+
+        declare_parameter<float>("liorf.degeneracyDetection.jacobianBased.threshold", 1e-3f);
+        get_parameter("liorf.degeneracyDetection.jacobianBased.threshold", jacobianDegeneracyThreshold);
 
         declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.n_multiplier", 3.0f);
         get_parameter("liorf.degeneracyDetection.perturbationBased.n_multiplier", perturbationDegeneracyDetection.n_multiplier);

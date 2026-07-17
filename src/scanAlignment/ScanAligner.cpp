@@ -52,6 +52,8 @@ lio::AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &
 {
     lio::AlignmentMetrics metrics;
     auto scanSize = scan->points.size();
+    lastJacobianDegeneracyInfo = lio::JacobianDegeneracyInfo();
+    lastJacobianDegeneracyInfo.reason = "not_evaluated";
 
     // Re-introduce the safety check:
     if (scanSize > laserCloudOriSurfVec.size()) {
@@ -75,8 +77,14 @@ lio::AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &
     std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.end(), SURF_DEBUG_NOT_OPTIMIZED);
 
     int maxIters = 30;
+    computeJacobianDegeneracyThisRun = true;
+    jacobianDegeneracyThresholdThisRun = 1e-3f;
     if (overrideConfig.has_value() && overrideConfig->max_iterations.has_value())
         maxIters = std::max(1, *overrideConfig->max_iterations);
+    if (overrideConfig.has_value() && overrideConfig->compute_jacobian_degeneracy.has_value())
+        computeJacobianDegeneracyThisRun = *overrideConfig->compute_jacobian_degeneracy;
+    if (overrideConfig.has_value() && overrideConfig->jacobian_degeneracy_threshold.has_value())
+        jacobianDegeneracyThresholdThisRun = std::max(0.0f, *overrideConfig->jacobian_degeneracy_threshold);
     for (int iterCount = 0; iterCount < maxIters; iterCount++)
     {
         metrics.iterations++;
@@ -106,6 +114,7 @@ lio::AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &
     metrics.plane_valid_count = surfStagePlaneValidCount;
     metrics.matched_count = surfStageMatchedCount;
     metrics.is_degenerate = this->isDegenerate;
+    metrics.jacobian_degeneracy = lastJacobianDegeneracyInfo;
 
     for(int i=0; i<6; ++i) transformIn[i] = currentTransform[i];
     
@@ -298,7 +307,12 @@ bool ScanAligner::LMOptimization(int iterCount)
     float crz = cos(currentTransform[0]);
 
     int laserCloudSelNum = laserCloudOri->size();
+    lastJacobianDegeneracyInfo.selected_correspondences = laserCloudSelNum;
     if (laserCloudSelNum < 50) {
+        lastJacobianDegeneracyInfo.computed = false;
+        lastJacobianDegeneracyInfo.is_degenerate = false;
+        lastJacobianDegeneracyInfo.reason = "insufficient_correspondences";
+        isDegenerate = false;
         return false;
     }
 
@@ -346,6 +360,16 @@ bool ScanAligner::LMOptimization(int iterCount)
     cv::solve(matAtA, matAtB, matX, cv::DECOMP_QR);
 
     if (iterCount == 0) {
+        if (!computeJacobianDegeneracyThisRun)
+        {
+            lastJacobianDegeneracyInfo.computed = false;
+            lastJacobianDegeneracyInfo.is_degenerate = false;
+            lastJacobianDegeneracyInfo.reason = "disabled_by_config";
+            isDegenerate = false;
+            matP = cv::Mat::eye(6, 6, CV_32F);
+        }
+        else
+        {
         cv::Mat matE(1, 6, CV_32F, cv::Scalar::all(0));
         cv::Mat matV(6, 6, CV_32F, cv::Scalar::all(0));
         cv::Mat matV2(6, 6, CV_32F, cv::Scalar::all(0));
@@ -354,18 +378,39 @@ bool ScanAligner::LMOptimization(int iterCount)
         matV.copyTo(matV2);
 
         isDegenerate = false;
-        float eignThre[6] = {1e-3f, 1e-3f, 1e-3f, 1e-3f, 1e-3f, 1e-3f};
+        float eignThre[6] = {
+            jacobianDegeneracyThresholdThisRun,
+            jacobianDegeneracyThresholdThisRun,
+            jacobianDegeneracyThresholdThisRun,
+            jacobianDegeneracyThresholdThisRun,
+            jacobianDegeneracyThresholdThisRun,
+            jacobianDegeneracyThresholdThisRun
+        };
+        for (int i = 0; i < 6; ++i)
+            lastJacobianDegeneracyInfo.thresholds[i] = eignThre[i];
+
         for (int i = 5; i >= 0; i--) {
             if (matE.at<float>(0, i) < eignThre[i]) {
                 for (int j = 0; j < 6; j++) {
                     matV2.at<float>(i, j) = 0;
                 }
+                lastJacobianDegeneracyInfo.zeroed_modes[i] = 1;
                 isDegenerate = true;
             } else {
                 break;
             }
         }
         matP = matV.inv() * matV2;
+
+        lastJacobianDegeneracyInfo.computed = true;
+        lastJacobianDegeneracyInfo.is_degenerate = isDegenerate;
+        lastJacobianDegeneracyInfo.reason = "computed";
+        for (int i = 0; i < 6; ++i)
+            lastJacobianDegeneracyInfo.eigenvalues[i] = matE.at<float>(0, i);
+        for (int r = 0; r < 6; ++r)
+            for (int c = 0; c < 6; ++c)
+                lastJacobianDegeneracyInfo.eigenvectors[r * 6 + c] = matV.at<float>(r, c);
+        }
     }
 
     if (isDegenerate)

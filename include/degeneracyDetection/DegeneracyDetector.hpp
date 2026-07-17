@@ -18,20 +18,6 @@ struct DegeneracyParams {
     bool verbose = false;
 };
 
-struct DegeneracyConsistencyStats {
-    uint64_t eval_count = 0;
-    uint64_t hit_count = 0;
-    uint64_t hit_streak = 0;
-    uint64_t miss_streak = 0;
-    bool detected = false;
-
-    double hitRate() const {
-        if (eval_count == 0)
-            return 0.0;
-        return static_cast<double>(hit_count) / static_cast<double>(eval_count);
-    }
-};
-
 class DegeneracyDetector {
 private:
     DegeneracyParams params;
@@ -48,7 +34,6 @@ private:
     std::vector<Eigen::Matrix4f> last_perturbed_poses;
     std::vector<Eigen::Matrix4f> last_aligned_poses;
     std::vector<std::vector<Eigen::Matrix4f>> last_optimization_paths;
-    DegeneracyConsistencyStats consistency_stats;
 
 public:
     DegeneracyDetector(const DegeneracyParams &parameters = DegeneracyParams());
@@ -79,8 +64,7 @@ public:
     const std::vector<Eigen::Matrix4f>& getAlignedPoses() const { return last_aligned_poses; }
     const std::vector<std::vector<Eigen::Matrix4f>>& getOptimizationPaths() const { return last_optimization_paths; }
 
-    bool isDegeneracyDetected() const { return consistency_stats.detected; }
-    const DegeneracyConsistencyStats& getConsistencyStats() const { return consistency_stats; }
+    bool isDegeneracyDetected() const { return !last_sparsified_basis.empty(); }
 
     bool isFailed() const { return failed; }
     std::string getFailReason() const { return fail_reason; }

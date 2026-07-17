@@ -14,10 +14,13 @@
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
 
     enableDegeneracyDetection: true
+    liorf.degeneracyDetection.jacobianBased.compute: true
+    liorf.degeneracyDetection.jacobianBased.log: true
+    liorf.degeneracyDetection.jacobianBased.threshold: 200.0
     liorf.degeneracyDetection.perturbationBased.n_multiplier: 3.0
     liorf.degeneracyDetection.perturbationBased.max_icp_steps: 4
     liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg: 6.0
-    liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold: 0.1
+    liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold: 0.3
     liorf.degeneracyDetection.perturbationBased.eigen_value_threshold: 0.05
     liorf.degeneracyDetection.perturbationBased.verbose: false
     # Additional Odometry Degeneracy Aiding
@@ -84,7 +87,7 @@
     downsampleRate: 1                           
     point_filter_num: 5                         
     lidarMinRange: 1.0                          
-    lidarMaxRange: 10.0                       
+    lidarMaxRange: 100.0                       
 
     # IMU Settings
     imuType: 0                                  

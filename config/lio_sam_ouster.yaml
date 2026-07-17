@@ -17,6 +17,9 @@
     fast_turn_max_angular_speed_rad_s: 0.5
 
     enableDegeneracyDetection: false
+    liorf.degeneracyDetection.jacobianBased.compute: true
+    liorf.degeneracyDetection.jacobianBased.log: true
+    liorf.degeneracyDetection.jacobianBased.threshold: 0.001
     liorf.degeneracyDetection.perturbationBased.n_multiplier: 3.0
     liorf.degeneracyDetection.perturbationBased.max_icp_steps: 4
     liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg: 6.0

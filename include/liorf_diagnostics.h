@@ -18,6 +18,7 @@
 #include <algorithm>
 
 #include <Eigen/Core>
+#include "scanAlignment/IMappingBackend.hpp"
 
 class LiorfDiagnostics
 {
@@ -60,6 +61,18 @@ public:
         const std::string &module_name, 
         bool is_degenerate, 
         const std::vector<Eigen::Matrix<float, 6, 1>> &twists);
+    void recordJacobianDegeneracyTelemetry(
+        double stamp_sec,
+        const std::string &module_name,
+        const lio::JacobianDegeneracyInfo &info);
+    void recordPerturbationDegeneracyTelemetry(
+        double stamp_sec,
+        bool detected,
+        size_t raw_twist_count,
+        size_t pca_basis_count,
+        size_t sparsified_basis_count,
+        bool failed,
+        const std::string &fail_reason);
     double getLastPredictionDelta() const;
 
 private:
@@ -80,6 +93,8 @@ private:
     std::ofstream time_deltas_csv_;
     std::ofstream frame_metrics_csv_;
     std::ofstream degeneracy_metrics_csv_;
+    std::ofstream jacobian_degeneracy_metrics_csv_;
+    std::ofstream perturbation_degeneracy_metrics_csv_;
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr telemetry_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr timing_stats_pub_;

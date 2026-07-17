@@ -34,10 +34,14 @@ Within one session, update that session entry in place instead of appending micr
 - [include/scanAlignment/VoxelPkoBackend.hpp](include/scanAlignment/VoxelPkoBackend.hpp)
 - [src/scanAlignment/VoxelPkoBackend.cpp](src/scanAlignment/VoxelPkoBackend.cpp)
 - [include/utility.h](include/utility.h)
+- [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
+- [src/liorf_diagnostics.cpp](src/liorf_diagnostics.cpp)
 - [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
 - [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
 - [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
 - [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+- [scripts/plot_jacobian_perturbation_degeneracy.py](scripts/plot_jacobian_perturbation_degeneracy.py)
+- [scripts/pyproject.toml](scripts/pyproject.toml)
 - [config/anymal.yaml](config/anymal.yaml)
 - [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
 - [rviz/mapping.rviz](rviz/mapping.rviz)
@@ -70,6 +74,23 @@ Within one session, update that session entry in place instead of appending micr
 - Added configurable perturbation aligner iteration budget (`max_icp_steps`).
 - Refactored mapping backend alignment API to accept an optional per-call override config object, removing degeneracy-specific branching from optimizer internals.
 - Added backend config cloning flow (`getAlignmentConfig()` -> local override edits -> `align(..., overrideConfig)`) so temporary behavior changes are explicit and stateless.
+- Added full Jacobian-based degeneracy telemetry payload (eigenvalues/eigenvectors/thresholds/zeroed-modes/correspondence count) to alignment metrics for both KD-tree and voxel aligners.
+- Added exactly two Jacobian switches:
+	- `liorf.degeneracyDetection.jacobianBased.compute`
+	- `liorf.degeneracyDetection.jacobianBased.log`
+- Added configurable Jacobian degeneracy eigenvalue threshold parameter:
+	- `liorf.degeneracyDetection.jacobianBased.threshold`
+- Jacobian telemetry is now emitted every scan (including non-degenerate and non-computed cases with reason codes) in parallel with perturbation-based diagnostics.
+- Added persistent Jacobian telemetry output file:
+	- `jacobian_degeneracy_metrics.csv`
+- Removed the consistency-stats concept from perturbation degeneracy detection and scan-loop diagnostics.
+- Added per-scan perturbation degeneracy telemetry output file for deterministic correlation with Jacobian signals:
+	- `perturbation_degeneracy_metrics.csv`
+- Added plotting utility to visualize all 6 Jacobian eigenvalues and perturbation detection timeline from run logs:
+	- `scripts/plot_jacobian_perturbation_degeneracy.py`
+- Enhanced Jacobian/perturbation plotting utility with log-scale eigenvalue visualization (default) and optional dedicated smallest-eigenvalue subplot for high dynamic-range diagnostics.
+- Plotting utility now also always exports a standalone smallest-eigenvalue figure (`jacobian_min_eigen_plot.png`) for quick focused inspection.
+- Visualization now includes a max/min eigenvalue proportion plot (`max eigenvalue / min eigenvalue`) to highlight Jacobian conditioning trends.
 - Exposed perturbation-based degeneracy parameters as ROS parameters under:
 	- `liorf.degeneracyDetection.perturbationBased.n_multiplier`
 	- `liorf.degeneracyDetection.perturbationBased.max_icp_steps`

@@ -221,8 +221,19 @@ void mapOptimization::scan2MapOptimization()
 
     if (laserCloudSurfLastDSNum > 30)
     {
-        lio::AlignmentMetrics metrics = mappingBackend->align(laserCloudSurfLastDS, transformTobeMapped);
+        auto alignOverrideConfig = mappingBackend->getAlignmentConfig();
+        alignOverrideConfig.compute_jacobian_degeneracy = computeJacobianDegeneracy;
+        alignOverrideConfig.jacobian_degeneracy_threshold = jacobianDegeneracyThreshold;
+        lio::AlignmentMetrics metrics = mappingBackend->align(laserCloudSurfLastDS, transformTobeMapped, alignOverrideConfig);
         this->isDegenerate = metrics.is_degenerate;
+
+        if (logJacobianDegeneracy && diagnostics)
+        {
+            diagnostics->recordJacobianDegeneracyTelemetry(
+                timeLaserInfoCur,
+                backend_type,
+                metrics.jacobian_degeneracy);
+        }
 
         if (enableDegeneracyDetection)
         {
@@ -249,12 +260,23 @@ void mapOptimization::scan2MapOptimization()
             const auto rawTwists = degeneracyDetector->getRawTwists();
             const auto pcaBasis = degeneracyDetector->getPcaBasis();
             const auto sparsifiedBasis = degeneracyDetector->getSparsifiedBasis();
-            const auto consistencyStats = degeneracyDetector->getConsistencyStats();
-            const bool degeneracyDetected = consistencyStats.detected;
+            const bool degeneracyDetected = degeneracyDetector->isDegeneracyDetected();
             
             // LOG THE FAILURE REASON IF ANY
             if (degeneracyDetector->isFailed()) {
                 RCLCPP_WARN(this->get_logger(), "Degeneracy failed: %s", degeneracyDetector->getFailReason().c_str());
+            }
+
+            if (diagnostics)
+            {
+                diagnostics->recordPerturbationDegeneracyTelemetry(
+                    timeLaserInfoCur,
+                    degeneracyDetected,
+                    rawTwists.size(),
+                    pcaBasis.size(),
+                    sparsifiedBasis.size(),
+                    degeneracyDetector->isFailed(),
+                    degeneracyDetector->getFailReason());
             }
 
             if (degeneracyDetected)
@@ -263,29 +285,10 @@ void mapOptimization::scan2MapOptimization()
                 oss << "[DEGENERACY_DETECTED]"
                     << " raw=" << rawTwists.size()
                     << " pca=" << pcaBasis.size()
-                    << " basis=" << sparsifiedBasis.size()
-                    << " eval_count=" << consistencyStats.eval_count
-                    << " hit_count=" << consistencyStats.hit_count
-                    << " hit_rate=" << std::fixed << std::setprecision(3) << consistencyStats.hitRate()
-                    << " hit_streak=" << consistencyStats.hit_streak;
+                    << " basis=" << sparsifiedBasis.size();
                 RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, oss.str());
                 if (diagnostics)
                     diagnostics->logEventThrottle("degeneracy_detected", 1.0, oss.str());
-            }
-
-            {
-                std::ostringstream oss;
-                oss << "[DEGENERACY_CONSISTENCY]"
-                    << " detected=" << (degeneracyDetected ? 1 : 0)
-                    << " eval_count=" << consistencyStats.eval_count
-                    << " hit_count=" << consistencyStats.hit_count
-                    << " miss_count=" << (consistencyStats.eval_count - consistencyStats.hit_count)
-                    << " hit_rate=" << std::fixed << std::setprecision(3) << consistencyStats.hitRate()
-                    << " hit_streak=" << consistencyStats.hit_streak
-                    << " miss_streak=" << consistencyStats.miss_streak;
-                RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 5000, oss.str());
-                if (diagnostics)
-                    diagnostics->logEventThrottle("degeneracy_consistency", 5.0, oss.str());
             }
 
             publishTwistMarkers(pubDegeneracyRaw, "raw", rawTwists, timeLaserInfoStamp,
@@ -296,7 +299,7 @@ void mapOptimization::scan2MapOptimization()
                                 0.0, 1.0, 0.0,   1.0, 0.0, 1.0); // Green/Magenta
             publishDegeneracyPaths(pubDegeneracyPaths, "degeneracy_paths", sparsifiedBasis, timeLaserInfoStamp);
 
-            if (consistencyStats.detected)
+            if (degeneracyDetected)
             {
                 const double dt_scan = (curTimeDiff > 1e-5) ? curTimeDiff : 0.1;
                 applyDegeneracyStateOverride(dt_scan);

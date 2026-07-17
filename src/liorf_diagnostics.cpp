@@ -51,6 +51,14 @@ LiorfDiagnostics::LiorfDiagnostics(
         degeneracy_metrics_csv_.open((run_dir_ / "degeneracy_metrics.csv").string(), std::ios::out);
         if (degeneracy_metrics_csv_.is_open())
             degeneracy_metrics_csv_ << "stamp_sec,module_name,is_degenerate,twists\n";
+
+        jacobian_degeneracy_metrics_csv_.open((run_dir_ / "jacobian_degeneracy_metrics.csv").string(), std::ios::out);
+        if (jacobian_degeneracy_metrics_csv_.is_open())
+            jacobian_degeneracy_metrics_csv_ << "stamp_sec,module_name,computed,is_degenerate,selected_correspondences,reason,eigenvalues,thresholds,zeroed_modes,eigenvectors\n";
+
+        perturbation_degeneracy_metrics_csv_.open((run_dir_ / "perturbation_degeneracy_metrics.csv").string(), std::ios::out);
+        if (perturbation_degeneracy_metrics_csv_.is_open())
+            perturbation_degeneracy_metrics_csv_ << "stamp_sec,detected,raw_twist_count,pca_basis_count,sparsified_basis_count,failed,fail_reason\n";
     }
 
     if (timing_stats_.is_open())
@@ -96,6 +104,10 @@ LiorfDiagnostics::~LiorfDiagnostics()
         time_deltas_csv_.flush();
     if (write_files_master_ && frame_metrics_csv_.is_open())
         frame_metrics_csv_.flush();
+    if (write_files_master_ && jacobian_degeneracy_metrics_csv_.is_open())
+        jacobian_degeneracy_metrics_csv_.flush();
+    if (write_files_master_ && perturbation_degeneracy_metrics_csv_.is_open())
+        perturbation_degeneracy_metrics_csv_.flush();
 }
 
 void LiorfDiagnostics::markLidarUpdate(const rclcpp::Time &stamp)
@@ -317,6 +329,120 @@ void LiorfDiagnostics::recordDegeneracyTelemetry(
             if (i < twists.size() - 1) ss << ",";
         }
         ss << "]}";
+        msg.data = ss.str();
+        degeneracy_metrics_pub_->publish(msg);
+    }
+}
+
+void LiorfDiagnostics::recordJacobianDegeneracyTelemetry(
+    double stamp_sec,
+    const std::string &module_name,
+    const lio::JacobianDegeneracyInfo &info)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    auto serializeFloatArray = [](const auto &arr) {
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(6);
+        for (size_t i = 0; i < arr.size(); ++i)
+        {
+            ss << arr[i];
+            if (i + 1 < arr.size()) ss << "|";
+        }
+        return ss.str();
+    };
+
+    auto serializeIntArray = [](const auto &arr) {
+        std::ostringstream ss;
+        for (size_t i = 0; i < arr.size(); ++i)
+        {
+            ss << arr[i];
+            if (i + 1 < arr.size()) ss << "|";
+        }
+        return ss.str();
+    };
+
+    const std::string eigenvalues = serializeFloatArray(info.eigenvalues);
+    const std::string thresholds = serializeFloatArray(info.thresholds);
+    const std::string zeroedModes = serializeIntArray(info.zeroed_modes);
+    const std::string eigenvectors = serializeFloatArray(info.eigenvectors);
+
+    if (jacobian_degeneracy_metrics_csv_.is_open())
+    {
+        jacobian_degeneracy_metrics_csv_ << std::fixed << std::setprecision(6)
+                                         << stamp_sec << ","
+                                         << module_name << ","
+                                         << (info.computed ? 1 : 0) << ","
+                                         << (info.is_degenerate ? 1 : 0) << ","
+                                         << info.selected_correspondences << ","
+                                         << "\"" << info.reason << "\"," 
+                                         << "\"" << eigenvalues << "\"," 
+                                         << "\"" << thresholds << "\"," 
+                                         << "\"" << zeroedModes << "\"," 
+                                         << "\"" << eigenvectors << "\"\n";
+    }
+
+    if (degeneracy_metrics_pub_)
+    {
+        std_msgs::msg::String msg;
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(6);
+        ss << "{";
+        ss << "\"stamp_sec\":" << stamp_sec << ",";
+        ss << "\"module\":\"" << module_name << "\",";
+        ss << "\"type\":\"jacobian\",";
+        ss << "\"computed\":" << (info.computed ? "true" : "false") << ",";
+        ss << "\"is_degenerate\":" << (info.is_degenerate ? "true" : "false") << ",";
+        ss << "\"selected_correspondences\":" << info.selected_correspondences << ",";
+        ss << "\"reason\":\"" << info.reason << "\",";
+        ss << "\"eigenvalues\":\"" << eigenvalues << "\",";
+        ss << "\"thresholds\":\"" << thresholds << "\",";
+        ss << "\"zeroed_modes\":\"" << zeroedModes << "\",";
+        ss << "\"eigenvectors\":\"" << eigenvectors << "\"";
+        ss << "}";
+        msg.data = ss.str();
+        degeneracy_metrics_pub_->publish(msg);
+    }
+}
+
+void LiorfDiagnostics::recordPerturbationDegeneracyTelemetry(
+    double stamp_sec,
+    bool detected,
+    size_t raw_twist_count,
+    size_t pca_basis_count,
+    size_t sparsified_basis_count,
+    bool failed,
+    const std::string &fail_reason)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (perturbation_degeneracy_metrics_csv_.is_open())
+    {
+        perturbation_degeneracy_metrics_csv_ << std::fixed << std::setprecision(6)
+                                             << stamp_sec << ","
+                                             << (detected ? 1 : 0) << ","
+                                             << raw_twist_count << ","
+                                             << pca_basis_count << ","
+                                             << sparsified_basis_count << ","
+                                             << (failed ? 1 : 0) << ","
+                                             << "\"" << fail_reason << "\"\n";
+    }
+
+    if (degeneracy_metrics_pub_)
+    {
+        std_msgs::msg::String msg;
+        std::ostringstream ss;
+        ss << std::fixed << std::setprecision(6);
+        ss << "{";
+        ss << "\"stamp_sec\":" << stamp_sec << ",";
+        ss << "\"type\":\"perturbation\",";
+        ss << "\"detected\":" << (detected ? "true" : "false") << ",";
+        ss << "\"raw_twist_count\":" << raw_twist_count << ",";
+        ss << "\"pca_basis_count\":" << pca_basis_count << ",";
+        ss << "\"sparsified_basis_count\":" << sparsified_basis_count << ",";
+        ss << "\"failed\":" << (failed ? "true" : "false") << ",";
+        ss << "\"fail_reason\":\"" << fail_reason << "\"";
+        ss << "}";
         msg.data = ss.str();
         degeneracy_metrics_pub_->publish(msg);
     }

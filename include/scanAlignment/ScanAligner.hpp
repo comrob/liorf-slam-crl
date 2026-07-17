@@ -64,6 +64,9 @@ private:
     uint32_t surfStageKnnPassCount = 0;
     uint32_t surfStagePlaneValidCount = 0;
     uint32_t surfStageMatchedCount = 0;
+    lio::JacobianDegeneracyInfo lastJacobianDegeneracyInfo;
+    bool computeJacobianDegeneracyThisRun = true;
+    float jacobianDegeneracyThresholdThisRun = 1e-3f;
 
     bool isDegenerate = false;
     cv::Mat matP; // MUST be cv::Mat to match your CPP file

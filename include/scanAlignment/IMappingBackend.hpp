@@ -5,13 +5,34 @@
 #include <Eigen/Core>
 #include <functional>
 #include <optional>
+#include <array>
+#include <string>
 
 #include "export/map_types.hpp"
 
 namespace lio {
 
+struct JacobianDegeneracyInfo {
+    bool computed = false;
+    bool is_degenerate = false;
+    int selected_correspondences = 0;
+    std::string reason;
+    std::array<float, 6> eigenvalues = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+    std::array<float, 6> thresholds = {0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+    std::array<int, 6> zeroed_modes = {0, 0, 0, 0, 0, 0};
+    // Row-major 6x6 matrix. For cv::eigen this stores eigenvectors row-wise.
+    std::array<float, 36> eigenvectors = {
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f,
+        0.f, 0.f, 0.f, 0.f, 0.f, 0.f
+    };
+};
+
 // Shared alignment metrics across different backends.
-// Note: If this is also defined in ScanAligner.hpp, you may want to move it here 
+// Note: If this is also defined in ScanAligner.hpp, you may want to move it here
 // to avoid duplicate definitions.
 struct AlignmentMetrics {
     double optimization_ms = 0.0;
@@ -24,6 +45,7 @@ struct AlignmentMetrics {
     uint32_t plane_valid_count = 0;
     uint32_t matched_count = 0;
     bool is_degenerate = false;
+    JacobianDegeneracyInfo jacobian_degeneracy;
 };
 
 struct AlignmentTrace {
@@ -36,6 +58,8 @@ struct AlignmentTrace {
 struct AlignmentOverrideConfig {
     std::optional<int> max_iterations;
     std::optional<bool> capture_trace;
+    std::optional<bool> compute_jacobian_degeneracy;
+    std::optional<float> jacobian_degeneracy_threshold;
 };
 
 class IMappingBackend {
