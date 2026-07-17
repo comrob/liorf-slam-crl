@@ -43,6 +43,9 @@ private:
     std::vector<TwistVector> last_pca_basis;
     std::vector<TwistVector> last_sparsified_basis;
     std::vector<pcl::PointCloud<PointType>::Ptr> last_perturbed_scans;
+    std::vector<pcl::PointCloud<PointType>::Ptr> last_aligned_scans;
+    std::vector<Eigen::Matrix4f> last_perturbed_poses;
+    std::vector<Eigen::Matrix4f> last_aligned_poses;
     DegeneracyConsistencyStats consistency_stats;
 
 public:
@@ -69,6 +72,9 @@ public:
     std::vector<TwistVector> getPcaBasis() const { return last_pca_basis; }
     std::vector<TwistVector> getSparsifiedBasis() const { return last_sparsified_basis; }
     const std::vector<pcl::PointCloud<PointType>::Ptr>& getPerturbedScans() const { return last_perturbed_scans; }
+    const std::vector<pcl::PointCloud<PointType>::Ptr>& getAlignedScans() const { return last_aligned_scans; }
+    const std::vector<Eigen::Matrix4f>& getPerturbedPoses() const { return last_perturbed_poses; }
+    const std::vector<Eigen::Matrix4f>& getAlignedPoses() const { return last_aligned_poses; }
 
     bool isDegeneracyDetected() const { return consistency_stats.detected; }
     const DegeneracyConsistencyStats& getConsistencyStats() const { return consistency_stats; }

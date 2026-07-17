@@ -6,6 +6,7 @@ Panels:
       Expanded:
         - /Global Options1
         - /Base1
+        - /Degeneracy Perturbation Debug1
         - /Additional Odometry1
       Splitter Ratio: 0.39970502257347107
     Tree Height: 903
@@ -27,12 +28,12 @@ Visualization Manager:
           Reference Frame: lidar_link
           Value: false
         - Class: rviz_default_plugins/Axes
-          Enabled: true
+          Enabled: false
           Length: 5
           Name: map
           Radius: 0.4000000059604645
           Reference Frame: map
-          Value: true
+          Value: false
       Enabled: true
       Name: Base
     - Class: rviz_common/Group
@@ -294,7 +295,8 @@ Visualization Manager:
           Enabled: true
           Name: degPaths
           Namespaces:
-            {}
+            degeneracy_paths_path_line_0: true
+            degeneracy_paths_pose_0: true
           Topic:
             Depth: 5
             Durability Policy: Volatile
@@ -304,6 +306,220 @@ Visualization Manager:
           Value: true
       Enabled: true
       Name: degDetection
+    - Class: rviz_common/Group
+      Displays:
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 255; 110; 110
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: Perturbed 0 (red)
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.10000000149011612
+          Style: Flat Squares
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/degeneracy/perturbed_scan_0
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: false
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 120; 255; 140
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: Perturbed 1 (green)
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.10000000149011612
+          Style: Flat Squares
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/degeneracy/perturbed_scan_1
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: false
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 110; 150; 255
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: Perturbed 2 (blue)
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.10000000149011612
+          Style: Flat Squares
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/degeneracy/perturbed_scan_2
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: false
+        - Alpha: 0.550000011920929
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 255; 196; 196
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: Aligned 0 (light red)
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.07000000029802322
+          Style: Flat Squares
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/degeneracy/aligned_scan_0
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Alpha: 0.550000011920929
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 196; 255; 210
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: Aligned 1 (light green)
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.07000000029802322
+          Style: Flat Squares
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/degeneracy/aligned_scan_1
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Alpha: 0.550000011920929
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 196; 215; 255
+          Color Transformer: FlatColor
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 4096
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: Aligned 2 (light blue)
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.07000000029802322
+          Style: Flat Squares
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/degeneracy/aligned_scan_2
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: Displacements
+          Namespaces:
+            degeneracy_displacements: true
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/degeneracy/displacements
+          Value: true
+      Enabled: true
+      Name: Degeneracy Perturbation Debug
     - Class: rviz_default_plugins/TF
       Enabled: true
       Filter (blacklist): ""
@@ -561,8 +777,6 @@ Visualization Manager:
           Value: true
         top_shell:
           Value: true
-        walk_to_pose_goal:
-          Value: true
         wide_angle_camera_front_camera:
           Value: true
         wide_angle_camera_front_camera_parent:
@@ -689,8 +903,6 @@ Visualization Manager:
                     {}
                 lidar_link:
                   {}
-                walk_to_pose_goal:
-                  {}
             map_ned:
               {}
       Update Interval: 0
@@ -796,7 +1008,7 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
-      Enabled: true
+      Enabled: false
       Name: Prediction Debug
     - Class: rviz_common/Group
       Displays:
@@ -884,7 +1096,8 @@ Visualization Manager:
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        {}
+        add_odom_correction_projected: true
+        add_odom_correction_raw: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -935,7 +1148,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 6.2196431159973145
+      Distance: 36.673065185546875
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -950,10 +1163,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 0.7497968673706055
       Target Frame: lidar_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.402222156524658
+      Yaw: 1.7290352582931519
     Saved: ~
 Window Geometry:
   Displays:
@@ -965,5 +1178,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 1139
-  X: 781
-  Y: 32
+  X: 645
+  Y: 39

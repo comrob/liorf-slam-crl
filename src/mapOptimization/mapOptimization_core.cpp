@@ -82,6 +82,16 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubDegeneracyPerturbedScan0 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/perturbed_scan_0", QosPolicy(history_policy, reliability_policy));
     pubDegeneracyPerturbedScan1 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/perturbed_scan_1", QosPolicy(history_policy, reliability_policy));
     pubDegeneracyPerturbedScan2 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/perturbed_scan_2", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedScan0 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/aligned_scan_0", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedScan1 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/aligned_scan_1", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedScan2 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/aligned_scan_2", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedPose0 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/perturbed_pose_0", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedPose1 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/perturbed_pose_1", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedPose2 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/perturbed_pose_2", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedPose0 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/aligned_pose_0", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedPose1 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/aligned_pose_1", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedPose2 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/aligned_pose_2", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyDisplacements = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy/displacements", QosPolicy(history_policy, reliability_policy));
     pubAddOdomCorrectionDirection = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/additional_odom/correction_direction", QosPolicy(history_policy, reliability_policy));
 
     pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));

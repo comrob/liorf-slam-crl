@@ -180,29 +180,146 @@ void mapOptimization::publishPredictionDebugClouds(const pcl::PointCloud<PointTy
     }
 }
 
-void mapOptimization::publishPerturbedScans(
+void mapOptimization::publishPerturbationDebugProducts(
     const std::vector<pcl::PointCloud<PointType>::Ptr>& perturbedScans,
+    const std::vector<pcl::PointCloud<PointType>::Ptr>& alignedScans,
+    const std::vector<Eigen::Matrix4f>& perturbedPoses,
+    const std::vector<Eigen::Matrix4f>& alignedPoses,
     const rclcpp::Time& stamp)
 {
-    if (perturbedScans.empty())
+    if (perturbedScans.empty() && alignedScans.empty() && perturbedPoses.empty() && alignedPoses.empty())
         return;
 
-    const std::array<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr, 3> pubs = {
+    const std::array<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr, 3> perturbedCloudPubs = {
         pubDegeneracyPerturbedScan0,
         pubDegeneracyPerturbedScan1,
         pubDegeneracyPerturbedScan2
     };
 
-    for (size_t i = 0; i < pubs.size(); ++i)
+    const std::array<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr, 3> alignedCloudPubs = {
+        pubDegeneracyAlignedScan0,
+        pubDegeneracyAlignedScan1,
+        pubDegeneracyAlignedScan2
+    };
+
+    for (size_t i = 0; i < perturbedCloudPubs.size(); ++i)
     {
-        if (!pubs[i] || pubs[i]->get_subscription_count() == 0)
+        if (!perturbedCloudPubs[i] || perturbedCloudPubs[i]->get_subscription_count() == 0)
             continue;
 
         if (i >= perturbedScans.size() || !perturbedScans[i] || perturbedScans[i]->empty())
             continue;
 
-        publishCloud(pubs[i], perturbedScans[i], stamp, mapFrameLocal);
+        publishCloud(perturbedCloudPubs[i], perturbedScans[i], stamp, mapFrameLocal);
     }
+
+    for (size_t i = 0; i < alignedCloudPubs.size(); ++i)
+    {
+        if (!alignedCloudPubs[i] || alignedCloudPubs[i]->get_subscription_count() == 0)
+            continue;
+
+        if (i >= alignedScans.size() || !alignedScans[i] || alignedScans[i]->empty())
+            continue;
+
+        publishCloud(alignedCloudPubs[i], alignedScans[i], stamp, mapFrameLocal);
+    }
+
+    const std::array<rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr, 3> perturbedPosePubs = {
+        pubDegeneracyPerturbedPose0,
+        pubDegeneracyPerturbedPose1,
+        pubDegeneracyPerturbedPose2
+    };
+
+    const std::array<rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr, 3> alignedPosePubs = {
+        pubDegeneracyAlignedPose0,
+        pubDegeneracyAlignedPose1,
+        pubDegeneracyAlignedPose2
+    };
+
+    const auto makePoseStamped = [this, &stamp](const Eigen::Matrix4f &poseMatrix) {
+        geometry_msgs::msg::PoseStamped msg;
+        msg.header.stamp = stamp;
+        msg.header.frame_id = mapFrameLocal;
+
+        Eigen::Affine3f affine(poseMatrix);
+        msg.pose.position.x = affine.translation().x();
+        msg.pose.position.y = affine.translation().y();
+        msg.pose.position.z = affine.translation().z();
+
+        Eigen::Quaternionf q(affine.rotation());
+        msg.pose.orientation.x = q.x();
+        msg.pose.orientation.y = q.y();
+        msg.pose.orientation.z = q.z();
+        msg.pose.orientation.w = q.w();
+        return msg;
+    };
+
+    for (size_t i = 0; i < perturbedPosePubs.size(); ++i)
+    {
+        if (!perturbedPosePubs[i] || perturbedPosePubs[i]->get_subscription_count() == 0)
+            continue;
+        if (i >= perturbedPoses.size())
+            continue;
+        perturbedPosePubs[i]->publish(makePoseStamped(perturbedPoses[i]));
+    }
+
+    for (size_t i = 0; i < alignedPosePubs.size(); ++i)
+    {
+        if (!alignedPosePubs[i] || alignedPosePubs[i]->get_subscription_count() == 0)
+            continue;
+        if (i >= alignedPoses.size())
+            continue;
+        alignedPosePubs[i]->publish(makePoseStamped(alignedPoses[i]));
+    }
+
+    if (!pubDegeneracyDisplacements || pubDegeneracyDisplacements->get_subscription_count() == 0)
+        return;
+
+    visualization_msgs::msg::MarkerArray markerArray;
+    visualization_msgs::msg::Marker clearAll;
+    clearAll.action = visualization_msgs::msg::Marker::DELETEALL;
+    markerArray.markers.push_back(clearAll);
+
+    const std::array<std::array<float, 3>, 3> colors = {{
+        {{1.0f, 0.2f, 0.2f}},
+        {{0.2f, 1.0f, 0.2f}},
+        {{0.2f, 0.5f, 1.0f}}
+    }};
+
+    const size_t markerCount = std::min<size_t>(3, std::min(perturbedPoses.size(), alignedPoses.size()));
+    for (size_t i = 0; i < markerCount; ++i)
+    {
+        visualization_msgs::msg::Marker marker;
+        marker.header.stamp = stamp;
+        marker.header.frame_id = mapFrameLocal;
+        marker.ns = "degeneracy_displacements";
+        marker.id = static_cast<int>(i);
+        marker.type = visualization_msgs::msg::Marker::ARROW;
+        marker.action = visualization_msgs::msg::Marker::ADD;
+        marker.scale.x = 0.08;
+        marker.scale.y = 0.16;
+        marker.scale.z = 0.16;
+        marker.color.r = colors[i][0];
+        marker.color.g = colors[i][1];
+        marker.color.b = colors[i][2];
+        marker.color.a = 0.95f;
+
+        geometry_msgs::msg::Point pFrom;
+        pFrom.x = perturbedPoses[i](0, 3);
+        pFrom.y = perturbedPoses[i](1, 3);
+        pFrom.z = perturbedPoses[i](2, 3);
+
+        geometry_msgs::msg::Point pTo;
+        pTo.x = alignedPoses[i](0, 3);
+        pTo.y = alignedPoses[i](1, 3);
+        pTo.z = alignedPoses[i](2, 3);
+
+        marker.points.push_back(pFrom);
+        marker.points.push_back(pTo);
+        markerArray.markers.push_back(marker);
+    }
+
+    pubDegeneracyDisplacements->publish(markerArray);
 }
 
 void mapOptimization::publishMapOptimizationTFs(const rclcpp::Time &stamp)

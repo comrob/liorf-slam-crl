@@ -33,6 +33,7 @@ Within one session, update that session entry in place instead of appending micr
 - [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
 - [config/anymal.yaml](config/anymal.yaml)
 - [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [rviz/mapping.rviz](rviz/mapping.rviz)
 - [CHANGELOG.md](CHANGELOG.md)
 
 ### Behavior impact
@@ -46,6 +47,16 @@ Within one session, update that session entry in place instead of appending micr
 	- `liorf/mapping/degeneracy/perturbed_scan_0`
 	- `liorf/mapping/degeneracy/perturbed_scan_1`
 	- `liorf/mapping/degeneracy/perturbed_scan_2`
+- Added publication of three aligned (post-alignment) perturbation scan point clouds:
+	- `liorf/mapping/degeneracy/aligned_scan_0`
+	- `liorf/mapping/degeneracy/aligned_scan_1`
+	- `liorf/mapping/degeneracy/aligned_scan_2`
+- Added per-hypothesis pose outputs as `PoseStamped` for both perturbed and aligned hypotheses:
+	- `liorf/mapping/degeneracy/perturbed_pose_{0,1,2}`
+	- `liorf/mapping/degeneracy/aligned_pose_{0,1,2}`
+- Added displacement arrows (`MarkerArray`) from perturbed pose to aligned pose:
+	- `liorf/mapping/degeneracy/displacements`
+- Bootstrapped RViz with a dedicated `Degeneracy Perturbation Debug` group that overlays the three perturbed clouds, three aligned clouds, and displacement markers with distinct colors and default enabled visibility.
 - Exposed perturbation-based degeneracy parameters as ROS parameters under:
 	- `liorf.degeneracyDetection.perturbationBased.n_multiplier`
 	- `liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg`

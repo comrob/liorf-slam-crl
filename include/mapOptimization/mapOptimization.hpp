@@ -144,6 +144,16 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubDegeneracyPerturbedScan0;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubDegeneracyPerturbedScan1;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubDegeneracyPerturbedScan2;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubDegeneracyAlignedScan0;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubDegeneracyAlignedScan1;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubDegeneracyAlignedScan2;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubDegeneracyPerturbedPose0;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubDegeneracyPerturbedPose1;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubDegeneracyPerturbedPose2;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubDegeneracyAlignedPose0;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubDegeneracyAlignedPose1;
+    rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubDegeneracyAlignedPose2;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyDisplacements;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubAddOdomCorrectionDirection;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
@@ -294,8 +304,11 @@ public:
         const std::string& ns,
         const std::vector<TwistVector>& twists,
         const rclcpp::Time& stamp);
-    void publishPerturbedScans(
+    void publishPerturbationDebugProducts(
         const std::vector<pcl::PointCloud<PointType>::Ptr>& perturbedScans,
+        const std::vector<pcl::PointCloud<PointType>::Ptr>& alignedScans,
+        const std::vector<Eigen::Matrix4f>& perturbedPoses,
+        const std::vector<Eigen::Matrix4f>& alignedPoses,
         const rclcpp::Time& stamp);
 
     void loopClosureThread();
