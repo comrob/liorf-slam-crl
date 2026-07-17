@@ -79,6 +79,9 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubDegeneracyPCA = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_pca", 1);
     pubDegeneracyBasis = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_basis", 1);
     pubDegeneracyPaths = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_paths", 1);
+    pubDegeneracyPerturbedScan0 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/perturbed_scan_0", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedScan1 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/perturbed_scan_1", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedScan2 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/perturbed_scan_2", QosPolicy(history_policy, reliability_policy));
     pubAddOdomCorrectionDirection = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/additional_odom/correction_direction", QosPolicy(history_policy, reliability_policy));
 
     pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
@@ -138,7 +141,12 @@ void mapOptimization::allocateMemory()
         mappingBackend = std::make_shared<lio::KdTreeLmBackend>(kdtree_lm_config);
     }
 
-    DegeneracyParams dParams; // Optionally bind these to your ParamServer variables
+    DegeneracyParams dParams;
+    dParams.n_multiplier = degeneracyPerturbationNMultiplier;
+    dParams.max_perturbation_angle_deg = degeneracyPerturbationMaxAngleDeg;
+    dParams.descriptive_number_threshold = degeneracyPerturbationDescriptiveThreshold;
+    dParams.eigen_value_threshold = degeneracyPerturbationEigenValueThreshold;
+    dParams.verbose = degeneracyPerturbationVerbose;
     degeneracyDetector = std::make_shared<DegeneracyDetector>(dParams);
 
     temporal_filter_state = 0;

@@ -296,6 +296,7 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
     fail_reason = "";
     twists_perturbations_degeneration.clear();
     descriptive_numbers.clear();
+    last_perturbed_scans.clear();
 
     float median_distance = calculateMedianDistance(cloud_map, params.verbose);
     if(median_distance < 1e-5f) median_distance = 1.0f; // Prevent div zero
@@ -319,9 +320,14 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
         poseEulerArray[3], poseEulerArray[4], poseEulerArray[5],
         poseEulerArray[0], poseEulerArray[1], poseEulerArray[2]).matrix();
 
-    for (const auto &perturbation : perturbations)
+    for (size_t perturbationIdx = 0; perturbationIdx < perturbations.size(); ++perturbationIdx)
     {
+        const auto &perturbation = perturbations[perturbationIdx];
         Eigen::Matrix4f posePerturbedMat = poseOptimizedMat * expMap(perturbation);
+
+        pcl::PointCloud<PointType>::Ptr cloud_perturbed_map(new pcl::PointCloud<PointType>);
+        pcl::transformPointCloud(*cloud_scan, *cloud_perturbed_map, posePerturbedMat);
+        last_perturbed_scans.push_back(cloud_perturbed_map);
         
         float posePerturbedEuler[6];
         pcl::getTranslationAndEulerAngles(Eigen::Affine3f(posePerturbedMat), 

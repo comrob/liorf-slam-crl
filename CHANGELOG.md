@@ -25,7 +25,14 @@ Within one session, update that session entry in place instead of appending micr
 ### Files changed
 
 - [include/degeneracyDetection/DegeneracyDetector.hpp](include/degeneracyDetection/DegeneracyDetector.hpp)
+- [src/degeneracyDetection/DegeneracyDetector.cpp](src/degeneracyDetection/DegeneracyDetector.cpp)
+- [include/utility.h](include/utility.h)
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
 - [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+- [config/anymal.yaml](config/anymal.yaml)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
 - [CHANGELOG.md](CHANGELOG.md)
 
 ### Behavior impact
@@ -35,6 +42,16 @@ Within one session, update that session entry in place instead of appending micr
 - Removed duplicate `transformUpdate()` invocation in scan-to-map optimization so IMU blending and constraints are applied once per frame.
 - Ensured `transformUpdate()` still executes on low-feature frames to keep pose constraints and incremental state updates consistent.
 - Updated the perturbation descriptive-number default threshold from `0.5` to `0.1` to match the reference defaults.
+- Added publication of three perturbation scan point clouds for degeneracy debugging:
+	- `liorf/mapping/degeneracy/perturbed_scan_0`
+	- `liorf/mapping/degeneracy/perturbed_scan_1`
+	- `liorf/mapping/degeneracy/perturbed_scan_2`
+- Exposed perturbation-based degeneracy parameters as ROS parameters under:
+	- `liorf.degeneracyDetection.perturbationBased.n_multiplier`
+	- `liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg`
+	- `liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold`
+	- `liorf.degeneracyDetection.perturbationBased.eigen_value_threshold`
+	- `liorf.degeneracyDetection.perturbationBased.verbose`
 
 ### Migration/runtime risk
 

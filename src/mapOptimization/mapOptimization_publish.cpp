@@ -180,6 +180,31 @@ void mapOptimization::publishPredictionDebugClouds(const pcl::PointCloud<PointTy
     }
 }
 
+void mapOptimization::publishPerturbedScans(
+    const std::vector<pcl::PointCloud<PointType>::Ptr>& perturbedScans,
+    const rclcpp::Time& stamp)
+{
+    if (perturbedScans.empty())
+        return;
+
+    const std::array<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr, 3> pubs = {
+        pubDegeneracyPerturbedScan0,
+        pubDegeneracyPerturbedScan1,
+        pubDegeneracyPerturbedScan2
+    };
+
+    for (size_t i = 0; i < pubs.size(); ++i)
+    {
+        if (!pubs[i] || pubs[i]->get_subscription_count() == 0)
+            continue;
+
+        if (i >= perturbedScans.size() || !perturbedScans[i] || perturbedScans[i]->empty())
+            continue;
+
+        publishCloud(pubs[i], perturbedScans[i], stamp, mapFrameLocal);
+    }
+}
+
 void mapOptimization::publishMapOptimizationTFs(const rclcpp::Time &stamp)
 {
     tf2::TimePoint time_point = tf2_ros::fromRclcpp(stamp);

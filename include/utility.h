@@ -234,6 +234,11 @@ public:
     float globalMapVisualizationLeafSize;
 
     bool enableDegeneracyDetection;
+    float degeneracyPerturbationNMultiplier;
+    float degeneracyPerturbationMaxAngleDeg;
+    float degeneracyPerturbationDescriptiveThreshold;
+    float degeneracyPerturbationEigenValueThreshold;
+    bool degeneracyPerturbationVerbose;
 
     // --- Additional odometry fusion parameters ---
     string addOdomTopic;
@@ -335,6 +340,21 @@ public:
         // degeneracy detection and handling
         declare_parameter<bool>("enableDegeneracyDetection", false);
         get_parameter("enableDegeneracyDetection", enableDegeneracyDetection);
+
+        declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.n_multiplier", 3.0f);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.n_multiplier", degeneracyPerturbationNMultiplier);
+
+        declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg", 6.0f);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg", degeneracyPerturbationMaxAngleDeg);
+
+        declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold", 0.1f);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold", degeneracyPerturbationDescriptiveThreshold);
+
+        declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.eigen_value_threshold", 0.05f);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.eigen_value_threshold", degeneracyPerturbationEigenValueThreshold);
+
+        declare_parameter<bool>("liorf.degeneracyDetection.perturbationBased.verbose", false);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.verbose", degeneracyPerturbationVerbose);
 
         std::string sensorStr;
         declare_parameter<string>("sensor", " ");

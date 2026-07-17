@@ -141,6 +141,9 @@ public:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyPCA;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyBasis;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyPaths;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubDegeneracyPerturbedScan0;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubDegeneracyPerturbedScan1;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubDegeneracyPerturbedScan2;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubAddOdomCorrectionDirection;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
@@ -290,6 +293,9 @@ public:
         rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pub,
         const std::string& ns,
         const std::vector<TwistVector>& twists,
+        const rclcpp::Time& stamp);
+    void publishPerturbedScans(
+        const std::vector<pcl::PointCloud<PointType>::Ptr>& perturbedScans,
         const rclcpp::Time& stamp);
 
     void loopClosureThread();

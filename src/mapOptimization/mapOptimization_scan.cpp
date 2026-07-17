@@ -235,6 +235,7 @@ void mapOptimization::scan2MapOptimization()
                 laserCloudSurfLastDS,
                 localMapForDegeneracy,
                 mappingBackend);
+            publishPerturbedScans(degeneracyDetector->getPerturbedScans(), timeLaserInfoStamp);
 
             const auto perturbationTwists = degeneracyDetector->getTwistsPerturbationsDegeneracy();
             degeneracyDetector->extractBasisFromTwists(perturbationTwists, laserCloudSurfLastDS);
