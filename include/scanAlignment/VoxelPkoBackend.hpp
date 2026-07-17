@@ -38,6 +38,7 @@ public:
 
     const std::vector<int>& getDebugCodes() const override;
     pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const override;
+    const AlignmentTrace& getLastAlignmentTrace() const override { return lastAlignmentTrace; }
 
 private:
     std::shared_ptr<lio::VoxelMap> voxelMap;
@@ -47,6 +48,8 @@ private:
     
     // Secondary aligner used strictly for degeneracy checks
     std::shared_ptr<ScanAligner> scanAlignerDegeneracy;
+
+    AlignmentTrace lastAlignmentTrace;
     
     float localMapTruncationRadius;
 };

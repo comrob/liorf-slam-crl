@@ -92,6 +92,7 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubDegeneracyAlignedPose1 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/aligned_pose_1", QosPolicy(history_policy, reliability_policy));
     pubDegeneracyAlignedPose2 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/aligned_pose_2", QosPolicy(history_policy, reliability_policy));
     pubDegeneracyDisplacements = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy/displacements", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyOptimizationPaths = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy/optimization_paths", QosPolicy(history_policy, reliability_policy));
     pubAddOdomCorrectionDirection = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/additional_odom/correction_direction", QosPolicy(history_policy, reliability_policy));
 
     pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));

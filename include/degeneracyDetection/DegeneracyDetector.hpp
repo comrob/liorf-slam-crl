@@ -46,6 +46,7 @@ private:
     std::vector<pcl::PointCloud<PointType>::Ptr> last_aligned_scans;
     std::vector<Eigen::Matrix4f> last_perturbed_poses;
     std::vector<Eigen::Matrix4f> last_aligned_poses;
+    std::vector<std::vector<Eigen::Matrix4f>> last_optimization_paths;
     DegeneracyConsistencyStats consistency_stats;
 
 public:
@@ -75,6 +76,7 @@ public:
     const std::vector<pcl::PointCloud<PointType>::Ptr>& getAlignedScans() const { return last_aligned_scans; }
     const std::vector<Eigen::Matrix4f>& getPerturbedPoses() const { return last_perturbed_poses; }
     const std::vector<Eigen::Matrix4f>& getAlignedPoses() const { return last_aligned_poses; }
+    const std::vector<std::vector<Eigen::Matrix4f>>& getOptimizationPaths() const { return last_optimization_paths; }
 
     bool isDegeneracyDetected() const { return consistency_stats.detected; }
     const DegeneracyConsistencyStats& getConsistencyStats() const { return consistency_stats; }

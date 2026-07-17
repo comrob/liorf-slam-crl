@@ -185,6 +185,7 @@ void mapOptimization::publishPerturbationDebugProducts(
     const std::vector<pcl::PointCloud<PointType>::Ptr>& alignedScans,
     const std::vector<Eigen::Matrix4f>& perturbedPoses,
     const std::vector<Eigen::Matrix4f>& alignedPoses,
+    const std::vector<std::vector<Eigen::Matrix4f>>& optimizationPaths,
     const rclcpp::Time& stamp)
 {
     if (perturbedScans.empty() && alignedScans.empty() && perturbedPoses.empty() && alignedPoses.empty())
@@ -272,9 +273,6 @@ void mapOptimization::publishPerturbationDebugProducts(
         alignedPosePubs[i]->publish(makePoseStamped(alignedPoses[i]));
     }
 
-    if (!pubDegeneracyDisplacements || pubDegeneracyDisplacements->get_subscription_count() == 0)
-        return;
-
     visualization_msgs::msg::MarkerArray markerArray;
     visualization_msgs::msg::Marker clearAll;
     clearAll.action = visualization_msgs::msg::Marker::DELETEALL;
@@ -287,39 +285,115 @@ void mapOptimization::publishPerturbationDebugProducts(
     }};
 
     const size_t markerCount = std::min<size_t>(3, std::min(perturbedPoses.size(), alignedPoses.size()));
-    for (size_t i = 0; i < markerCount; ++i)
+    if (pubDegeneracyDisplacements && pubDegeneracyDisplacements->get_subscription_count() > 0)
     {
-        visualization_msgs::msg::Marker marker;
-        marker.header.stamp = stamp;
-        marker.header.frame_id = mapFrameLocal;
-        marker.ns = "degeneracy_displacements";
-        marker.id = static_cast<int>(i);
-        marker.type = visualization_msgs::msg::Marker::ARROW;
-        marker.action = visualization_msgs::msg::Marker::ADD;
-        marker.scale.x = 0.08;
-        marker.scale.y = 0.16;
-        marker.scale.z = 0.16;
-        marker.color.r = colors[i][0];
-        marker.color.g = colors[i][1];
-        marker.color.b = colors[i][2];
-        marker.color.a = 0.95f;
+        for (size_t i = 0; i < markerCount; ++i)
+        {
+            visualization_msgs::msg::Marker marker;
+            marker.header.stamp = stamp;
+            marker.header.frame_id = mapFrameLocal;
+            marker.ns = "degeneracy_displacements";
+            marker.id = static_cast<int>(i);
+            marker.type = visualization_msgs::msg::Marker::ARROW;
+            marker.action = visualization_msgs::msg::Marker::ADD;
+            marker.scale.x = 0.08;
+            marker.scale.y = 0.16;
+            marker.scale.z = 0.16;
+            marker.color.r = colors[i][0];
+            marker.color.g = colors[i][1];
+            marker.color.b = colors[i][2];
+            marker.color.a = 0.95f;
 
-        geometry_msgs::msg::Point pFrom;
-        pFrom.x = perturbedPoses[i](0, 3);
-        pFrom.y = perturbedPoses[i](1, 3);
-        pFrom.z = perturbedPoses[i](2, 3);
+            geometry_msgs::msg::Point pFrom;
+            pFrom.x = perturbedPoses[i](0, 3);
+            pFrom.y = perturbedPoses[i](1, 3);
+            pFrom.z = perturbedPoses[i](2, 3);
 
-        geometry_msgs::msg::Point pTo;
-        pTo.x = alignedPoses[i](0, 3);
-        pTo.y = alignedPoses[i](1, 3);
-        pTo.z = alignedPoses[i](2, 3);
+            geometry_msgs::msg::Point pTo;
+            pTo.x = alignedPoses[i](0, 3);
+            pTo.y = alignedPoses[i](1, 3);
+            pTo.z = alignedPoses[i](2, 3);
 
-        marker.points.push_back(pFrom);
-        marker.points.push_back(pTo);
-        markerArray.markers.push_back(marker);
+            marker.points.push_back(pFrom);
+            marker.points.push_back(pTo);
+            markerArray.markers.push_back(marker);
+        }
+        pubDegeneracyDisplacements->publish(markerArray);
     }
 
-    pubDegeneracyDisplacements->publish(markerArray);
+    if (!pubDegeneracyOptimizationPaths || pubDegeneracyOptimizationPaths->get_subscription_count() == 0)
+        return;
+
+    visualization_msgs::msg::MarkerArray pathMarkers;
+    visualization_msgs::msg::Marker clearPaths;
+    clearPaths.action = visualization_msgs::msg::Marker::DELETEALL;
+    pathMarkers.markers.push_back(clearPaths);
+
+    int markerId = 0;
+    const size_t pathCount = std::min<size_t>(3, optimizationPaths.size());
+    for (size_t i = 0; i < pathCount; ++i)
+    {
+        const auto &path = optimizationPaths[i];
+        if (path.size() < 2)
+            continue;
+
+        visualization_msgs::msg::Marker line;
+        line.header.stamp = stamp;
+        line.header.frame_id = mapFrameLocal;
+        line.ns = "degeneracy_optimization_path";
+        line.id = markerId++;
+        line.type = visualization_msgs::msg::Marker::LINE_STRIP;
+        line.action = visualization_msgs::msg::Marker::ADD;
+        line.scale.x = 0.04;
+        line.color.r = colors[i][0];
+        line.color.g = colors[i][1];
+        line.color.b = colors[i][2];
+        line.color.a = 0.9f;
+
+        for (const auto &pose : path)
+        {
+            geometry_msgs::msg::Point p;
+            p.x = pose(0, 3);
+            p.y = pose(1, 3);
+            p.z = pose(2, 3);
+            line.points.push_back(p);
+        }
+        pathMarkers.markers.push_back(line);
+
+        for (size_t step = 0; step + 1 < path.size(); ++step)
+        {
+            visualization_msgs::msg::Marker stepArrow;
+            stepArrow.header.stamp = stamp;
+            stepArrow.header.frame_id = mapFrameLocal;
+            stepArrow.ns = "degeneracy_optimization_steps";
+            stepArrow.id = markerId++;
+            stepArrow.type = visualization_msgs::msg::Marker::ARROW;
+            stepArrow.action = visualization_msgs::msg::Marker::ADD;
+            stepArrow.scale.x = 0.02;
+            stepArrow.scale.y = 0.05;
+            stepArrow.scale.z = 0.05;
+            stepArrow.color.r = colors[i][0];
+            stepArrow.color.g = colors[i][1];
+            stepArrow.color.b = colors[i][2];
+            stepArrow.color.a = 0.8f;
+
+            geometry_msgs::msg::Point pFrom;
+            pFrom.x = path[step](0, 3);
+            pFrom.y = path[step](1, 3);
+            pFrom.z = path[step](2, 3);
+
+            geometry_msgs::msg::Point pTo;
+            pTo.x = path[step + 1](0, 3);
+            pTo.y = path[step + 1](1, 3);
+            pTo.z = path[step + 1](2, 3);
+
+            stepArrow.points.push_back(pFrom);
+            stepArrow.points.push_back(pTo);
+            pathMarkers.markers.push_back(stepArrow);
+        }
+    }
+
+    pubDegeneracyOptimizationPaths->publish(pathMarkers);
 }
 
 void mapOptimization::publishMapOptimizationTFs(const rclcpp::Time &stamp)

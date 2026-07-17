@@ -240,6 +240,7 @@ void mapOptimization::scan2MapOptimization()
                 degeneracyDetector->getAlignedScans(),
                 degeneracyDetector->getPerturbedPoses(),
                 degeneracyDetector->getAlignedPoses(),
+                degeneracyDetector->getOptimizationPaths(),
                 timeLaserInfoStamp);
 
             const auto perturbationTwists = degeneracyDetector->getTwistsPerturbationsDegeneracy();

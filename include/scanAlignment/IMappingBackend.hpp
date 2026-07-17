@@ -25,6 +25,11 @@ struct AlignmentMetrics {
     bool is_degenerate = false;
 };
 
+struct AlignmentTrace {
+    std::vector<Eigen::Matrix4f> iteration_poses;
+    bool converged = false;
+};
+
 class IMappingBackend {
 public:
     virtual ~IMappingBackend() = default;
@@ -85,6 +90,12 @@ public:
      * @brief Returns the original downsampled laser cloud from the last alignment.
      */
     virtual pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const = 0;
+
+    /**
+     * @brief Returns the trace of optimization poses from the last align() call.
+     * Default behavior for backends without trace support can return an empty trace.
+     */
+    virtual const AlignmentTrace& getLastAlignmentTrace() const = 0;
 };
 
 } // namespace lio

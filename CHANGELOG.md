@@ -26,6 +26,9 @@ Within one session, update that session entry in place instead of appending micr
 
 - [include/degeneracyDetection/DegeneracyDetector.hpp](include/degeneracyDetection/DegeneracyDetector.hpp)
 - [src/degeneracyDetection/DegeneracyDetector.cpp](src/degeneracyDetection/DegeneracyDetector.cpp)
+- [include/scanAlignment/IMappingBackend.hpp](include/scanAlignment/IMappingBackend.hpp)
+- [include/scanAlignment/KdTreeLmBackend.hpp](include/scanAlignment/KdTreeLmBackend.hpp)
+- [src/scanAlignment/KdTreeLmBackend.cpp](src/scanAlignment/KdTreeLmBackend.cpp)
 - [include/utility.h](include/utility.h)
 - [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
 - [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
@@ -56,6 +59,8 @@ Within one session, update that session entry in place instead of appending micr
 	- `liorf/mapping/degeneracy/aligned_pose_{0,1,2}`
 - Added displacement arrows (`MarkerArray`) from perturbed pose to aligned pose:
 	- `liorf/mapping/degeneracy/displacements`
+- Added per-perturbation optimization path visualization from LM iteration traces using colored line strips plus small step arrows:
+	- `liorf/mapping/degeneracy/optimization_paths`
 - Bootstrapped RViz with a dedicated `Degeneracy Perturbation Debug` group that overlays the three perturbed clouds, three aligned clouds, and displacement markers with distinct colors and default enabled visibility.
 - Exposed perturbation-based degeneracy parameters as ROS parameters under:
 	- `liorf.degeneracyDetection.perturbationBased.n_multiplier`

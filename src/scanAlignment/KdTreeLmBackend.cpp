@@ -105,6 +105,9 @@ AlignmentMetrics KdTreeLmBackend::align(const pcl::PointCloud<PointType>::Ptr &s
 {
     auto scanSize = scan->points.size();
 
+    lastAlignmentTrace.iteration_poses.clear();
+    lastAlignmentTrace.converged = false;
+
     // Re-introduce the safety check:
     if (scanSize > laserCloudOriSurfVec.size()) {
         laserCloudOriSurfVec.resize(scanSize);
@@ -147,8 +150,23 @@ AlignmentMetrics KdTreeLmBackend::align(const pcl::PointCloud<PointType>::Ptr &s
         TicToc t_lmOptimization;
         if (LMOptimization(iterCount, transformIn) == true)
         {
+            if (isDegeneracyRun)
+            {
+                Eigen::Matrix4f poseStep = pcl::getTransformation(
+                    transformIn[3], transformIn[4], transformIn[5],
+                    transformIn[0], transformIn[1], transformIn[2]).matrix();
+                lastAlignmentTrace.iteration_poses.push_back(poseStep);
+            }
+            lastAlignmentTrace.converged = true;
             metrics.lm_optimization_ms += t_lmOptimization.toc();
             break;              
+        }
+        if (isDegeneracyRun)
+        {
+            Eigen::Matrix4f poseStep = pcl::getTransformation(
+                transformIn[3], transformIn[4], transformIn[5],
+                transformIn[0], transformIn[1], transformIn[2]).matrix();
+            lastAlignmentTrace.iteration_poses.push_back(poseStep);
         }
         metrics.lm_optimization_ms += t_lmOptimization.toc();
     }

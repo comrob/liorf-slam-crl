@@ -518,6 +518,19 @@ Visualization Manager:
             Reliability Policy: Reliable
             Value: /liorf/mapping/degeneracy/displacements
           Value: true
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: Optimization Paths
+          Namespaces:
+            degeneracy_optimization_path: true
+            degeneracy_optimization_steps: true
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/degeneracy/optimization_paths
+          Value: true
       Enabled: true
       Name: Degeneracy Perturbation Debug
     - Class: rviz_default_plugins/TF

@@ -154,6 +154,7 @@ public:
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubDegeneracyAlignedPose1;
     rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr pubDegeneracyAlignedPose2;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyDisplacements;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyOptimizationPaths;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubAddOdomCorrectionDirection;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
@@ -309,6 +310,7 @@ public:
         const std::vector<pcl::PointCloud<PointType>::Ptr>& alignedScans,
         const std::vector<Eigen::Matrix4f>& perturbedPoses,
         const std::vector<Eigen::Matrix4f>& alignedPoses,
+        const std::vector<std::vector<Eigen::Matrix4f>>& optimizationPaths,
         const rclcpp::Time& stamp);
 
     void loopClosureThread();

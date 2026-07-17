@@ -300,6 +300,7 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
     last_aligned_scans.clear();
     last_perturbed_poses.clear();
     last_aligned_poses.clear();
+    last_optimization_paths.clear();
 
     float median_distance = calculateMedianDistance(cloud_map, params.verbose);
     if(median_distance < 1e-5f) median_distance = 1.0f; // Prevent div zero
@@ -339,6 +340,12 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
             posePerturbedEuler[0], posePerturbedEuler[1], posePerturbedEuler[2]);
 
         lio::AlignmentMetrics metrics = mappingBackend->align(cloud_scan, posePerturbedEuler, true);
+        const auto &trace = mappingBackend->getLastAlignmentTrace();
+        std::vector<Eigen::Matrix4f> optimizationPath;
+        optimizationPath.reserve(trace.iteration_poses.size() + 2);
+        optimizationPath.push_back(posePerturbedMat);
+        for (const auto &poseStep : trace.iteration_poses)
+            optimizationPath.push_back(poseStep);
         
         if (metrics.final_correspondences < 50) { 
             failed = true;
@@ -347,6 +354,8 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
                           ", Perturbation step: " + std::to_string(perturbation_step);
             last_aligned_poses.push_back(posePerturbedMat);
             last_aligned_scans.push_back(cloud_perturbed_map);
+            optimizationPath.push_back(posePerturbedMat);
+            last_optimization_paths.push_back(std::move(optimizationPath));
             continue;
         }
 
@@ -360,6 +369,8 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
         pcl::PointCloud<PointType>::Ptr cloud_aligned_map(new pcl::PointCloud<PointType>);
         pcl::transformPointCloud(*cloud_scan, *cloud_aligned_map, matRecovered);
         last_aligned_scans.push_back(cloud_aligned_map);
+        optimizationPath.push_back(matRecovered);
+        last_optimization_paths.push_back(std::move(optimizationPath));
 
         pcl::PointCloud<PointType>::Ptr cloud_perturbated(new pcl::PointCloud<PointType>);
         pcl::transformPointCloud(*cloud_scan, *cloud_perturbated, expMap(perturbation));

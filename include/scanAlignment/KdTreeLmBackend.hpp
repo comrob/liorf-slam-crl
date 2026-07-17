@@ -42,6 +42,7 @@ public:
 
     const std::vector<int>& getDebugCodes() const override { return laserCloudSurfDebugCode; }
     pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const override { return laserCloudOri; }
+    const AlignmentTrace& getLastAlignmentTrace() const override { return lastAlignmentTrace; }
 
 private:
     KdTreeLmConfig config_;
@@ -73,6 +74,8 @@ private:
     uint32_t surfStageKnnPassCount = 0;
     uint32_t surfStagePlaneValidCount = 0;
     uint32_t surfStageMatchedCount = 0;
+
+    AlignmentTrace lastAlignmentTrace;
 
     static constexpr uint8_t SURF_DEBUG_ACCEPTED = 1;
     static constexpr uint8_t SURF_DEBUG_REJECTED_NEIGHBOR_COUNT = 2;
