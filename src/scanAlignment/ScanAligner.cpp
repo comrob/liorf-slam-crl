@@ -46,7 +46,9 @@ void ScanAligner::updatePointAssociateToMap()
     transPointAssociateToMap = pcl::getTransformation(currentTransform[3], currentTransform[4], currentTransform[5], currentTransform[0], currentTransform[1], currentTransform[2]);
 }
 
-lio::AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &scan, float transformIn[6])
+lio::AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &scan,
+                                         float transformIn[6],
+                                         std::optional<lio::AlignmentOverrideConfig> overrideConfig)
 {
     lio::AlignmentMetrics metrics;
     auto scanSize = scan->points.size();
@@ -72,7 +74,10 @@ lio::AlignmentMetrics ScanAligner::align(const pcl::PointCloud<PointType>::Ptr &
 
     std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.end(), SURF_DEBUG_NOT_OPTIMIZED);
 
-    for (int iterCount = 0; iterCount < 30; iterCount++)
+    int maxIters = 30;
+    if (overrideConfig.has_value() && overrideConfig->max_iterations.has_value())
+        maxIters = std::max(1, *overrideConfig->max_iterations);
+    for (int iterCount = 0; iterCount < maxIters; iterCount++)
     {
         metrics.iterations++;
         laserCloudOri->clear();

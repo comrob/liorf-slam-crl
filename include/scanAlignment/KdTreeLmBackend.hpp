@@ -34,7 +34,8 @@ public:
 
     AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr& scan, 
                            float* transformTobeMapped,
-                           bool isDegeneracyRun = false) override;
+                           std::optional<AlignmentOverrideConfig> overrideConfig = std::nullopt) override;
+    AlignmentOverrideConfig getAlignmentConfig() const override;
 
     pcl::PointCloud<PointType>::Ptr getLocalMapCloud() const override;
     

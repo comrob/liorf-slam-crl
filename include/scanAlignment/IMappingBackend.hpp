@@ -4,6 +4,7 @@
 #include <pcl/point_types.h>
 #include <Eigen/Core>
 #include <functional>
+#include <optional>
 
 #include "export/map_types.hpp"
 
@@ -28,6 +29,13 @@ struct AlignmentMetrics {
 struct AlignmentTrace {
     std::vector<Eigen::Matrix4f> iteration_poses;
     bool converged = false;
+};
+
+// Per-call alignment override configuration.
+// Backends may honor only the fields they support.
+struct AlignmentOverrideConfig {
+    std::optional<int> max_iterations;
+    std::optional<bool> capture_trace;
 };
 
 class IMappingBackend {
@@ -64,12 +72,17 @@ public:
      * @brief Aligns the new scan to the current map.
      * @param scan The raw/downsampled surface scan to align.
      * @param transformTobeMapped Both the initial guess (input) and the optimized pose (output).
-     * @param isDegeneracyRun Flag to indicate if this is a degeneracy check run (uses secondary optimizer if applicable).
+        * @param overrideConfig Optional per-call alignment override configuration.
      * @return AlignmentMetrics details of the optimization run.
      */
     virtual AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr& scan, 
                                    float* transformTobeMapped,
-                                   bool isDegeneracyRun = false) = 0;
+                                std::optional<AlignmentOverrideConfig> overrideConfig = std::nullopt) = 0;
+
+        /**
+        * @brief Returns the default alignment override config for this backend.
+        */
+        virtual AlignmentOverrideConfig getAlignmentConfig() const = 0;
 
     /**
      * @brief Returns the local map point cloud for publishing/visualization.

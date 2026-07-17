@@ -101,7 +101,9 @@ void KdTreeLmBackend::updatePointAssociateToMap(float* transformTobeMapped)
     transPointAssociateToMap = pcl::getTransformation(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5], transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
 }
 
-AlignmentMetrics KdTreeLmBackend::align(const pcl::PointCloud<PointType>::Ptr &scan, float* transformIn, bool isDegeneracyRun)
+AlignmentMetrics KdTreeLmBackend::align(const pcl::PointCloud<PointType>::Ptr &scan,
+                                        float* transformIn,
+                                        std::optional<AlignmentOverrideConfig> overrideConfig)
 {
     auto scanSize = scan->points.size();
 
@@ -133,7 +135,17 @@ AlignmentMetrics KdTreeLmBackend::align(const pcl::PointCloud<PointType>::Ptr &s
 
     std::fill(laserCloudSurfDebugCode.begin(), laserCloudSurfDebugCode.end(), SURF_DEBUG_NOT_OPTIMIZED);
 
-    for (int iterCount = 0; iterCount < 30; iterCount++)
+    int maxIters = 30;
+    bool captureTrace = false;
+    if (overrideConfig.has_value())
+    {
+        if (overrideConfig->max_iterations.has_value())
+            maxIters = std::max(1, *overrideConfig->max_iterations);
+        if (overrideConfig->capture_trace.has_value())
+            captureTrace = *overrideConfig->capture_trace;
+    }
+
+    for (int iterCount = 0; iterCount < maxIters; iterCount++)
     {
         metrics.iterations++;
         laserCloudOri->clear();
@@ -150,7 +162,7 @@ AlignmentMetrics KdTreeLmBackend::align(const pcl::PointCloud<PointType>::Ptr &s
         TicToc t_lmOptimization;
         if (LMOptimization(iterCount, transformIn) == true)
         {
-            if (isDegeneracyRun)
+            if (captureTrace)
             {
                 Eigen::Matrix4f poseStep = pcl::getTransformation(
                     transformIn[3], transformIn[4], transformIn[5],
@@ -161,7 +173,7 @@ AlignmentMetrics KdTreeLmBackend::align(const pcl::PointCloud<PointType>::Ptr &s
             metrics.lm_optimization_ms += t_lmOptimization.toc();
             break;              
         }
-        if (isDegeneracyRun)
+        if (captureTrace)
         {
             Eigen::Matrix4f poseStep = pcl::getTransformation(
                 transformIn[3], transformIn[4], transformIn[5],
@@ -181,6 +193,14 @@ AlignmentMetrics KdTreeLmBackend::align(const pcl::PointCloud<PointType>::Ptr &s
     
     
     return metrics;
+}
+
+AlignmentOverrideConfig KdTreeLmBackend::getAlignmentConfig() const
+{
+    AlignmentOverrideConfig config;
+    config.max_iterations = 30;
+    config.capture_trace = false;
+    return config;
 }
 
 void KdTreeLmBackend::surfOptimization(const pcl::PointCloud<PointType>::Ptr &scan, float* transformTobeMapped)

@@ -221,7 +221,7 @@ void mapOptimization::scan2MapOptimization()
 
     if (laserCloudSurfLastDSNum > 30)
     {
-        lio::AlignmentMetrics metrics = mappingBackend->align(laserCloudSurfLastDS, transformTobeMapped, false);
+        lio::AlignmentMetrics metrics = mappingBackend->align(laserCloudSurfLastDS, transformTobeMapped);
         this->isDegenerate = metrics.is_degenerate;
 
         if (enableDegeneracyDetection)

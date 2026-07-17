@@ -15,6 +15,7 @@
 
     enableDegeneracyDetection: true
     liorf.degeneracyDetection.perturbationBased.n_multiplier: 3.0
+    liorf.degeneracyDetection.perturbationBased.max_icp_steps: 4
     liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg: 6.0
     liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold: 0.1
     liorf.degeneracyDetection.perturbationBased.eigen_value_threshold: 0.05

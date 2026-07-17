@@ -15,10 +15,6 @@ VoxelPkoBackend::VoxelPkoBackend(const VoxelMapConfig& mapConfig,
     voxelMap = std::make_shared<VoxelMap>(mapConfig);
     scanAlignerPrimary = std::make_shared<ScanAligner>(max_points, knn_distance, cores, pkoConfig);
     scanAlignerPrimary->setMap(voxelMap);
-    
-    // Create a secondary aligner for degeneracy checks
-    scanAlignerDegeneracy = std::make_shared<ScanAligner>(max_points, knn_distance, cores, pkoConfig);
-    scanAlignerDegeneracy->setMap(voxelMap);
 }
 
 void VoxelPkoBackend::clearMap()
@@ -56,13 +52,17 @@ void VoxelPkoBackend::updateRollingMap(const pcl::PointCloud<PointType>::Ptr& al
 
 AlignmentMetrics VoxelPkoBackend::align(const pcl::PointCloud<PointType>::Ptr& scan, 
                                         float* transformTobeMapped,
-                                        bool isDegeneracyRun)
+                                        std::optional<AlignmentOverrideConfig> overrideConfig)
 {
-    if (isDegeneracyRun) {
-        return scanAlignerDegeneracy->align(scan, transformTobeMapped);
-    } else {
-        return scanAlignerPrimary->align(scan, transformTobeMapped);
-    }
+    return scanAlignerPrimary->align(scan, transformTobeMapped, overrideConfig);
+}
+
+AlignmentOverrideConfig VoxelPkoBackend::getAlignmentConfig() const
+{
+    AlignmentOverrideConfig config;
+    config.max_iterations = 30;
+    config.capture_trace = false;
+    return config;
 }
 
 pcl::PointCloud<PointType>::Ptr VoxelPkoBackend::getLocalMapCloud() const

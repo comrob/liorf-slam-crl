@@ -29,6 +29,10 @@ Within one session, update that session entry in place instead of appending micr
 - [include/scanAlignment/IMappingBackend.hpp](include/scanAlignment/IMappingBackend.hpp)
 - [include/scanAlignment/KdTreeLmBackend.hpp](include/scanAlignment/KdTreeLmBackend.hpp)
 - [src/scanAlignment/KdTreeLmBackend.cpp](src/scanAlignment/KdTreeLmBackend.cpp)
+- [include/scanAlignment/ScanAligner.hpp](include/scanAlignment/ScanAligner.hpp)
+- [src/scanAlignment/ScanAligner.cpp](src/scanAlignment/ScanAligner.cpp)
+- [include/scanAlignment/VoxelPkoBackend.hpp](include/scanAlignment/VoxelPkoBackend.hpp)
+- [src/scanAlignment/VoxelPkoBackend.cpp](src/scanAlignment/VoxelPkoBackend.cpp)
 - [include/utility.h](include/utility.h)
 - [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
 - [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
@@ -62,8 +66,13 @@ Within one session, update that session entry in place instead of appending micr
 - Added per-perturbation optimization path visualization from LM iteration traces using colored line strips plus small step arrows:
 	- `liorf/mapping/degeneracy/optimization_paths`
 - Bootstrapped RViz with a dedicated `Degeneracy Perturbation Debug` group that overlays the three perturbed clouds, three aligned clouds, and displacement markers with distinct colors and default enabled visibility.
+- Refactored perturbation-based degeneracy runtime configuration into a dedicated parameter structure in `ParamServer`.
+- Added configurable perturbation aligner iteration budget (`max_icp_steps`).
+- Refactored mapping backend alignment API to accept an optional per-call override config object, removing degeneracy-specific branching from optimizer internals.
+- Added backend config cloning flow (`getAlignmentConfig()` -> local override edits -> `align(..., overrideConfig)`) so temporary behavior changes are explicit and stateless.
 - Exposed perturbation-based degeneracy parameters as ROS parameters under:
 	- `liorf.degeneracyDetection.perturbationBased.n_multiplier`
+	- `liorf.degeneracyDetection.perturbationBased.max_icp_steps`
 	- `liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg`
 	- `liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold`
 	- `liorf.degeneracyDetection.perturbationBased.eigen_value_threshold`

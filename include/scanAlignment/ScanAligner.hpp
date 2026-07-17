@@ -33,7 +33,9 @@ public:
     // Legacy setMap (can be removed if no longer used)
     void setMap(const pcl::PointCloud<PointType>::Ptr &map_cloud, const pcl::KdTreeFLANN<PointType>::Ptr &map_kdtree);
     
-    lio::AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr &scan, float *transform);
+    lio::AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr &scan,
+                                float *transform,
+                                std::optional<lio::AlignmentOverrideConfig> overrideConfig = std::nullopt);
 
     pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const { return laserCloudOri; }
     const std::vector<int> &getDebugCodes() const { return laserCloudSurfDebugCode; }

@@ -79,6 +79,16 @@ enum class TranslationPredictionSource
     IMU
 };
 
+struct PerturbationDegeneracyDetectionParameters
+{
+    float n_multiplier = 3.0f;
+    int max_icp_steps = 4;
+    float descriptive_number_threshold = 0.1f;
+    float max_perturbation_angle_deg = 6.0f;
+    float eigen_value_threshold = 0.05f;
+    bool verbose = false;
+};
+
 // enum TranslationPredictionSource to string
 inline std::string TranslationPredictionSourceToString(TranslationPredictionSource v)
 {
@@ -234,11 +244,7 @@ public:
     float globalMapVisualizationLeafSize;
 
     bool enableDegeneracyDetection;
-    float degeneracyPerturbationNMultiplier;
-    float degeneracyPerturbationMaxAngleDeg;
-    float degeneracyPerturbationDescriptiveThreshold;
-    float degeneracyPerturbationEigenValueThreshold;
-    bool degeneracyPerturbationVerbose;
+    PerturbationDegeneracyDetectionParameters perturbationDegeneracyDetection;
 
     // --- Additional odometry fusion parameters ---
     string addOdomTopic;
@@ -342,19 +348,22 @@ public:
         get_parameter("enableDegeneracyDetection", enableDegeneracyDetection);
 
         declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.n_multiplier", 3.0f);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.n_multiplier", degeneracyPerturbationNMultiplier);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.n_multiplier", perturbationDegeneracyDetection.n_multiplier);
+
+        declare_parameter<int>("liorf.degeneracyDetection.perturbationBased.max_icp_steps", 4);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.max_icp_steps", perturbationDegeneracyDetection.max_icp_steps);
 
         declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg", 6.0f);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg", degeneracyPerturbationMaxAngleDeg);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg", perturbationDegeneracyDetection.max_perturbation_angle_deg);
 
         declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold", 0.1f);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold", degeneracyPerturbationDescriptiveThreshold);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold", perturbationDegeneracyDetection.descriptive_number_threshold);
 
         declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.eigen_value_threshold", 0.05f);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.eigen_value_threshold", degeneracyPerturbationEigenValueThreshold);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.eigen_value_threshold", perturbationDegeneracyDetection.eigen_value_threshold);
 
         declare_parameter<bool>("liorf.degeneracyDetection.perturbationBased.verbose", false);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.verbose", degeneracyPerturbationVerbose);
+        get_parameter("liorf.degeneracyDetection.perturbationBased.verbose", perturbationDegeneracyDetection.verbose);
 
         std::string sensorStr;
         declare_parameter<string>("sensor", " ");

@@ -339,7 +339,13 @@ void DegeneracyDetector::evalDegeneracyPerturbation(
             posePerturbedEuler[3], posePerturbedEuler[4], posePerturbedEuler[5],
             posePerturbedEuler[0], posePerturbedEuler[1], posePerturbedEuler[2]);
 
-        lio::AlignmentMetrics metrics = mappingBackend->align(cloud_scan, posePerturbedEuler, true);
+        auto overrideConfig = mappingBackend->getAlignmentConfig();
+        overrideConfig.max_iterations = std::max(1, params.max_icp_steps);
+        overrideConfig.capture_trace = true;
+        lio::AlignmentMetrics metrics = mappingBackend->align(
+            cloud_scan,
+            posePerturbedEuler,
+            overrideConfig);
         const auto &trace = mappingBackend->getLastAlignmentTrace();
         std::vector<Eigen::Matrix4f> optimizationPath;
         optimizationPath.reserve(trace.iteration_poses.size() + 2);

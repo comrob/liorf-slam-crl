@@ -11,6 +11,7 @@
 
 struct DegeneracyParams {
     float n_multiplier = 3.0f;
+    int max_icp_steps = 4;
     float max_perturbation_angle_deg = 6.0f;
     float descriptive_number_threshold = 0.1f;
     float eigen_value_threshold = 0.05f;

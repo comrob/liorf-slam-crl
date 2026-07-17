@@ -30,7 +30,8 @@ public:
 
     AlignmentMetrics align(const pcl::PointCloud<PointType>::Ptr& scan, 
                            float* transformTobeMapped,
-                           bool isDegeneracyRun = false) override;
+                           std::optional<AlignmentOverrideConfig> overrideConfig = std::nullopt) override;
+    AlignmentOverrideConfig getAlignmentConfig() const override;
 
     pcl::PointCloud<PointType>::Ptr getLocalMapCloud() const override;
     
@@ -43,11 +44,7 @@ public:
 private:
     std::shared_ptr<lio::VoxelMap> voxelMap;
     
-    // Primary aligner
     std::shared_ptr<ScanAligner> scanAlignerPrimary;
-    
-    // Secondary aligner used strictly for degeneracy checks
-    std::shared_ptr<ScanAligner> scanAlignerDegeneracy;
 
     AlignmentTrace lastAlignmentTrace;
     
