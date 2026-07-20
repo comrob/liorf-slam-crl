@@ -100,3 +100,25 @@ inline TwistVector projectOntoBasis(const TwistVector &twist, const std::vector<
     }
     return projectedTwist;
 }
+
+// Project a 3D translation onto the translation subspace spanned by the
+// linear parts of the given twist basis. Gram-Schmidt is applied because
+// orthonormality of the full 6D twists does not imply orthonormality of
+// their linear parts.
+inline Eigen::Vector3f projectOntoBasisTranslation(const Eigen::Vector3f &t,
+                                                   const std::vector<TwistVector> &basis)
+{
+    std::vector<Eigen::Vector3f> lin;
+    for (const auto &b : basis)
+    {
+        Eigen::Vector3f v = b.head<3>();
+        for (const auto &u : lin)
+            v -= v.dot(u) * u;
+        if (v.norm() > 1e-6f)
+            lin.push_back(v.normalized());
+    }
+    Eigen::Vector3f proj = Eigen::Vector3f::Zero();
+    for (const auto &u : lin)
+        proj += t.dot(u) * u;
+    return proj;
+}

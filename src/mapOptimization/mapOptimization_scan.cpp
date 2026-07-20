@@ -346,7 +346,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
     auto orthoBasis = degeneracyDetector->orthonormalizeBasis(basis);
     if (orthoBasis.empty()) return;
 
-    TwistVector xi_lidar = TwistVector::Zero();
+    TwistVector xi_add_lidar = TwistVector::Zero();
     bool hasAdditionalPrediction = false;
 
     // 2. Infer additional odometry body twist if requested.
@@ -413,10 +413,10 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
                             Eigen::Matrix4f T_add_delta = T1.inverse() * T2;
 
                             // Conjugate motion into LiDAR frame: T_l_delta = T_l_a * T_a_delta * T_a_l
-                            Eigen::Matrix4f T_lidar_delta = T_add_to_lidar * T_add_delta * T_add_to_lidar.inverse();
+                            Eigen::Matrix4f T_add_lidar_delta = T_add_to_lidar * T_add_delta * T_add_to_lidar.inverse();
 
                             // Convert to body twist (velocity)
-                            xi_lidar = matrixToTwist(T_lidar_delta, static_cast<float>(dt_add));
+                            xi_add_lidar = matrixToTwist(T_add_lidar_delta, static_cast<float>(dt_add));
                             hasAdditionalPrediction = true;
 
                             std::ostringstream oss;
@@ -425,11 +425,11 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
                                 << " prev_match_abs_dt_s=" << prev_abs_dt
                                 << " curr_match_abs_dt_s=" << curr_abs_dt
                                 << " lin_xyz=["
-                                << xi_lidar[0] << ", " << xi_lidar[1] << ", " << xi_lidar[2] << "]"
+                                << xi_add_lidar[0] << ", " << xi_add_lidar[1] << ", " << xi_add_lidar[2] << "]"
                                 << " ang_xyz=["
-                                << xi_lidar[3] << ", " << xi_lidar[4] << ", " << xi_lidar[5] << "]"
-                                << " lin_norm=" << xi_lidar.head<3>().norm()
-                                << " ang_norm=" << xi_lidar.tail<3>().norm();
+                                << xi_add_lidar[3] << ", " << xi_add_lidar[4] << ", " << xi_add_lidar[5] << "]"
+                                << " lin_norm=" << xi_add_lidar.head<3>().norm()
+                                << " ang_norm=" << xi_add_lidar.tail<3>().norm();
                             RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, oss.str());
                         }
                     }
@@ -439,14 +439,61 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
     }
 
     // 3. Build prediction and preserve optimized solution in non-degenerate directions.
-    Eigen::Affine3f T_optimized = trans2Affine3f(transformTobeMapped);
+    const Eigen::Affine3f T_optimized = trans2Affine3f(transformTobeMapped);
 
     Eigen::Affine3f T_previous = incrementalOdometryAffineFront;
     Eigen::Affine3f T_additional_odom = T_previous;
+
+    bool hasNonDegenerateComponents = false;
+    Eigen::Vector3f t_lidar_nondeg_map = Eigen::Vector3f::Zero();
+    Eigen::Vector3f t_add_nondeg_map = Eigen::Vector3f::Zero();
+
     if (hasAdditionalPrediction)
     {
-        const Eigen::Matrix4f T_raw_corr = expMap(xi_lidar, static_cast<float>(dt_scan));
-        T_additional_odom = Eigen::Affine3f(incrementalOdometryAffineFront.matrix() * T_raw_corr);
+        Eigen::Matrix4f T_lidar_add_predicted = expMap(xi_add_lidar, static_cast<float>(dt_scan));
+
+        // Estimate the add-odom translation scale from the non-degenerate
+        // translation subspace, where the scan matcher is trusted. Both deltas
+        // are local (body-frame) displacements relative to T_previous.
+        const Eigen::Vector3f t_lidar =
+            (T_previous.matrix().inverse() * T_optimized.matrix()).block<3, 1>(0, 3);
+        const Eigen::Vector3f t_add = T_lidar_add_predicted.block<3, 1>(0, 3);
+
+        const Eigen::Vector3f t_lidar_nondeg = t_lidar - projectOntoBasisTranslation(t_lidar, orthoBasis);
+        const Eigen::Vector3f t_add_nondeg = t_add - projectOntoBasisTranslation(t_add, orthoBasis);
+
+        // Observability gate: require a minimum linear speed in the
+        // non-degenerate subspace for both displacements, otherwise the
+        // scale ratio is noise-driven and we fall back to 1.0.
+        constexpr float kMinNonDegenerateSpeed = 0.05f; // m/s
+        constexpr float kMinScale = 0.2f;
+        constexpr float kMaxScale = 5.0f;
+        const float minNondegNorm = kMinNonDegenerateSpeed * static_cast<float>(dt_scan);
+
+        float addOdomScale = 1.0f;
+        if (t_lidar_nondeg.norm() > minNondegNorm && t_add_nondeg.norm() > minNondegNorm)
+        {
+            addOdomScale = std::clamp(t_lidar_nondeg.norm() / t_add_nondeg.norm(), kMinScale, kMaxScale);
+
+            // Expose non-degenerate components (map frame) for visualization.
+            hasNonDegenerateComponents = true;
+            const Eigen::Matrix3f R_prev = T_previous.rotation();
+            t_lidar_nondeg_map = R_prev * t_lidar_nondeg;
+            t_add_nondeg_map = R_prev * t_add_nondeg;
+
+            std::ostringstream oss;
+            oss << "[ADD_ODOM_SCALE]"
+                << " scale=" << std::fixed << std::setprecision(3) << addOdomScale
+                << " lidar_nondeg_m=" << t_lidar_nondeg.norm()
+                << " add_nondeg_m=" << t_add_nondeg.norm()
+                << " min_nondeg_m=" << minNondegNorm;
+            RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, oss.str());
+        }
+
+        // Rescale only the translation of the add-odom displacement; its
+        // rotation is typically gyro-backed and kept as-is.
+        T_lidar_add_predicted.block<3, 1>(0, 3) *= addOdomScale;
+        T_additional_odom = Eigen::Affine3f(T_previous.matrix() * T_lidar_add_predicted);
     }
 
     // 4. Project only the optimized-to-predicted displacement onto degenerate subspace.
@@ -458,7 +505,8 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
     Eigen::Affine3f T_corrected(T_optimized.matrix() * T_proj_motion);
 
     // 5. Publish debug arrows/poses from optimized base to predicted and projected endpoints.
-    publishAddOdomDisplacementDebug(T_previous, T_additional_odom, T_corrected);
+    publishAddOdomDisplacementDebug(T_previous, T_additional_odom, T_corrected,
+                                    hasNonDegenerateComponents, t_lidar_nondeg_map, t_add_nondeg_map);
 
     float roll, pitch, yaw, x, y, z;
     pcl::getTranslationAndEulerAngles(T_corrected, x, y, z, roll, pitch, yaw);
@@ -472,7 +520,10 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
 
 void mapOptimization::publishAddOdomDisplacementDebug(const Eigen::Affine3f &T_base_abs,
                                                       const Eigen::Affine3f &T_raw_abs,
-                                                      const Eigen::Affine3f &T_proj_abs)
+                                                      const Eigen::Affine3f &T_proj_abs,
+                                                      bool hasNonDegenerateComponents,
+                                                      const Eigen::Vector3f &t_lidar_nondeg_map,
+                                                      const Eigen::Vector3f &t_add_nondeg_map)
 {
     if (!pubAddOdomCorrectionDirection)
         return;
@@ -532,7 +583,7 @@ void mapOptimization::publishAddOdomDisplacementDebug(const Eigen::Affine3f &T_b
         proj_arrow.scale.x = 0.10 * additional_arrow_scale;
         proj_arrow.scale.y = 0.20 * additional_arrow_scale;
         proj_arrow.scale.z = 0.20 * additional_arrow_scale;
-        
+
         proj_arrow.color.r = 0.0;
         proj_arrow.color.g = 0.95;
         proj_arrow.color.b = 0.95;
@@ -540,6 +591,42 @@ void mapOptimization::publishAddOdomDisplacementDebug(const Eigen::Affine3f &T_b
         proj_arrow.points.push_back(p_base);
         proj_arrow.points.push_back(p_proj);
         markers.markers.push_back(proj_arrow);
+
+        // Non-degenerate translation components (only when the observability
+        // gate passed and the scale estimate was applied).
+        if (hasNonDegenerateComponents)
+        {
+            const auto makeNondegArrow = [&](int id, const char *ns_name,
+                                             const Eigen::Vector3f &v_map,
+                                             float r, float g, float b) {
+                visualization_msgs::msg::Marker arrow;
+                arrow.header.frame_id = mapFrameLocal;
+                arrow.header.stamp = stamp;
+                arrow.ns = ns_name;
+                arrow.id = id;
+                arrow.type = visualization_msgs::msg::Marker::ARROW;
+                arrow.action = visualization_msgs::msg::Marker::ADD;
+                arrow.scale.x = 0.10 * additional_arrow_scale;
+                arrow.scale.y = 0.20 * additional_arrow_scale;
+                arrow.scale.z = 0.20 * additional_arrow_scale;
+                arrow.color.r = r;
+                arrow.color.g = g;
+                arrow.color.b = b;
+                arrow.color.a = 0.95;
+                geometry_msgs::msg::Point p_end;
+                p_end.x = p_base.x + v_map.x();
+                p_end.y = p_base.y + v_map.y();
+                p_end.z = p_base.z + v_map.z();
+                arrow.points.push_back(p_base);
+                arrow.points.push_back(p_end);
+                return arrow;
+            };
+
+            markers.markers.push_back(makeNondegArrow(
+                2, "nondeg_lidar_displacement", t_lidar_nondeg_map, 0.2f, 1.0f, 0.2f)); // Green
+            markers.markers.push_back(makeNondegArrow(
+                3, "nondeg_add_odom_displacement", t_add_nondeg_map, 1.0f, 0.0f, 1.0f)); // Magenta
+        }
 
         pubAddOdomCorrectionDirection->publish(markers);
     }

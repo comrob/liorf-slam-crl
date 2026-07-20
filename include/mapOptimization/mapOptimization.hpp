@@ -354,6 +354,9 @@ public:
 
     void addOdomHandler(const nav_msgs::msg::Odometry::SharedPtr msg);
     bool resolveAddOdomExtrinsics(const std::string &msgFrameId);
-    void publishAddOdomDisplacementDebug(const Eigen::Affine3f &T_base_abs, const Eigen::Affine3f &T_raw_abs, const Eigen::Affine3f &T_proj_abs);
+    void publishAddOdomDisplacementDebug(const Eigen::Affine3f &T_base_abs, const Eigen::Affine3f &T_raw_abs, const Eigen::Affine3f &T_proj_abs,
+                                         bool hasNonDegenerateComponents = false,
+                                         const Eigen::Vector3f &t_lidar_nondeg_map = Eigen::Vector3f::Zero(),
+                                         const Eigen::Vector3f &t_add_nondeg_map = Eigen::Vector3f::Zero());
     void applyDegeneracyStateOverride(double dt_scan);
 };

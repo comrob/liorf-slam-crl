@@ -20,6 +20,47 @@ Within one session, update that session entry in place instead of appending micr
 
 ---
 
+## 2026-07-20 - Scale add-odom prediction via non-degenerate translation subspace
+
+### Files changed
+
+- [include/degeneracyDetection/TwistManipulation.hpp](include/degeneracyDetection/TwistManipulation.hpp)
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Added `projectOntoBasisTranslation(...)` helper: projects a 3D translation
+  onto the translation subspace spanned by the linear parts of a twist basis
+  (with internal Gram-Schmidt re-orthonormalization of the linear parts).
+- `applyDegeneracyStateOverride(...)` now estimates an online scale for the
+  additional odometry displacement by comparing the LiDAR-measured and
+  add-odom-predicted translation components in the non-degenerate subspace,
+  where scan matching is trusted.
+- The scale is applied to the translation of the add-odom displacement only
+  (rotation kept as-is) before projecting the correction onto the degenerate
+  subspace. No temporal smoothing: the scale reacts instantly (e.g. slippage).
+- Observability gate: scale is only estimated when both non-degenerate
+  translation components exceed a minimum linear speed
+  (`kMinNonDegenerateSpeed = 0.05 m/s` over `dt_scan`); otherwise scale = 1.
+  Scale is clamped to `[0.2, 5.0]`.
+- New debug visualization in `liorf/mapping/additional_odom/correction_direction`
+  markers: green arrow = non-degenerate LiDAR displacement component,
+  magenta arrow = non-degenerate add-odom displacement component (map frame,
+  published only when the observability gate passes).
+- Throttled `[ADD_ODOM_SCALE]` info log reports the applied scale and the
+  two non-degenerate magnitudes.
+
+### Migration/runtime risk notes
+
+- Only active when `addOdomDegeneracyMode == "add_odom"` and degeneracy is
+  detected; no behavior change otherwise.
+- Core assumption: add-odom error is an isotropic scale error, so the scale
+  observed in non-degenerate directions transfers to degenerate ones.
+
+---
+
 ## 2026-07-20 - Re-anchor degeneracy optimization markers to corrected pose
 
 ### Files changed
