@@ -89,6 +89,20 @@ struct PerturbationDegeneracyDetectionParameters
     bool verbose = false;
 };
 
+struct JacobianDegeneracyDetectionParameters
+{
+    bool compute = true;
+    bool log = true;
+    float threshold = 1e-3f;
+};
+
+struct DegeneracyDetectionParameters
+{
+    bool enable = false;
+    JacobianDegeneracyDetectionParameters jacobianBased;
+    PerturbationDegeneracyDetectionParameters perturbationBased;
+};
+
 // enum TranslationPredictionSource to string
 inline std::string TranslationPredictionSourceToString(TranslationPredictionSource v)
 {
@@ -243,11 +257,7 @@ public:
     float globalMapVisualizationPoseDensity;
     float globalMapVisualizationLeafSize;
 
-    bool enableDegeneracyDetection;
-    PerturbationDegeneracyDetectionParameters perturbationDegeneracyDetection;
-    bool computeJacobianDegeneracy;
-    bool logJacobianDegeneracy;
-    float jacobianDegeneracyThreshold;
+    DegeneracyDetectionParameters degeneracyDetection;
 
     // --- Additional odometry fusion parameters ---
     string addOdomTopic;
@@ -347,35 +357,35 @@ public:
 
         
         // degeneracy detection and handling
-        declare_parameter<bool>("enableDegeneracyDetection", false);
-        get_parameter("enableDegeneracyDetection", enableDegeneracyDetection);
+        declare_parameter<bool>("degeneracyDetection.enable", false);
+        get_parameter("degeneracyDetection.enable", degeneracyDetection.enable);
 
-        declare_parameter<bool>("liorf.degeneracyDetection.jacobianBased.compute", true);
-        get_parameter("liorf.degeneracyDetection.jacobianBased.compute", computeJacobianDegeneracy);
+        declare_parameter<bool>("degeneracyDetection.jacobianBased.compute", true);
+        get_parameter("degeneracyDetection.jacobianBased.compute", degeneracyDetection.jacobianBased.compute);
 
-        declare_parameter<bool>("liorf.degeneracyDetection.jacobianBased.log", true);
-        get_parameter("liorf.degeneracyDetection.jacobianBased.log", logJacobianDegeneracy);
+        declare_parameter<bool>("degeneracyDetection.jacobianBased.log", true);
+        get_parameter("degeneracyDetection.jacobianBased.log", degeneracyDetection.jacobianBased.log);
 
-        declare_parameter<float>("liorf.degeneracyDetection.jacobianBased.threshold", 1e-3f);
-        get_parameter("liorf.degeneracyDetection.jacobianBased.threshold", jacobianDegeneracyThreshold);
+        declare_parameter<float>("degeneracyDetection.jacobianBased.threshold", 1e-3f);
+        get_parameter("degeneracyDetection.jacobianBased.threshold", degeneracyDetection.jacobianBased.threshold);
 
-        declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.n_multiplier", 3.0f);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.n_multiplier", perturbationDegeneracyDetection.n_multiplier);
+        declare_parameter<float>("degeneracyDetection.perturbationBased.n_multiplier", 3.0f);
+        get_parameter("degeneracyDetection.perturbationBased.n_multiplier", degeneracyDetection.perturbationBased.n_multiplier);
 
-        declare_parameter<int>("liorf.degeneracyDetection.perturbationBased.max_icp_steps", 4);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.max_icp_steps", perturbationDegeneracyDetection.max_icp_steps);
+        declare_parameter<int>("degeneracyDetection.perturbationBased.max_icp_steps", 4);
+        get_parameter("degeneracyDetection.perturbationBased.max_icp_steps", degeneracyDetection.perturbationBased.max_icp_steps);
 
-        declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg", 6.0f);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg", perturbationDegeneracyDetection.max_perturbation_angle_deg);
+        declare_parameter<float>("degeneracyDetection.perturbationBased.max_perturbation_angle_deg", 6.0f);
+        get_parameter("degeneracyDetection.perturbationBased.max_perturbation_angle_deg", degeneracyDetection.perturbationBased.max_perturbation_angle_deg);
 
-        declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold", 0.1f);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold", perturbationDegeneracyDetection.descriptive_number_threshold);
+        declare_parameter<float>("degeneracyDetection.perturbationBased.descriptive_number_threshold", 0.1f);
+        get_parameter("degeneracyDetection.perturbationBased.descriptive_number_threshold", degeneracyDetection.perturbationBased.descriptive_number_threshold);
 
-        declare_parameter<float>("liorf.degeneracyDetection.perturbationBased.eigen_value_threshold", 0.05f);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.eigen_value_threshold", perturbationDegeneracyDetection.eigen_value_threshold);
+        declare_parameter<float>("degeneracyDetection.perturbationBased.eigen_value_threshold", 0.05f);
+        get_parameter("degeneracyDetection.perturbationBased.eigen_value_threshold", degeneracyDetection.perturbationBased.eigen_value_threshold);
 
-        declare_parameter<bool>("liorf.degeneracyDetection.perturbationBased.verbose", false);
-        get_parameter("liorf.degeneracyDetection.perturbationBased.verbose", perturbationDegeneracyDetection.verbose);
+        declare_parameter<bool>("degeneracyDetection.perturbationBased.verbose", false);
+        get_parameter("degeneracyDetection.perturbationBased.verbose", degeneracyDetection.perturbationBased.verbose);
 
         std::string sensorStr;
         declare_parameter<string>("sensor", " ");

@@ -153,12 +153,12 @@ void mapOptimization::allocateMemory()
     }
 
     DegeneracyParams dParams;
-    dParams.n_multiplier = perturbationDegeneracyDetection.n_multiplier;
-    dParams.max_icp_steps = perturbationDegeneracyDetection.max_icp_steps;
-    dParams.max_perturbation_angle_deg = perturbationDegeneracyDetection.max_perturbation_angle_deg;
-    dParams.descriptive_number_threshold = perturbationDegeneracyDetection.descriptive_number_threshold;
-    dParams.eigen_value_threshold = perturbationDegeneracyDetection.eigen_value_threshold;
-    dParams.verbose = perturbationDegeneracyDetection.verbose;
+    dParams.n_multiplier = degeneracyDetection.perturbationBased.n_multiplier;
+    dParams.max_icp_steps = degeneracyDetection.perturbationBased.max_icp_steps;
+    dParams.max_perturbation_angle_deg = degeneracyDetection.perturbationBased.max_perturbation_angle_deg;
+    dParams.descriptive_number_threshold = degeneracyDetection.perturbationBased.descriptive_number_threshold;
+    dParams.eigen_value_threshold = degeneracyDetection.perturbationBased.eigen_value_threshold;
+    dParams.verbose = degeneracyDetection.perturbationBased.verbose;
     degeneracyDetector = std::make_shared<DegeneracyDetector>(dParams);
 
     temporal_filter_state = 0;

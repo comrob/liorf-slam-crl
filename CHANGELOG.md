@@ -20,6 +20,28 @@ Within one session, update that session entry in place instead of appending micr
 
 ---
 
+## 2026-07-20 - Group degeneracy detection runtime parameters into a single config structure
+
+### Files changed
+
+- [include/utility.h](include/utility.h)
+- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Refactored `ParamServer` degeneracy runtime settings into a single `DegeneracyDetectionParameters` structure.
+- Added explicit nested groups:
+	- `jacobianBased` (`compute`, `log`, `threshold`)
+	- `perturbationBased` (existing perturbation tuning parameters)
+- Updated map-optimization call sites to read from the new grouped structure.
+- ROS parameter keys and defaults remain unchanged, so existing YAML configs continue to work without migration.
+
+### Migration/runtime risk
+
+Low. This is a structural refactor of in-code parameter organization with unchanged parameter names and defaults.
+
 ## 2026-07-17 - Degeneracy perturbation map input and transform-update consistency fixes
 
 ### Files changed

@@ -13,16 +13,20 @@
     imuTopic: "/sensors/imu"                         # IMU data
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
 
-    enableDegeneracyDetection: true
-    liorf.degeneracyDetection.jacobianBased.compute: true
-    liorf.degeneracyDetection.jacobianBased.log: true
-    liorf.degeneracyDetection.jacobianBased.threshold: 200.0
-    liorf.degeneracyDetection.perturbationBased.n_multiplier: 3.0
-    liorf.degeneracyDetection.perturbationBased.max_icp_steps: 4
-    liorf.degeneracyDetection.perturbationBased.max_perturbation_angle_deg: 6.0
-    liorf.degeneracyDetection.perturbationBased.descriptive_number_threshold: 0.3
-    liorf.degeneracyDetection.perturbationBased.eigen_value_threshold: 0.05
-    liorf.degeneracyDetection.perturbationBased.verbose: false
+    degeneracyDetection:
+      enable: true
+      jacobianBased:
+        compute: true
+        log: true
+        threshold: 0.001
+      perturbationBased:
+        n_multiplier: 3.0
+        max_icp_steps: 4
+        max_perturbation_angle_deg: 6.0
+        descriptive_number_threshold: 0.3
+        eigen_value_threshold: 0.05
+        verbose: false
+
     # Additional Odometry Degeneracy Aiding
     addOdomTopic: "/legged_odometry/odom"              # Additional odometry topic
     addOdomMinDeltaTime: 0.1                # Minimum delta time (s) between samples

@@ -222,12 +222,12 @@ void mapOptimization::scan2MapOptimization()
     if (laserCloudSurfLastDSNum > 30)
     {
         auto alignOverrideConfig = mappingBackend->getAlignmentConfig();
-        alignOverrideConfig.compute_jacobian_degeneracy = computeJacobianDegeneracy;
-        alignOverrideConfig.jacobian_degeneracy_threshold = jacobianDegeneracyThreshold;
+        alignOverrideConfig.compute_jacobian_degeneracy = degeneracyDetection.jacobianBased.compute;
+        alignOverrideConfig.jacobian_degeneracy_threshold = degeneracyDetection.jacobianBased.threshold;
         lio::AlignmentMetrics metrics = mappingBackend->align(laserCloudSurfLastDS, transformTobeMapped, alignOverrideConfig);
         this->isDegenerate = metrics.is_degenerate;
 
-        if (logJacobianDegeneracy && diagnostics)
+        if (degeneracyDetection.jacobianBased.log && diagnostics)
         {
             diagnostics->recordJacobianDegeneracyTelemetry(
                 timeLaserInfoCur,
@@ -235,7 +235,7 @@ void mapOptimization::scan2MapOptimization()
                 metrics.jacobian_degeneracy);
         }
 
-        if (enableDegeneracyDetection)
+        if (degeneracyDetection.enable)
         {
             auto localMapForDegeneracy = mappingBackend->getLocalMapCloud();
             if (!localMapForDegeneracy || localMapForDegeneracy->empty())
