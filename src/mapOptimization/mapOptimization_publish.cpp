@@ -186,10 +186,19 @@ void mapOptimization::publishPerturbationDebugProducts(
     const std::vector<Eigen::Matrix4f>& perturbedPoses,
     const std::vector<Eigen::Matrix4f>& alignedPoses,
     const std::vector<std::vector<Eigen::Matrix4f>>& optimizationPaths,
-    const rclcpp::Time& stamp)
+    const rclcpp::Time& stamp,
+    const Eigen::Affine3f& poseBeforeReanchor,
+    const Eigen::Affine3f& poseAfterReanchor)
 {
     if (perturbedScans.empty() && alignedScans.empty() && perturbedPoses.empty() && alignedPoses.empty())
         return;
+
+    const Eigen::Matrix4f reanchorTransform =
+        poseAfterReanchor.matrix() * poseBeforeReanchor.matrix().inverse();
+
+    const auto reanchorPose = [&reanchorTransform](const Eigen::Matrix4f &pose) {
+        return reanchorTransform * pose;
+    };
 
     const std::array<rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr, 3> perturbedCloudPubs = {
         pubDegeneracyPerturbedScan0,
@@ -261,7 +270,7 @@ void mapOptimization::publishPerturbationDebugProducts(
             continue;
         if (i >= perturbedPoses.size())
             continue;
-        perturbedPosePubs[i]->publish(makePoseStamped(perturbedPoses[i]));
+        perturbedPosePubs[i]->publish(makePoseStamped(reanchorPose(perturbedPoses[i])));
     }
 
     for (size_t i = 0; i < alignedPosePubs.size(); ++i)
@@ -270,7 +279,7 @@ void mapOptimization::publishPerturbationDebugProducts(
             continue;
         if (i >= alignedPoses.size())
             continue;
-        alignedPosePubs[i]->publish(makePoseStamped(alignedPoses[i]));
+        alignedPosePubs[i]->publish(makePoseStamped(reanchorPose(alignedPoses[i])));
     }
 
     visualization_msgs::msg::MarkerArray markerArray;
@@ -289,6 +298,9 @@ void mapOptimization::publishPerturbationDebugProducts(
     {
         for (size_t i = 0; i < markerCount; ++i)
         {
+            const Eigen::Matrix4f perturbedPose = reanchorPose(perturbedPoses[i]);
+            const Eigen::Matrix4f alignedPose = reanchorPose(alignedPoses[i]);
+
             visualization_msgs::msg::Marker marker;
             marker.header.stamp = stamp;
             marker.header.frame_id = mapFrameLocal;
@@ -305,14 +317,14 @@ void mapOptimization::publishPerturbationDebugProducts(
             marker.color.a = 0.95f;
 
             geometry_msgs::msg::Point pFrom;
-            pFrom.x = perturbedPoses[i](0, 3);
-            pFrom.y = perturbedPoses[i](1, 3);
-            pFrom.z = perturbedPoses[i](2, 3);
+            pFrom.x = perturbedPose(0, 3);
+            pFrom.y = perturbedPose(1, 3);
+            pFrom.z = perturbedPose(2, 3);
 
             geometry_msgs::msg::Point pTo;
-            pTo.x = alignedPoses[i](0, 3);
-            pTo.y = alignedPoses[i](1, 3);
-            pTo.z = alignedPoses[i](2, 3);
+            pTo.x = alignedPose(0, 3);
+            pTo.y = alignedPose(1, 3);
+            pTo.z = alignedPose(2, 3);
 
             marker.points.push_back(pFrom);
             marker.points.push_back(pTo);
@@ -352,16 +364,20 @@ void mapOptimization::publishPerturbationDebugProducts(
 
         for (const auto &pose : path)
         {
+            const Eigen::Matrix4f reanchoredPose = reanchorPose(pose);
             geometry_msgs::msg::Point p;
-            p.x = pose(0, 3);
-            p.y = pose(1, 3);
-            p.z = pose(2, 3);
+            p.x = reanchoredPose(0, 3);
+            p.y = reanchoredPose(1, 3);
+            p.z = reanchoredPose(2, 3);
             line.points.push_back(p);
         }
         pathMarkers.markers.push_back(line);
 
         for (size_t step = 0; step + 1 < path.size(); ++step)
         {
+            const Eigen::Matrix4f reanchoredFrom = reanchorPose(path[step]);
+            const Eigen::Matrix4f reanchoredTo = reanchorPose(path[step + 1]);
+
             visualization_msgs::msg::Marker stepArrow;
             stepArrow.header.stamp = stamp;
             stepArrow.header.frame_id = mapFrameLocal;
@@ -378,14 +394,14 @@ void mapOptimization::publishPerturbationDebugProducts(
             stepArrow.color.a = 0.8f;
 
             geometry_msgs::msg::Point pFrom;
-            pFrom.x = path[step](0, 3);
-            pFrom.y = path[step](1, 3);
-            pFrom.z = path[step](2, 3);
+            pFrom.x = reanchoredFrom(0, 3);
+            pFrom.y = reanchoredFrom(1, 3);
+            pFrom.z = reanchoredFrom(2, 3);
 
             geometry_msgs::msg::Point pTo;
-            pTo.x = path[step + 1](0, 3);
-            pTo.y = path[step + 1](1, 3);
-            pTo.z = path[step + 1](2, 3);
+            pTo.x = reanchoredTo(0, 3);
+            pTo.y = reanchoredTo(1, 3);
+            pTo.z = reanchoredTo(2, 3);
 
             stepArrow.points.push_back(pFrom);
             stepArrow.points.push_back(pTo);

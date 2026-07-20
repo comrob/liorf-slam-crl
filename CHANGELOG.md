@@ -20,6 +20,30 @@ Within one session, update that session entry in place instead of appending micr
 
 ---
 
+## 2026-07-20 - Re-anchor degeneracy optimization markers to corrected pose
+
+### Files changed
+
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Degeneracy perturbation scans remain published in their original perturbation/alignment frames for faithful process visualization.
+- Degeneracy perturbation pose and marker products are now rigidly re-anchored to the post-override corrected pose when `applyDegeneracyStateOverride(...)` updates the frame pose.
+- Re-anchor transform computation is now owned by the publishing path (`publishPerturbationDebugProducts`) using two passed anchors (pre-override and post-override pose), keeping scan optimization free of visualization-delta math.
+- Re-anchoring applies to:
+	- `perturbed_pose_{0,1,2}` and `aligned_pose_{0,1,2}` outputs
+	- displacement arrows in `liorf/mapping/degeneracy/displacements`
+	- optimization path line strips and step arrows in `liorf/mapping/degeneracy/optimization_paths`
+- Relative geometry of perturbation products is preserved; only the visualization anchor changes to reduce visible jumpiness.
+
+### Migration/runtime risk
+
+Low. This is a visualization-only change for perturbation pose/marker products; scan-alignment/optimization logic is unchanged.
+
 ## 2026-07-20 - Group degeneracy detection runtime parameters into a single config structure
 
 ### Files changed

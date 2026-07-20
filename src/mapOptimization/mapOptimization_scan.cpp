@@ -246,13 +246,6 @@ void mapOptimization::scan2MapOptimization()
                 laserCloudSurfLastDS,
                 localMapForDegeneracy,
                 mappingBackend);
-            publishPerturbationDebugProducts(
-                degeneracyDetector->getPerturbedScans(),
-                degeneracyDetector->getAlignedScans(),
-                degeneracyDetector->getPerturbedPoses(),
-                degeneracyDetector->getAlignedPoses(),
-                degeneracyDetector->getOptimizationPaths(),
-                timeLaserInfoStamp);
 
             const auto perturbationTwists = degeneracyDetector->getTwistsPerturbationsDegeneracy();
             degeneracyDetector->extractBasisFromTwists(perturbationTwists, laserCloudSurfLastDS);
@@ -261,6 +254,7 @@ void mapOptimization::scan2MapOptimization()
             const auto pcaBasis = degeneracyDetector->getPcaBasis();
             const auto sparsifiedBasis = degeneracyDetector->getSparsifiedBasis();
             const bool degeneracyDetected = degeneracyDetector->isDegeneracyDetected();
+            const Eigen::Affine3f poseBeforeDegeneracyOverride = trans2Affine3f(transformTobeMapped);
             
             // LOG THE FAILURE REASON IF ANY
             if (degeneracyDetector->isFailed()) {
@@ -291,6 +285,24 @@ void mapOptimization::scan2MapOptimization()
                     diagnostics->logEventThrottle("degeneracy_detected", 1.0, oss.str());
             }
 
+            if (degeneracyDetected)
+            {
+                const double dt_scan = (curTimeDiff > 1e-5) ? curTimeDiff : 0.1;
+                applyDegeneracyStateOverride(dt_scan);
+            }
+
+            const Eigen::Affine3f poseAfterDegeneracyOverride = trans2Affine3f(transformTobeMapped);
+
+            publishPerturbationDebugProducts(
+                degeneracyDetector->getPerturbedScans(),
+                degeneracyDetector->getAlignedScans(),
+                degeneracyDetector->getPerturbedPoses(),
+                degeneracyDetector->getAlignedPoses(),
+                degeneracyDetector->getOptimizationPaths(),
+                timeLaserInfoStamp,
+                poseBeforeDegeneracyOverride,
+                poseAfterDegeneracyOverride);
+
             publishTwistMarkers(pubDegeneracyRaw, "raw", rawTwists, timeLaserInfoStamp,
                                 1.0, 0.0, 0.0,   1.0, 1.0, 0.0); // Red/Yellow
             publishTwistMarkers(pubDegeneracyPCA, "pca", pcaBasis, timeLaserInfoStamp,
@@ -298,12 +310,6 @@ void mapOptimization::scan2MapOptimization()
             publishTwistMarkers(pubDegeneracyBasis, "basis", sparsifiedBasis, timeLaserInfoStamp,
                                 0.0, 1.0, 0.0,   1.0, 0.0, 1.0); // Green/Magenta
             publishDegeneracyPaths(pubDegeneracyPaths, "degeneracy_paths", sparsifiedBasis, timeLaserInfoStamp);
-
-            if (degeneracyDetected)
-            {
-                const double dt_scan = (curTimeDiff > 1e-5) ? curTimeDiff : 0.1;
-                applyDegeneracyStateOverride(dt_scan);
-            }
         }
         
         if (true)
@@ -452,7 +458,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
     Eigen::Affine3f T_corrected(T_optimized.matrix() * T_proj_motion);
 
     // 5. Publish debug arrows/poses from optimized base to predicted and projected endpoints.
-    publishAddOdomDisplacementDebug(T_optimized, T_additional_odom, T_corrected);
+    publishAddOdomDisplacementDebug(T_previous, T_additional_odom, T_corrected);
 
     float roll, pitch, yaw, x, y, z;
     pcl::getTranslationAndEulerAngles(T_corrected, x, y, z, roll, pitch, yaw);
@@ -496,6 +502,8 @@ void mapOptimization::publishAddOdomDisplacementDebug(const Eigen::Affine3f &T_b
         p_proj.y = T_proj_abs.translation().y();
         p_proj.z = T_proj_abs.translation().z();
 
+        double additional_arrow_scale = 0.2;
+
         visualization_msgs::msg::Marker raw_arrow;
         raw_arrow.header.frame_id = mapFrameLocal;
         raw_arrow.header.stamp = stamp;
@@ -503,9 +511,9 @@ void mapOptimization::publishAddOdomDisplacementDebug(const Eigen::Affine3f &T_b
         raw_arrow.id = 0;
         raw_arrow.type = visualization_msgs::msg::Marker::ARROW;
         raw_arrow.action = visualization_msgs::msg::Marker::ADD;
-        raw_arrow.scale.x = 0.08;
-        raw_arrow.scale.y = 0.16;
-        raw_arrow.scale.z = 0.16;
+        raw_arrow.scale.x = 0.08 * additional_arrow_scale;
+        raw_arrow.scale.y = 0.16 * additional_arrow_scale;
+        raw_arrow.scale.z = 0.16 * additional_arrow_scale;
         raw_arrow.color.r = 1.0;
         raw_arrow.color.g = 0.55;
         raw_arrow.color.b = 0.0;
@@ -521,9 +529,10 @@ void mapOptimization::publishAddOdomDisplacementDebug(const Eigen::Affine3f &T_b
         proj_arrow.id = 1;
         proj_arrow.type = visualization_msgs::msg::Marker::ARROW;
         proj_arrow.action = visualization_msgs::msg::Marker::ADD;
-        proj_arrow.scale.x = 0.10;
-        proj_arrow.scale.y = 0.20;
-        proj_arrow.scale.z = 0.20;
+        proj_arrow.scale.x = 0.10 * additional_arrow_scale;
+        proj_arrow.scale.y = 0.20 * additional_arrow_scale;
+        proj_arrow.scale.z = 0.20 * additional_arrow_scale;
+        
         proj_arrow.color.r = 0.0;
         proj_arrow.color.g = 0.95;
         proj_arrow.color.b = 0.95;

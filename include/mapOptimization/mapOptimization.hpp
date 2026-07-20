@@ -311,7 +311,9 @@ public:
         const std::vector<Eigen::Matrix4f>& perturbedPoses,
         const std::vector<Eigen::Matrix4f>& alignedPoses,
         const std::vector<std::vector<Eigen::Matrix4f>>& optimizationPaths,
-        const rclcpp::Time& stamp);
+        const rclcpp::Time& stamp,
+        const Eigen::Affine3f& poseBeforeReanchor,
+        const Eigen::Affine3f& poseAfterReanchor);
 
     void loopClosureThread();
     void loopInfoHandler(const std_msgs::msg::Float64MultiArray::SharedPtr loopMsg);
