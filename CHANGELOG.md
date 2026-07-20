@@ -26,7 +26,11 @@ Within one session, update that session entry in place instead of appending micr
 
 - [include/degeneracyDetection/TwistManipulation.hpp](include/degeneracyDetection/TwistManipulation.hpp)
 - [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [include/utility.h](include/utility.h)
+- [config/anymal.yaml](config/anymal.yaml)
 - [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [scripts/plot_add_odom_scale_diagnostics.py](scripts/plot_add_odom_scale_diagnostics.py)
+- [scripts/pyproject.toml](scripts/pyproject.toml)
 - [CHANGELOG.md](CHANGELOG.md)
 
 ### Behavior impact
@@ -41,16 +45,32 @@ Within one session, update that session entry in place instead of appending micr
 - The scale is applied to the translation of the add-odom displacement only
   (rotation kept as-is) before projecting the correction onto the degenerate
   subspace. No temporal smoothing: the scale reacts instantly (e.g. slippage).
-- Observability gate: scale is only estimated when both non-degenerate
-  translation components exceed a minimum linear speed
-  (`kMinNonDegenerateSpeed = 0.05 m/s` over `dt_scan`); otherwise scale = 1.
+- New ROS parameters:
+  - `addOdomScaleEstimationEnabled` (bool, default `true`): toggles applying
+    the estimated scale (metrics are still computed and logged when off).
+  - `addOdomScaleMinNonDegenerateSpeed` (double, default `0.05` m/s):
+    observability gate; both non-degenerate translation components must
+    exceed this speed over `dt_scan`, otherwise scale = 1.
   Scale is clamped to `[0.2, 5.0]`.
+- Data-backed telemetry: every degeneracy frame with an add-odom prediction
+  writes an `[ADD_ODOM_SCALE]` event (unthrottled diagnostics event log +
+  1 Hz throttled console log) containing applied scale, raw norm-ratio scale,
+  least-squares reference scale, direction mismatch angle `theta_deg`
+  between the non-degenerate components, both component norms, the gate
+  threshold, and gate/enable states.
+- Added plotting utility `plot_add_odom_scale_diagnostics.py` for event logs:
+	- loads `[ADD_ODOM_SCALE]` / `[ADD_ODOM_TWIST]` from `event.txt`
+	- plots applied scale, raw ratio scale, raw LS scale
+	- plots `theta_deg` and gate/enable states
+	- plots observable non-degenerate translational speed traces against the
+		configured minimum speed threshold
+	- plots additional odometry twist linear/angular norms
+	The generated figure is saved as `add_odom_scale_diagnostics.png` in the
+	selected run directory by default.
 - New debug visualization in `liorf/mapping/additional_odom/correction_direction`
   markers: green arrow = non-degenerate LiDAR displacement component,
   magenta arrow = non-degenerate add-odom displacement component (map frame,
   published only when the observability gate passes).
-- Throttled `[ADD_ODOM_SCALE]` info log reports the applied scale and the
-  two non-degenerate magnitudes.
 
 ### Migration/runtime risk notes
 

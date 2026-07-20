@@ -31,6 +31,8 @@
     addOdomTopic: "/legged_odometry/odom"              # Additional odometry topic
     addOdomMinDeltaTime: 0.1                # Minimum delta time (s) between samples
     addOdomDegeneracyMode: "add_odom"      # Options: "none", "identity", "add_odom"
+    addOdomScaleEstimationEnabled: true     # Scale add-odom translation by non-degenerate LiDAR/add-odom displacement ratio
+    addOdomScaleMinNonDegenerateSpeed: 0.2 # m/s; min non-degenerate speed (both displacements) to estimate the scale
 
     autoLookupLidarToAddOdomTf: false
     addOdomFrame: ""                        # Inferred from message if empty

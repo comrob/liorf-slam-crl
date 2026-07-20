@@ -465,29 +465,61 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
         // Observability gate: require a minimum linear speed in the
         // non-degenerate subspace for both displacements, otherwise the
         // scale ratio is noise-driven and we fall back to 1.0.
-        constexpr float kMinNonDegenerateSpeed = 0.05f; // m/s
         constexpr float kMinScale = 0.2f;
         constexpr float kMaxScale = 5.0f;
-        const float minNondegNorm = kMinNonDegenerateSpeed * static_cast<float>(dt_scan);
+        const float minNondegNorm =
+            static_cast<float>(addOdomScaleMinNonDegenerateSpeed) * static_cast<float>(dt_scan);
+
+        const float lidarNondegNorm = t_lidar_nondeg.norm();
+        const float addNondegNorm = t_add_nondeg.norm();
+        const bool gatePassed = lidarNondegNorm > minNondegNorm && addNondegNorm > minNondegNorm;
 
         float addOdomScale = 1.0f;
-        if (t_lidar_nondeg.norm() > minNondegNorm && t_add_nondeg.norm() > minNondegNorm)
+        float scaleRatioRaw = std::numeric_limits<float>::quiet_NaN();
+        float scaleLsRaw = std::numeric_limits<float>::quiet_NaN();
+        float thetaDeg = std::numeric_limits<float>::quiet_NaN();
+
+        if (gatePassed)
         {
-            addOdomScale = std::clamp(t_lidar_nondeg.norm() / t_add_nondeg.norm(), kMinScale, kMaxScale);
+            // Applied estimate: ratio of non-degenerate norms.
+            scaleRatioRaw = lidarNondegNorm / addNondegNorm;
+
+            // Reference estimates for data analysis: least-squares scale and
+            // direction mismatch angle between the non-degenerate components.
+            const float dot = t_add_nondeg.dot(t_lidar_nondeg);
+            scaleLsRaw = dot / (addNondegNorm * addNondegNorm);
+            const float cosTheta = std::clamp(dot / (addNondegNorm * lidarNondegNorm), -1.0f, 1.0f);
+            thetaDeg = std::acos(cosTheta) * 180.0f / static_cast<float>(M_PI);
+
+            if (addOdomScaleEstimationEnabled)
+                addOdomScale = std::clamp(scaleRatioRaw, kMinScale, kMaxScale);
 
             // Expose non-degenerate components (map frame) for visualization.
             hasNonDegenerateComponents = true;
             const Eigen::Matrix3f R_prev = T_previous.rotation();
             t_lidar_nondeg_map = R_prev * t_lidar_nondeg;
             t_add_nondeg_map = R_prev * t_add_nondeg;
+        }
 
+        {
             std::ostringstream oss;
             oss << "[ADD_ODOM_SCALE]"
-                << " scale=" << std::fixed << std::setprecision(3) << addOdomScale
-                << " lidar_nondeg_m=" << t_lidar_nondeg.norm()
-                << " add_nondeg_m=" << t_add_nondeg.norm()
-                << " min_nondeg_m=" << minNondegNorm;
-            RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, oss.str());
+                << " frame_stamp_s=" << std::fixed << std::setprecision(6) << timeLaserInfoCur
+                << std::setprecision(4)
+                << " enabled=" << (addOdomScaleEstimationEnabled ? 1 : 0)
+                << " gate_passed=" << (gatePassed ? 1 : 0)
+                << " scale_applied=" << addOdomScale
+                << " scale_ratio_raw=" << scaleRatioRaw
+                << " scale_ls_raw=" << scaleLsRaw
+                << " theta_deg=" << thetaDeg
+                << " lidar_nondeg_m=" << lidarNondegNorm
+                << " add_nondeg_m=" << addNondegNorm
+                << " min_nondeg_m=" << minNondegNorm
+                << " dt_scan_s=" << dt_scan;
+            const std::string msg = oss.str();
+            if (diagnostics)
+                diagnostics->logEventThrottle("add_odom_scale", 0.0, msg); // every degeneracy frame
+            RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, msg);
         }
 
         // Rescale only the translation of the add-odom displacement; its

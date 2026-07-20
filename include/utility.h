@@ -263,6 +263,8 @@ public:
     string addOdomTopic;
     double addOdomMinDeltaTime;
     string addOdomDegeneracyMode; // "none", "identity", or "add_odom"
+    bool addOdomScaleEstimationEnabled;
+    double addOdomScaleMinNonDegenerateSpeed; // m/s, observability gate for scale estimation
 
     bool autoLookupLidarToAddOdomTf;
     string addOdomFrame;
@@ -659,6 +661,12 @@ public:
 
         declare_parameter<string>("addOdomDegeneracyMode", "add_odom");
         get_parameter("addOdomDegeneracyMode", addOdomDegeneracyMode);
+
+        declare_parameter<bool>("addOdomScaleEstimationEnabled", true);
+        get_parameter("addOdomScaleEstimationEnabled", addOdomScaleEstimationEnabled);
+
+        declare_parameter<double>("addOdomScaleMinNonDegenerateSpeed", 0.2);
+        get_parameter("addOdomScaleMinNonDegenerateSpeed", addOdomScaleMinNonDegenerateSpeed);
 
         declare_parameter<bool>("autoLookupLidarToAddOdomTf", true);
         get_parameter("autoLookupLidarToAddOdomTf", autoLookupLidarToAddOdomTf);
