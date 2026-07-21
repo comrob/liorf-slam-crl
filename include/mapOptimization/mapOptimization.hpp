@@ -278,7 +278,7 @@ public:
     pcl::PointCloud<PointType>::Ptr transformPointCloud(pcl::PointCloud<PointType>::Ptr cloudIn, PointTypePose *transformIn);
     gtsam::Pose3 pclPointTogtsamPose3(PointTypePose thisPoint);
     gtsam::Pose3 trans2gtsamPose(float transformIn[]);
-    Eigen::Affine3f pclPointToAffine3f(PointTypePose thisPoint);
+    Eigen::Affine3f pclPointToAffine3f(PointTypePose thisPoint) const;
     Eigen::Affine3f trans2Affine3f(float transformIn[]);
     PointTypePose trans2PointTypePose(float transformIn[]);
     nav_msgs::msg::Odometry odometryMsgFromAffine(const Eigen::Affine3f &affine, const rclcpp::Time &stamp, const std::string &frameId, const std::string &childFrameId);
@@ -330,7 +330,7 @@ public:
     void scan2MapOptimization();
     void transformUpdate();
     float constraintTransformation(float value, float limit);
-    bool saveFrame();
+    [[nodiscard]] bool shouldSaveFrame() const;
     void addOdomFactor();
     void addGPSFactor();
     void addLoopFactor();
@@ -362,5 +362,19 @@ public:
                                          const Eigen::Vector3f &t_lidar_nondeg_map = Eigen::Vector3f::Zero(),
                                          const Eigen::Vector3f &t_complementary_nondeg_map = Eigen::Vector3f::Zero());
     void runDegeneracyDetectionAndCompensation();
+    bool prepareDegeneracyOrthoBasis(std::vector<TwistVector> &orthoBasis);
+    bool inferComplementaryOdomTwist(double dt_scan, TwistVector &xi_complementary_lidar);
+    Eigen::Affine3f buildScaledComplementaryPrediction(const Eigen::Affine3f &T_previous,
+                                                       const Eigen::Affine3f &T_optimized,
+                                                       const std::vector<TwistVector> &orthoBasis,
+                                                       const TwistVector &xi_complementary_lidar,
+                                                       double dt_scan,
+                                                       bool &hasNonDegenerateComponents,
+                                                       Eigen::Vector3f &t_lidar_nondeg_map,
+                                                       Eigen::Vector3f &t_complementary_nondeg_map);
+    Eigen::Affine3f projectDegenerateCorrection(const Eigen::Affine3f &T_optimized,
+                                                const Eigen::Affine3f &T_predicted,
+                                                const std::vector<TwistVector> &orthoBasis);
+    void writeAffineToTransformTobeMapped(const Eigen::Affine3f &T_pose);
     void applyDegeneracyStateOverride(double dt_scan);
 };

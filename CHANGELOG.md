@@ -31,6 +31,7 @@ change SLAM/logging functionality.
 ### Files changed
 
 - [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [src/mapOptimization/mapOptimization_graph.cpp](src/mapOptimization/mapOptimization_graph.cpp)
 - [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
 - [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
 - [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
@@ -83,6 +84,17 @@ change SLAM/logging functionality.
 - Moved `publishComplementaryOdomDisplacementDebug(...)` from
   `mapOptimization_scan.cpp` to `mapOptimization_publish.cpp` so publishing
   stays owned by the publish translation unit.
+- Renamed the keyframe-gating predicate from `saveFrame()` to
+	`shouldSaveFrame()` and marked it `const` to reflect non-modifying intent;
+	no runtime behavior change.
+- Fixed const-correctness for the moved `shouldSaveFrame()` implementation by
+	marking `pclPointToAffine3f(...)` as `const` in both declaration and
+	definition, resolving build failure without changing behavior.
+- Refactored `applyDegeneracyStateOverride(...)` into cohesive helper methods
+	(`prepareDegeneracyOrthoBasis`, `inferComplementaryOdomTwist`,
+	`buildScaledComplementaryPrediction`, `projectDegenerateCorrection`, and
+	`writeAffineToTransformTobeMapped`) to improve maintainability while
+	preserving existing compensation behavior and telemetry output.
 
 - Low to medium. Algorithmic behavior is unchanged, but configuration keys for
 	complementary-odom integration changed from flat names to

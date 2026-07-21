@@ -132,7 +132,7 @@ void mapOptimization::addLoopFactor()
 
 bool mapOptimization::saveKeyFramesAndFactor()
 {
-    if (saveFrame() == false)
+    if (shouldSaveFrame() == false)
         return false;
 
     // odom factor
@@ -346,3 +346,25 @@ void mapOptimization::correctPoses()
         aLoopIsClosed = false;
     }
 }
+
+bool mapOptimization::shouldSaveFrame() const
+{
+    if (cloudKeyPoses3D->points.empty())
+        return true;
+
+    Eigen::Affine3f transStart = pclPointToAffine3f(cloudKeyPoses6D->back());
+    Eigen::Affine3f transFinal = pcl::getTransformation(transformTobeMapped[3], transformTobeMapped[4], transformTobeMapped[5],
+                                                        transformTobeMapped[0], transformTobeMapped[1], transformTobeMapped[2]);
+    Eigen::Affine3f transBetween = transStart.inverse() * transFinal;
+    float x, y, z, roll, pitch, yaw;
+    pcl::getTranslationAndEulerAngles(transBetween, x, y, z, roll, pitch, yaw);
+
+    if (abs(roll)  < surroundingkeyframeAddingAngleThreshold &&
+        abs(pitch) < surroundingkeyframeAddingAngleThreshold &&
+        abs(yaw)   < surroundingkeyframeAddingAngleThreshold &&
+        sqrt(x*x + y*y + z*z) < surroundingkeyframeAddingDistThreshold)
+        return false;
+
+    return true;
+}
+

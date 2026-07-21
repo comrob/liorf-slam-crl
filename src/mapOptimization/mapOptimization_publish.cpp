@@ -51,7 +51,7 @@ gtsam::Pose3 mapOptimization::trans2gtsamPose(float transformIn[])
                               gtsam::Point3(transformIn[3], transformIn[4], transformIn[5]));
 }
 
-Eigen::Affine3f mapOptimization::pclPointToAffine3f(PointTypePose thisPoint)
+Eigen::Affine3f mapOptimization::pclPointToAffine3f(PointTypePose thisPoint) const
 { 
     return pcl::getTransformation(thisPoint.x, thisPoint.y, thisPoint.z, thisPoint.roll, thisPoint.pitch, thisPoint.yaw);
 }
@@ -1047,7 +1047,7 @@ void mapOptimization::publishComplementaryOdomDisplacementDebug(const Eigen::Aff
         p_proj.y = T_proj_abs.translation().y();
         p_proj.z = T_proj_abs.translation().z();
 
-        double additional_arrow_scale = 0.2;
+        double additional_arrow_scale = 0.08;
 
         visualization_msgs::msg::Marker raw_arrow;
         raw_arrow.header.frame_id = mapFrameLocal;
@@ -1066,7 +1066,7 @@ void mapOptimization::publishComplementaryOdomDisplacementDebug(const Eigen::Aff
         raw_arrow.points.push_back(p_base);
         raw_arrow.points.push_back(p_raw);
         markers.markers.push_back(raw_arrow);
-
+        
         visualization_msgs::msg::Marker proj_arrow;
         proj_arrow.header.frame_id = mapFrameLocal;
         proj_arrow.header.stamp = stamp;
@@ -1090,6 +1090,7 @@ void mapOptimization::publishComplementaryOdomDisplacementDebug(const Eigen::Aff
         // gate passed and the scale estimate was applied).
         if (hasNonDegenerateComponents)
         {
+            double additional_arrow_scale2 = 0.06;
             const auto makeNondegArrow = [&](int id, const char *ns_name,
                                              const Eigen::Vector3f &v_map,
                                              float r, float g, float b) {
@@ -1100,9 +1101,9 @@ void mapOptimization::publishComplementaryOdomDisplacementDebug(const Eigen::Aff
                 arrow.id = id;
                 arrow.type = visualization_msgs::msg::Marker::ARROW;
                 arrow.action = visualization_msgs::msg::Marker::ADD;
-                arrow.scale.x = 0.10 * additional_arrow_scale;
-                arrow.scale.y = 0.20 * additional_arrow_scale;
-                arrow.scale.z = 0.20 * additional_arrow_scale;
+                arrow.scale.x = 0.10 * additional_arrow_scale2;
+                arrow.scale.y = 0.20 * additional_arrow_scale2;
+                arrow.scale.z = 0.20 * additional_arrow_scale2;
                 arrow.color.r = r;
                 arrow.color.g = g;
                 arrow.color.b = b;
