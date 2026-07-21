@@ -54,7 +54,7 @@ def generate_launch_description():
     
     config_override_declare = DeclareLaunchArgument(
         'config_override',
-        default_value='/config/override.yaml',
+        default_value='/config/docker_override.yaml',
         description='Path to override parameters file (optional).')
     
     rviz_declare = DeclareLaunchArgument(

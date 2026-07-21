@@ -144,5 +144,5 @@ services:
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - ./zenoh.json5:/config/dds/zenoh.json5:ro
-      - ../config/override.yaml:/config/override.yaml:ro
+      - ../config/docker_override.yaml:/config/docker_override.yaml:ro
     command: ros2 launch liorf run_lio_sam_bench.py
