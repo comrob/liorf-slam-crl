@@ -12,9 +12,11 @@
     pointCloudTopic: "/lidar/point_cloud"               # Point cloud data
     imuTopic: "/sensors/imu"                         # IMU data
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
+    complementaryOdomTopic: "/legged_odometry/odom"  # Complementary odometry topic
 
     degeneracyDetection:
       enable: true
+      compensation_source: "complementary_odom"  # Options: "none", "identity", "complementary_odom"
       jacobianBased:
         compute: true
         log: true
@@ -27,19 +29,16 @@
         eigen_value_threshold: 0.05
         verbose: false
 
-    # Additional Odometry Degeneracy Aiding
-    addOdomTopic: "/legged_odometry/odom"              # Additional odometry topic
-    addOdomMinDeltaTime: 0.1                # Minimum delta time (s) between samples
-    addOdomDegeneracyMode: "add_odom"      # Options: "none", "identity", "add_odom"
-    addOdomScaleEstimationEnabled: true     # Scale add-odom translation by non-degenerate LiDAR/add-odom displacement ratio
-    addOdomScaleMinNonDegenerateSpeed: 0.2 # m/s; min non-degenerate speed (both displacements) to estimate the scale
-
-    autoLookupLidarToAddOdomTf: false
-    addOdomFrame: ""                        # Inferred from message if empty
-    addOdomExtrinsicTrans: [0.0, 0.0, 0.0]
-    addOdomExtrinsicRot: [-1.0, 0.0, 0.0,
-                          0.0, -1.0, 0.0,
-                          0.0, 0.0, 1.0]
+    complementaryOdom:
+      minDeltaTime: 0.1
+      scaleEstimationEnabled: true            # Scale complementary-odom translation by non-degenerate LiDAR/complementary-odom displacement ratio
+      scaleMinNonDegenerateSpeed: 0.2         # m/s; min non-degenerate speed (both displacements) to estimate the scale
+      autoLookupLidarToTf: false
+      frame: ""                               # Inferred from message if empty
+      extrinsicTrans: [0.0, 0.0, 0.0]
+      extrinsicRot: [-1.0, 0.0, 0.0,
+                     0.0, -1.0, 0.0,
+                     0.0, 0.0, 1.0]
 
 
     translationPredictionSource: constant_velocity

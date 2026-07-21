@@ -18,9 +18,65 @@ Session rule: keep one entry per development session.
 If the same feature continues in a new session, create a new entry for that session.
 Within one session, update that session entry in place instead of appending micro-entries.
 
+Scope rule: update this changelog only for changes that affect SLAM runtime
+functionality, algorithmic behavior, interfaces, or logging/diagnostics data
+production. Do not add entries for visualization-only changes (plots, RViz
+layout, marker styling, or similar display-only updates) unless they also
+change SLAM/logging functionality.
+
 ---
 
-## 2026-07-20 - Scale add-odom prediction via non-degenerate translation subspace
+## 2026-07-21 - Complementary-odom telemetry + structured parameter refactor
+
+### Files changed
+
+- [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
+- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- [include/utility.h](include/utility.h)
+- [config/anymal.yaml](config/anymal.yaml)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [scripts/plot_complementary_odom_scale_diagnostics.py](scripts/plot_complementary_odom_scale_diagnostics.py)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Extended `[COMPLEMENTARY_ODOM_SCALE]` logging payload with additional speed metrics
+	for data-backed analysis of scale behavior:
+	- `complementary_odom_lin_speed_orig_mps`: linear speed from original additional
+		odometry twist (`||xi_add_lidar.linear||`).
+	- `lidar_lin_speed_nondeg_mps`: LiDAR non-degenerate linear speed from
+		reprojection (`||t_lidar_nondeg|| / dt_scan`).
+	- `complementary_odom_lin_speed_nondeg_mps`: complementary-odometry non-degenerate
+		linear speed (`||t_add_nondeg|| / dt_scan`).
+	- `lidar_lin_speed_proj_scale1_mps`: LiDAR linear speed from the projected
+		first-correction motion (`T_proj_motion`) under scale fixed to 1.0.
+	- `lidar_lin_speed_after_scale_mps`: LiDAR-target speed implied by scaled
+		complementary-odometry non-degenerate displacement
+		(`(||t_add_nondeg|| * scale_applied) / dt_scan`).
+- Plotter now consumes the logged non-degenerate LiDAR/complementary-odometry
+	speed fields directly (with backward-compatible fallback), instead of
+	recomputing LiDAR non-degenerate speed from displacement fields.
+- Complementary odometry integration parameters are now grouped under a
+	dedicated `complementaryOdom` structure in code and YAML, mirroring the
+	`degeneracyDetection` organization.
+- Compensation mode selection was moved from
+	`complementaryOdom.degeneracyMode` to
+	`degeneracyDetection.compensation_source`.
+- `complementaryOdomTopic` remains a top-level topic parameter next to other
+	topics; only integration/extrinsic settings moved under
+	`complementaryOdom.*`.
+- Updated `anymal.yaml` and `lio_sam_ouster.yaml` to the new structured keys,
+	including default complementary-odom values in `lio_sam_ouster.yaml`.
+
+### Migration/runtime risk notes
+
+- Low to medium. Algorithmic behavior is unchanged, but configuration keys for
+	complementary-odom integration changed from flat names to
+	`complementaryOdom.*` and require updated YAML.
+
+---
+
+## 2026-07-20 - Scale complementary-odom prediction via non-degenerate translation subspace
 
 ### Files changed
 
@@ -29,7 +85,7 @@ Within one session, update that session entry in place instead of appending micr
 - [include/utility.h](include/utility.h)
 - [config/anymal.yaml](config/anymal.yaml)
 - [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
-- [scripts/plot_add_odom_scale_diagnostics.py](scripts/plot_add_odom_scale_diagnostics.py)
+- [scripts/plot_complementary_odom_scale_diagnostics.py](scripts/plot_complementary_odom_scale_diagnostics.py)
 - [scripts/pyproject.toml](scripts/pyproject.toml)
 - [CHANGELOG.md](CHANGELOG.md)
 
@@ -39,44 +95,44 @@ Within one session, update that session entry in place instead of appending micr
   onto the translation subspace spanned by the linear parts of a twist basis
   (with internal Gram-Schmidt re-orthonormalization of the linear parts).
 - `applyDegeneracyStateOverride(...)` now estimates an online scale for the
-  additional odometry displacement by comparing the LiDAR-measured and
-  add-odom-predicted translation components in the non-degenerate subspace,
+  complementary odometry displacement by comparing the LiDAR-measured and
+  complementary-odom-predicted translation components in the non-degenerate subspace,
   where scan matching is trusted.
-- The scale is applied to the translation of the add-odom displacement only
+- The scale is applied to the translation of the complementary-odom displacement only
   (rotation kept as-is) before projecting the correction onto the degenerate
   subspace. No temporal smoothing: the scale reacts instantly (e.g. slippage).
 - New ROS parameters:
-  - `addOdomScaleEstimationEnabled` (bool, default `true`): toggles applying
+  - `complementaryOdomScaleEstimationEnabled` (bool, default `true`): toggles applying
     the estimated scale (metrics are still computed and logged when off).
-  - `addOdomScaleMinNonDegenerateSpeed` (double, default `0.05` m/s):
+  - `complementaryOdomScaleMinNonDegenerateSpeed` (double, default `0.05` m/s):
     observability gate; both non-degenerate translation components must
     exceed this speed over `dt_scan`, otherwise scale = 1.
   Scale is clamped to `[0.2, 5.0]`.
-- Data-backed telemetry: every degeneracy frame with an add-odom prediction
-  writes an `[ADD_ODOM_SCALE]` event (unthrottled diagnostics event log +
+- Data-backed telemetry: every degeneracy frame with a complementary-odom prediction
+  writes an `[COMPLEMENTARY_ODOM_SCALE]` event (unthrottled diagnostics event log +
   1 Hz throttled console log) containing applied scale, raw norm-ratio scale,
   least-squares reference scale, direction mismatch angle `theta_deg`
   between the non-degenerate components, both component norms, the gate
   threshold, and gate/enable states.
-- Added plotting utility `plot_add_odom_scale_diagnostics.py` for event logs:
-	- loads `[ADD_ODOM_SCALE]` / `[ADD_ODOM_TWIST]` from `event.txt`
+- Added plotting utility `plot_complementary_odom_scale_diagnostics.py` for event logs:
+	- loads `[COMPLEMENTARY_ODOM_SCALE]` / `[COMPLEMENTARY_ODOM_TWIST]` from `event.txt`
 	- plots applied scale, raw ratio scale, raw LS scale
 	- plots `theta_deg` and gate/enable states
 	- plots observable non-degenerate translational speed traces against the
 		configured minimum speed threshold
-	- plots additional odometry twist linear/angular norms
-	The generated figure is saved as `add_odom_scale_diagnostics.png` in the
+	- plots complementary odometry twist linear/angular norms
+	The generated figure is saved as `complementary_odom_scale_diagnostics.png` in the
 	selected run directory by default.
-- New debug visualization in `liorf/mapping/additional_odom/correction_direction`
+- New debug visualization in `liorf/mapping/complementary_odom/correction_direction`
   markers: green arrow = non-degenerate LiDAR displacement component,
-  magenta arrow = non-degenerate add-odom displacement component (map frame,
+  magenta arrow = non-degenerate complementary-odom displacement component (map frame,
   published only when the observability gate passes).
 
 ### Migration/runtime risk notes
 
-- Only active when `addOdomDegeneracyMode == "add_odom"` and degeneracy is
+- Only active when `complementaryOdomDegeneracyMode == "complementary_odom"` and degeneracy is
   detected; no behavior change otherwise.
-- Core assumption: add-odom error is an isotropic scale error, so the scale
+- Core assumption: complementary-odom error is an isotropic scale error, so the scale
   observed in non-degenerate directions transfers to degenerate ones.
 
 ---
@@ -210,7 +266,7 @@ Low. This is a structural refactor of in-code parameter organization with unchan
 
 Low to medium. Degeneracy detection sensitivity will increase due to the lower threshold, and map-based perturbation scaling may alter when degeneracy is triggered compared to prior behavior.
 
-## 2026-07-13 - Additional odometry degeneracy aiding fixes and debug topics
+## 2026-07-13 - Complementary odometry degeneracy aiding fixes and debug topics
 
 ### Files changed
 
@@ -223,16 +279,16 @@ Low to medium. Degeneracy detection sensitivity will increase due to the lower t
 
 ### Behavior impact
 
-- Renamed feature surface from external odometry to additional odometry in code and configuration.
+- Renamed feature surface from external odometry to complementary odometry in code and configuration.
 - Fixed degeneracy override timing to use scan delta (`curTimeDiff`) instead of a value that could collapse to zero.
-- Corrected motion-frame conjugation for additional-odometry delta projection into LiDAR frame.
+- Corrected motion-frame conjugation for complementary-odometry delta projection into LiDAR frame.
 - Updated correction logic to keep the optimized pose in non-degenerate directions and apply only the projected optimized-to-predicted displacement in degenerate directions.
-- Added correction-direction marker visualization topic for additional-odometry degeneracy correction:
-	- `liorf/mapping/additional_odom/correction_direction`
-- Added throttled runtime logging of inferred additional-odometry twist (linear/angular components and norms).
-- Added a staleness gate to skip outdated additional-odometry samples during correction.
-- Changed additional-odometry sample pairing to nearest timestamp matching against previous/current LiDAR stamps (instead of min-delta-time pairing).
-- Removed unused additional-odometry Odometry/Path debug topics to keep only direction-focused visualization.
+- Added correction-direction marker visualization topic for complementary-odometry degeneracy correction:
+	- `liorf/mapping/complementary_odom/correction_direction`
+- Added throttled runtime logging of inferred complementary-odometry twist (linear/angular components and norms).
+- Added a staleness gate to skip outdated complementary-odometry samples during correction.
+- Changed complementary-odometry sample pairing to nearest timestamp matching against previous/current LiDAR stamps (instead of min-delta-time pairing).
+- Removed unused complementary-odometry Odometry/Path debug topics to keep only direction-focused visualization.
 
 ### Migration/runtime risk
 

@@ -18,6 +18,7 @@
 
     degeneracyDetection:
       enable: false
+      compensation_source: "complementary_odom"  # Options: "none", "identity", "complementary_odom"
       jacobianBased:
         compute: true
         log: true
@@ -29,11 +30,23 @@
         descriptive_number_threshold: 0.1
         eigen_value_threshold: 0.05
         verbose: false
+
+    complementaryOdom:
+      minDeltaTime: 0.1
+      scaleEstimationEnabled: true
+      scaleMinNonDegenerateSpeed: 0.2
+      autoLookupLidarToTf: true
+      frame: ""
+      extrinsicTrans: [0.0, 0.0, 0.0]
+      extrinsicRot: [1.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0,
+                     0.0, 0.0, 1.0]
     
     # Topics
     pointCloudTopic: "/ouster/points"               # Point cloud data
     imuTopic: "/ouster/imu"                         # IMU data
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
+    complementaryOdomTopic: "/gnss/odom"            # Complementary odometry topic
     
 
     # Frames

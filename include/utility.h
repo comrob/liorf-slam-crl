@@ -99,8 +99,22 @@ struct JacobianDegeneracyDetectionParameters
 struct DegeneracyDetectionParameters
 {
     bool enable = false;
+    string compensation_source = "complementary_odom"; // "none", "identity", or "complementary_odom"
     JacobianDegeneracyDetectionParameters jacobianBased;
     PerturbationDegeneracyDetectionParameters perturbationBased;
+};
+
+struct ComplementaryOdomParameters
+{
+    double minDeltaTime = 0.1;
+    bool scaleEstimationEnabled = true;
+    double scaleMinNonDegenerateSpeed = 0.2; // m/s, observability gate for scale estimation
+    bool autoLookupLidarToTf = true;
+    string frame;
+    vector<double> extRotV;
+    vector<double> extTransV;
+    Eigen::Matrix3d extRot = Eigen::Matrix3d::Identity();
+    Eigen::Vector3d extTrans = Eigen::Vector3d::Zero();
 };
 
 // enum TranslationPredictionSource to string
@@ -259,19 +273,10 @@ public:
 
     DegeneracyDetectionParameters degeneracyDetection;
 
-    // --- Additional odometry fusion parameters ---
-    string addOdomTopic;
-    double addOdomMinDeltaTime;
-    string addOdomDegeneracyMode; // "none", "identity", or "add_odom"
-    bool addOdomScaleEstimationEnabled;
-    double addOdomScaleMinNonDegenerateSpeed; // m/s, observability gate for scale estimation
-
-    bool autoLookupLidarToAddOdomTf;
-    string addOdomFrame;
-    vector<double> addOdomExtRotV;
-    vector<double> addOdomExtTransV;
-    Eigen::Matrix3d addOdomExtRot;
-    Eigen::Vector3d addOdomExtTrans;
+    // Keep the complementary odometry topic with other top-level topics.
+    string complementaryOdomTopic;
+    // Group complementary odometry integration settings like degeneracy settings.
+    ComplementaryOdomParameters complementaryOdom;
 
 
     std::string backend_type;
@@ -308,6 +313,8 @@ public:
         get_parameter("odomTopic", odomTopic);
         declare_parameter<string>("gpsTopic", "/odometry/gps");
         get_parameter("gpsTopic", gpsTopic);
+        declare_parameter<string>("complementaryOdomTopic", "/gnss/odom");
+        get_parameter("complementaryOdomTopic", complementaryOdomTopic);
 
         declare_parameter<string>("lidarFrame", "base_link");
         get_parameter("lidarFrame", lidarFrame);
@@ -362,6 +369,9 @@ public:
         declare_parameter<bool>("degeneracyDetection.enable", false);
         get_parameter("degeneracyDetection.enable", degeneracyDetection.enable);
 
+        declare_parameter<string>("degeneracyDetection.compensation_source", "complementary_odom");
+        get_parameter("degeneracyDetection.compensation_source", degeneracyDetection.compensation_source);
+
         declare_parameter<bool>("degeneracyDetection.jacobianBased.compute", true);
         get_parameter("degeneracyDetection.jacobianBased.compute", degeneracyDetection.jacobianBased.compute);
 
@@ -388,6 +398,37 @@ public:
 
         declare_parameter<bool>("degeneracyDetection.perturbationBased.verbose", false);
         get_parameter("degeneracyDetection.perturbationBased.verbose", degeneracyDetection.perturbationBased.verbose);
+
+        // complementary odometry parameters
+        declare_parameter<double>("complementaryOdom.minDeltaTime", 0.1);
+        get_parameter("complementaryOdom.minDeltaTime", complementaryOdom.minDeltaTime);
+
+        declare_parameter<bool>("complementaryOdom.scaleEstimationEnabled", true);
+        get_parameter("complementaryOdom.scaleEstimationEnabled", complementaryOdom.scaleEstimationEnabled);
+
+        declare_parameter<double>("complementaryOdom.scaleMinNonDegenerateSpeed", 0.2);
+        get_parameter("complementaryOdom.scaleMinNonDegenerateSpeed", complementaryOdom.scaleMinNonDegenerateSpeed);
+
+        declare_parameter<bool>("complementaryOdom.autoLookupLidarToTf", true);
+        get_parameter("complementaryOdom.autoLookupLidarToTf", complementaryOdom.autoLookupLidarToTf);
+
+        declare_parameter<string>("complementaryOdom.frame", "");
+        get_parameter("complementaryOdom.frame", complementaryOdom.frame);
+
+        double id_rot[] = { 1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0 };
+        std::vector<double> default_rot(id_rot, std::end(id_rot));
+        declare_parameter("complementaryOdom.extrinsicRot", default_rot);
+        get_parameter("complementaryOdom.extrinsicRot", complementaryOdom.extRotV);
+
+        double zero_trans[] = { 0.0, 0.0, 0.0 };
+        std::vector<double> default_trans(zero_trans, std::end(zero_trans));
+        declare_parameter("complementaryOdom.extrinsicTrans", default_trans);
+        get_parameter("complementaryOdom.extrinsicTrans", complementaryOdom.extTransV);
+
+        complementaryOdom.extRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(complementaryOdom.extRotV.data(), 3, 3);
+        complementaryOdom.extTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(complementaryOdom.extTransV.data(), 3, 1);
 
         std::string sensorStr;
         declare_parameter<string>("sensor", " ");
@@ -651,44 +692,6 @@ public:
 
         declare_parameter<float>("mapping.kdtree_lm.surfFeatureMinValidNum", 100.0f);
         get_parameter("mapping.kdtree_lm.surfFeatureMinValidNum", kdtree_lm_config.surfFeatureMinValidNum);
-
-        // additional odometry parameters
-        declare_parameter<string>("addOdomTopic", "/gnss/odom");
-        get_parameter("addOdomTopic", addOdomTopic);
-
-        declare_parameter<double>("addOdomMinDeltaTime", 0.1);
-        get_parameter("addOdomMinDeltaTime", addOdomMinDeltaTime);
-
-        declare_parameter<string>("addOdomDegeneracyMode", "add_odom");
-        get_parameter("addOdomDegeneracyMode", addOdomDegeneracyMode);
-
-        declare_parameter<bool>("addOdomScaleEstimationEnabled", true);
-        get_parameter("addOdomScaleEstimationEnabled", addOdomScaleEstimationEnabled);
-
-        declare_parameter<double>("addOdomScaleMinNonDegenerateSpeed", 0.2);
-        get_parameter("addOdomScaleMinNonDegenerateSpeed", addOdomScaleMinNonDegenerateSpeed);
-
-        declare_parameter<bool>("autoLookupLidarToAddOdomTf", true);
-        get_parameter("autoLookupLidarToAddOdomTf", autoLookupLidarToAddOdomTf);
-
-        declare_parameter<string>("addOdomFrame", "");
-        get_parameter("addOdomFrame", addOdomFrame);
-
-        double id_rot[] = { 1.0, 0.0, 0.0,
-                            0.0, 1.0, 0.0,
-                            0.0, 0.0, 1.0 };
-        std::vector<double> default_rot(id_rot, std::end(id_rot));
-        declare_parameter("addOdomExtrinsicRot", default_rot);
-        get_parameter("addOdomExtrinsicRot", addOdomExtRotV);
-
-        double zero_trans[] = { 0.0, 0.0, 0.0 };
-        std::vector<double> default_trans(zero_trans, std::end(zero_trans));
-        declare_parameter("addOdomExtrinsicTrans", default_trans);
-        get_parameter("addOdomExtrinsicTrans", addOdomExtTransV);
-
-        addOdomExtRot = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(addOdomExtRotV.data(), 3, 3);
-        addOdomExtTrans = Eigen::Map<const Eigen::Matrix<double, -1, -1, Eigen::RowMajor>>(addOdomExtTransV.data(), 3, 1);
-        
 
         usleep(100);
     }

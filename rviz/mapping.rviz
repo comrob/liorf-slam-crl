@@ -7,7 +7,7 @@ Panels:
         - /Global Options1
         - /Base1
         - /Degeneracy Perturbation Debug1
-        - /Additional Odometry1
+        - /Complementary Odometry1
       Splitter Ratio: 0.39970502257347107
     Tree Height: 903
   - Class: rviz_common/Views
@@ -1062,7 +1062,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/additional_odom/displacement_projected
+            Value: /liorf/mapping/complementary_odom/displacement_projected
           Value: true
         - Angle Tolerance: 0.10000000149011612
           Class: rviz_default_plugins/Odometry
@@ -1101,22 +1101,22 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/additional_odom/displacement_raw
+            Value: /liorf/mapping/complementary_odom/displacement_raw
           Value: true
       Enabled: false
-      Name: Additional Odometry
+      Name: Complementary Odometry
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: MarkerArray
       Namespaces:
-        add_odom_correction_projected: true
-        add_odom_correction_raw: true
+        complementary_odom_correction_projected: true
+        complementary_odom_correction_raw: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /liorf/mapping/additional_odom/correction_direction
+        Value: /liorf/mapping/complementary_odom/correction_direction
       Value: true
   Enabled: true
   Global Options:

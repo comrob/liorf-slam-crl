@@ -38,11 +38,11 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
                 std::bind(&mapOptimization::gpsHandler, this, std::placeholders::_1));
     subLoop = create_subscription<std_msgs::msg::Float64MultiArray>("lio_loop/loop_closure_detection", QosPolicy(history_policy, reliability_policy),
                 std::bind(&mapOptimization::loopInfoHandler, this, std::placeholders::_1));
-    if (!addOdomTopic.empty() && addOdomDegeneracyMode != "none")
+    if (!complementaryOdomTopic.empty() && degeneracyDetection.compensation_source == "complementary_odom")
     {
-        subAddOdom = create_subscription<nav_msgs::msg::Odometry>(
-            addOdomTopic, QosPolicy(history_policy, reliability_policy),
-            std::bind(&mapOptimization::addOdomHandler, this, std::placeholders::_1));
+        subComplementaryOdom = create_subscription<nav_msgs::msg::Odometry>(
+            complementaryOdomTopic, QosPolicy(history_policy, reliability_policy),
+            std::bind(&mapOptimization::complementaryOdomHandler, this, std::placeholders::_1));
     }
 
     pubKeyPoses = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/trajectory", QosPolicy(history_policy, reliability_policy));
@@ -93,7 +93,7 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubDegeneracyAlignedPose2 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/aligned_pose_2", QosPolicy(history_policy, reliability_policy));
     pubDegeneracyDisplacements = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy/displacements", QosPolicy(history_policy, reliability_policy));
     pubDegeneracyOptimizationPaths = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy/optimization_paths", QosPolicy(history_policy, reliability_policy));
-    pubAddOdomCorrectionDirection = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/additional_odom/correction_direction", QosPolicy(history_policy, reliability_policy));
+    pubComplementaryOdomCorrectionDirection = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/complementary_odom/correction_direction", QosPolicy(history_policy, reliability_policy));
 
     pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
     origin_publish_timer = this->create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::timerCallbackPublishOrigin, this));
@@ -321,33 +321,33 @@ void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedP
     publishMapOptimizationTFs(timeLaserInfoStamp);
 }
 
-void mapOptimization::addOdomHandler(const nav_msgs::msg::Odometry::SharedPtr msg)
+void mapOptimization::complementaryOdomHandler(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
-    std::lock_guard<std::mutex> lock(addOdomMutex);
-    addOdomQueue.push_back(*msg);
+    std::lock_guard<std::mutex> lock(complementaryOdomMutex);
+    complementaryOdomQueue.push_back(*msg);
 
     // Prune messages older than 5.0 seconds from the current processing timestamp
-    while (!addOdomQueue.empty() && 
-           ROS_TIME(addOdomQueue.front().header.stamp) < (timeLaserInfoCur - 5.0))
+    while (!complementaryOdomQueue.empty() && 
+           ROS_TIME(complementaryOdomQueue.front().header.stamp) < (timeLaserInfoCur - 5.0))
     {
-        addOdomQueue.pop_front();
+        complementaryOdomQueue.pop_front();
     }
 }
 
-bool mapOptimization::resolveAddOdomExtrinsics(const std::string &msgFrameId)
+bool mapOptimization::resolveComplementaryOdomExtrinsics(const std::string &msgFrameId)
 {
-    if (addOdomTfResolved) return true;
+    if (complementaryOdomTfResolved) return true;
 
-    if (!autoLookupLidarToAddOdomTf)
+    if (!complementaryOdom.autoLookupLidarToTf)
     {
-        T_add_to_lidar = Eigen::Matrix4f::Identity();
-        T_add_to_lidar.block<3, 3>(0, 0) = addOdomExtRot.cast<float>();
-        T_add_to_lidar.block<3, 1>(0, 3) = addOdomExtTrans.cast<float>();
-        addOdomTfResolved = true;
+        T_complementary_to_lidar = Eigen::Matrix4f::Identity();
+        T_complementary_to_lidar.block<3, 3>(0, 0) = complementaryOdom.extRot.cast<float>();
+        T_complementary_to_lidar.block<3, 1>(0, 3) = complementaryOdom.extTrans.cast<float>();
+        complementaryOdomTfResolved = true;
         return true;
     }
 
-    std::string target_frame = addOdomFrame.empty() ? msgFrameId : addOdomFrame;
+    std::string target_frame = complementaryOdom.frame.empty() ? msgFrameId : complementaryOdom.frame;
     if (target_frame.empty() || lidarFrame.empty()) return false;
 
     try
@@ -356,15 +356,15 @@ bool mapOptimization::resolveAddOdomExtrinsics(const std::string &msgFrameId)
             runtimeTfCoordinator->getTfBuffer()->lookupTransform(lidarFrame, target_frame, rclcpp::Time(0)); 
         
         Eigen::Isometry3d tf_iso = tf2::transformToEigen(tf_msg);
-        T_add_to_lidar = tf_iso.matrix().cast<float>();
-        addOdomTfResolved = true;
-        RCLCPP_INFO_STREAM(get_logger(), "[ADD_ODOM_TF] Resolved T_add_to_lidar from TF tree.");
+        T_complementary_to_lidar = tf_iso.matrix().cast<float>();
+        complementaryOdomTfResolved = true;
+        RCLCPP_INFO_STREAM(get_logger(), "[COMPLEMENTARY_ODOM_TF] Resolved T_complementary_to_lidar from TF tree.");
         return true;
     }
     catch (const tf2::TransformException &ex)
     {
         RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 5000, 
-                             "[ADD_ODOM_TF] Waiting for TF from %s to %s: %s", 
+                             "[COMPLEMENTARY_ODOM_TF] Waiting for TF from %s to %s: %s", 
                              target_frame.c_str(), lidarFrame.c_str(), ex.what());
         return false;
     }

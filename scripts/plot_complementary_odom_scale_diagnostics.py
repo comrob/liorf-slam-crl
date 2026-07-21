@@ -103,7 +103,9 @@ def _load_event_metrics(event_path: str):
                         "scale_ls_raw": _to_float(kv.get("scale_ls_raw", "nan")),
                         "theta_deg": _to_float(kv.get("theta_deg", "nan")),
                         "lidar_nondeg_m": _to_float(kv.get("lidar_nondeg_m", "nan")),
-                        "add_nondeg_m": _to_float(kv.get("add_nondeg_m", "nan")),
+                        "complementary_nondeg_m": _to_float(
+                            kv.get("complementary_nondeg_m", kv.get("add_nondeg_m", "nan"))
+                        ),
                         "min_nondeg_m": _to_float(kv.get("min_nondeg_m", "nan")),
                         "complementary_odom_lin_speed_orig_mps": _to_float(kv.get("complementary_odom_lin_speed_orig_mps", "nan")),
                         "lidar_lin_speed_nondeg_mps": _to_float(kv.get("lidar_lin_speed_nondeg_mps", "nan")),
@@ -249,10 +251,10 @@ def main() -> int:
                 lidar_logged = _nan_safe_div(r["lidar_nondeg_m"], r["dt_scan_s"])
             lidar_nondeg_speed.append(lidar_logged)
 
-            add_logged = r["complementary_odom_lin_speed_nondeg_mps"]
-            if not math.isfinite(add_logged):
-                add_logged = _nan_safe_div(r["add_nondeg_m"], r["dt_scan_s"])
-            add_nondeg_speed.append(add_logged)
+            complementary_logged = r["complementary_odom_lin_speed_nondeg_mps"]
+            if not math.isfinite(complementary_logged):
+                complementary_logged = _nan_safe_div(r["complementary_nondeg_m"], r["dt_scan_s"])
+            add_nondeg_speed.append(complementary_logged)
 
             complementary_odom_speed_orig.append(r["complementary_odom_lin_speed_orig_mps"])
             lidar_speed_proj_scale1.append(r["lidar_lin_speed_proj_scale1_mps"])
@@ -312,7 +314,7 @@ def main() -> int:
             ax.text(0.01, 0.5, "No [COMPLEMENTARY_ODOM_TWIST] events found", transform=ax.transAxes, va="center")
         ax.set_xlabel("time since first sample [s]")
         ax.set_ylabel("twist norm")
-        ax.set_title("Additional odometry twist norms")
+        ax.set_title("Complementary odometry twist norms")
         ax.grid(True, alpha=0.3)
 
         plt.tight_layout()
