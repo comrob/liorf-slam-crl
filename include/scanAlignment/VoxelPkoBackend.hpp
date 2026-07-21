@@ -40,6 +40,7 @@ public:
     const std::vector<int>& getDebugCodes() const override;
     pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const override;
     const AlignmentTrace& getLastAlignmentTrace() const override { return lastAlignmentTrace; }
+    const std::vector<PlaneNormalSample>& getLastPlaneNormalSamples() const override { return emptyPlaneNormalSamples; }
 
 private:
     std::shared_ptr<lio::VoxelMap> voxelMap;
@@ -47,6 +48,7 @@ private:
     std::shared_ptr<ScanAligner> scanAlignerPrimary;
 
     AlignmentTrace lastAlignmentTrace;
+    std::vector<PlaneNormalSample> emptyPlaneNormalSamples;
     
     float localMapTruncationRadius;
 };

@@ -53,6 +53,12 @@ struct AlignmentTrace {
     bool converged = false;
 };
 
+struct PlaneNormalSample {
+    PointType point_map;
+    Eigen::Vector3f normal_map = Eigen::Vector3f::Zero();
+    Eigen::Vector3f residual_vector_map = Eigen::Vector3f::Zero();
+};
+
 // Per-call alignment override configuration.
 // Backends may honor only the fields they support.
 struct AlignmentOverrideConfig {
@@ -133,6 +139,12 @@ public:
      * Default behavior for backends without trace support can return an empty trace.
      */
     virtual const AlignmentTrace& getLastAlignmentTrace() const = 0;
+
+    /**
+     * @brief Returns the accepted planar correspondence points and fitted normals
+     * from the last surf optimization iteration.
+     */
+    virtual const std::vector<PlaneNormalSample>& getLastPlaneNormalSamples() const = 0;
 };
 
 } // namespace lio

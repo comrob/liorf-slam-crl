@@ -63,6 +63,9 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubKeyframeDeskewedDownsampled = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/keyframes/cloud_deskewed_downsampled", QosPolicy(history_policy, reliability_policy));
     pubKeyframeDeskewedDownsampledDebug = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/keyframes/cloud_deskewed_downsampled_debug", QosPolicy(history_policy, reliability_policy));
     pubMatchedSurfFeatures = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/matched_surface_features", QosPolicy(history_policy, reliability_policy));
+    pubKdTreePlanePoints = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/kdtree_plane_points", QosPolicy(history_policy, reliability_policy));
+    pubKdTreePlaneNormals = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/kdtree_plane_normals", QosPolicy(history_policy, reliability_policy));
+    pubKdTreePlaneResiduals = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/kdtree_plane_residuals", QosPolicy(history_policy, reliability_policy));
     pubSurfDebugColored = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/surf_debug_colored", QosPolicy(history_policy, reliability_policy));
     pubSurfDebugLegend = create_publisher<std_msgs::msg::String>("liorf/mapping/surf_debug_legend", QosPolicy(history_policy, reliability_policy));
     pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));

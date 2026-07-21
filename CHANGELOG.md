@@ -26,6 +26,83 @@ change SLAM/logging functionality.
 
 ---
 
+## 2026-07-21 - Centralize source-first RViz config resolution in launch files
+
+### Files changed
+
+- [launch/rviz_config_resolver.py](launch/rviz_config_resolver.py)
+- [launch/liorf.launch.py](launch/liorf.launch.py)
+- [launch/anymal.launch.py](launch/anymal.launch.py)
+- [launch/run_lio_sam_ouster.launch.py](launch/run_lio_sam_ouster.launch.py)
+- [launch/datasets/run_kitti.launch.py](launch/datasets/run_kitti.launch.py)
+- [launch/datasets/run_M2DGR.launch.py](launch/datasets/run_M2DGR.launch.py)
+- [launch/datasets/run_mulran.launch.py](launch/datasets/run_mulran.launch.py)
+- [launch/datasets/run_lio_sam_livox.launch.py](launch/datasets/run_lio_sam_livox.launch.py)
+- [launch/datasets/run_lio_sam_identity.launch.py](launch/datasets/run_lio_sam_identity.launch.py)
+- [launch/datasets/run_ubran_hongkong.launch.py](launch/datasets/run_ubran_hongkong.launch.py)
+- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Added a shared launch helper (`default_rviz_config_path`) and removed duplicated
+	per-file RViz default-path logic.
+- Default `rviz_config` resolution now consistently prefers source-tree
+	`rviz/mapping.rviz` when discoverable (via `LIORF_SOURCE_DIR`, current working
+	directory ancestry, or launch-file-relative path), and falls back to the
+	installed share path otherwise.
+- Behavior is now consistent across the main launch file and all dataset/wrapper
+	launch entrypoints.
+- Added explicit `sys.path` setup in top-level launch entrypoints so installed
+	launches can reliably import the shared resolver module
+	(`rviz_config_resolver`) without `ModuleNotFoundError`.
+- KD-tree plane-normal debug arrows are now anchored at the projected point on
+	the fitted plane (`point_map + residual_vector_map`) instead of the
+	off-plane scan correspondence point.
+- KD-tree residual arrows remain anchored at the correspondence scan point in
+	map frame and point toward its plane projection.
+
+### Migration/runtime risk notes
+
+- Low. This changes only default RViz config path selection; users can still
+	override `rviz_config` explicitly on the command line.
+
+## 2026-07-21 - KD-tree backend plane-point and normal RViz debug outputs
+
+### Files changed
+
+- [include/scanAlignment/IMappingBackend.hpp](include/scanAlignment/IMappingBackend.hpp)
+- [include/scanAlignment/KdTreeLmBackend.hpp](include/scanAlignment/KdTreeLmBackend.hpp)
+- [include/scanAlignment/VoxelPkoBackend.hpp](include/scanAlignment/VoxelPkoBackend.hpp)
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/scanAlignment/KdTreeLmBackend.cpp](src/scanAlignment/KdTreeLmBackend.cpp)
+- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Added a new backend debug interface to expose accepted planar correspondence
+	points and fitted normals from the last surf-optimization iteration:
+	`getLastPlaneNormalSamples()`.
+- KD-tree backend now captures per-point map-frame correspondences and fitted
+	unit normals for accepted planar constraints at each iteration; after
+	alignment, the buffer corresponds to the last executed surf optimization.
+- Added RViz debug topics for KD-tree backend in map optimization publishing:
+	- `liorf/mapping/kdtree_plane_points` (`sensor_msgs/PointCloud2`)
+	- `liorf/mapping/kdtree_plane_normals` (`visualization_msgs/MarkerArray`)
+	- `liorf/mapping/kdtree_plane_residuals` (`visualization_msgs/MarkerArray`)
+- Each KD-tree sample now also stores a point-to-plane residual vector in map
+	frame; residual arrows are published from correspondence point toward its
+	projection on the fitted plane.
+- Publishing is gated to `backend_type == "kdtree_lm"` and subscription
+	presence to avoid unnecessary overhead when disabled.
+
+### Migration/runtime risk notes
+
+- Low. This change adds debug/visualization outputs and a backend interface
+	extension without modifying scan-to-map optimization math or map update logic.
+
 ## 2026-07-21 - Complementary-odom telemetry + structured parameter refactor
 
 ### Files changed

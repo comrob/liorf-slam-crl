@@ -44,6 +44,7 @@ public:
     const std::vector<int>& getDebugCodes() const override { return laserCloudSurfDebugCode; }
     pcl::PointCloud<PointType>::Ptr getLaserCloudOri() const override { return laserCloudOri; }
     const AlignmentTrace& getLastAlignmentTrace() const override { return lastAlignmentTrace; }
+    const std::vector<PlaneNormalSample>& getLastPlaneNormalSamples() const override { return lastPlaneNormalSamples; }
 
 private:
     KdTreeLmConfig config_;
@@ -77,6 +78,7 @@ private:
     uint32_t surfStageMatchedCount = 0;
 
     AlignmentTrace lastAlignmentTrace;
+    std::vector<PlaneNormalSample> lastPlaneNormalSamples;
     JacobianDegeneracyInfo lastJacobianDegeneracyInfo;
     bool computeJacobianDegeneracyThisRun = true;
     float jacobianDegeneracyThresholdThisRun = 1e-3f;

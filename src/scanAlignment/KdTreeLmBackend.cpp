@@ -106,6 +106,7 @@ AlignmentMetrics KdTreeLmBackend::align(const pcl::PointCloud<PointType>::Ptr &s
                                         std::optional<AlignmentOverrideConfig> overrideConfig)
 {
     auto scanSize = scan->points.size();
+    lastPlaneNormalSamples.clear();
 
     lastAlignmentTrace.iteration_poses.clear();
     lastAlignmentTrace.converged = false;
@@ -232,6 +233,10 @@ void KdTreeLmBackend::surfOptimization(const pcl::PointCloud<PointType>::Ptr &sc
     int knnPassCount = 0;
     int planeValidCount = 0;
     int matchedCount = 0;
+    std::vector<PointType> acceptedPointSelVec(scanSize);
+    std::vector<Eigen::Vector3f> acceptedNormalVec(scanSize, Eigen::Vector3f::Zero());
+    std::vector<Eigen::Vector3f> acceptedResidualVec(scanSize, Eigen::Vector3f::Zero());
+    std::vector<uint8_t> acceptedNormalFlag(scanSize, 0);
 
     #pragma omp parallel for num_threads(omp_get_num_procs()) reduction(+:knnPassCount,planeValidCount,matchedCount)
     for (int i = 0; i < scanSize; i++)
@@ -322,10 +327,28 @@ void KdTreeLmBackend::surfOptimization(const pcl::PointCloud<PointType>::Ptr &sc
             laserCloudOriSurfVec[i] = pointOri;
             coeffSelSurfVec[i] = coeff;
             laserCloudOriSurfFlag[i] = true;
+            acceptedPointSelVec[i] = pointSel;
+            acceptedNormalVec[i] = Eigen::Vector3f(pa, pb, pc);
+            acceptedResidualVec[i] = Eigen::Vector3f(-pd2 * pa, -pd2 * pb, -pd2 * pc);
+            acceptedNormalFlag[i] = 1;
             matchedCount++;
         } else {
             laserCloudSurfDebugCode[i] = SURF_DEBUG_REJECTED_LOW_WEIGHT;
         }
+    }
+
+    lastPlaneNormalSamples.clear();
+    lastPlaneNormalSamples.reserve(static_cast<size_t>(matchedCount));
+    for (int i = 0; i < scanSize; ++i)
+    {
+        if (!acceptedNormalFlag[i])
+            continue;
+
+        PlaneNormalSample sample;
+        sample.point_map = acceptedPointSelVec[i];
+        sample.normal_map = acceptedNormalVec[i];
+        sample.residual_vector_map = acceptedResidualVec[i];
+        lastPlaneNormalSamples.push_back(sample);
     }
 
     surfStageKnnPassCount = static_cast<uint32_t>(knnPassCount);

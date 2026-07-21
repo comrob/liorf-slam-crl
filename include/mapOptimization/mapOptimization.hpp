@@ -123,6 +123,9 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubKeyframeDeskewedDownsampled;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubKeyframeDeskewedDownsampledDebug;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubMatchedSurfFeatures;
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubKdTreePlanePoints;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubKdTreePlaneNormals;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubKdTreePlaneResiduals;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubSurfDebugColored;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pubSurfDebugLegend;
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudRegisteredRaw;
@@ -344,6 +347,7 @@ public:
     void publishPredictionDebugClouds(const pcl::PointCloud<PointType>::Ptr &cloud);
     void publishKeyframeDeskewedDownsampled(const pcl::PointCloud<PointType>::Ptr &cloud);
     void publishKeyframeDeskewedDownsampledDebug(const pcl::PointCloud<PointType>::Ptr &cloud);
+    void publishKdTreePlaneDebug();
     void publishFrames();
 
     // Degeneracy detection + complementary odometry compensation

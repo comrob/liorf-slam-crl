@@ -1,6 +1,7 @@
 #include "mapOptimization/mapOptimization.hpp"
 #include "degeneracyDetection/TwistManipulation.hpp"
 #include "scanAlignment/ScanAligner.hpp"
+#include <cmath>
 
 struct EIGEN_ALIGN16 PointTypeWithDebugCode
 {
@@ -711,6 +712,147 @@ void mapOptimization::publishKeyframeDeskewedDownsampledDebug(const pcl::PointCl
     publishCloud(pubKeyframeDeskewedDownsampledDebug, cloudWithDebug, timeLaserInfoStamp, lidarFrame);
 }
 
+void mapOptimization::publishKdTreePlaneDebug()
+{
+    const bool wantsPoints = pubKdTreePlanePoints && pubKdTreePlanePoints->get_subscription_count() != 0;
+    const bool wantsNormals = pubKdTreePlaneNormals && pubKdTreePlaneNormals->get_subscription_count() != 0;
+    const bool wantsResiduals = pubKdTreePlaneResiduals && pubKdTreePlaneResiduals->get_subscription_count() != 0;
+
+    if (!wantsPoints && !wantsNormals && !wantsResiduals)
+        return;
+
+    if (backend_type != "kdtree_lm")
+        return;
+
+    const auto &samples = mappingBackend->getLastPlaneNormalSamples();
+
+    if (wantsPoints)
+    {
+        pcl::PointCloud<PointType>::Ptr points(new pcl::PointCloud<PointType>());
+        points->reserve(samples.size());
+        for (const auto &sample : samples)
+            points->push_back(sample.point_map);
+
+        publishCloud(pubKdTreePlanePoints, points, timeLaserInfoStamp, mapFrameLocal);
+    }
+
+    if (wantsNormals)
+    {
+        visualization_msgs::msg::MarkerArray markerArray;
+        visualization_msgs::msg::Marker clearAll;
+        clearAll.action = visualization_msgs::msg::Marker::DELETEALL;
+        markerArray.markers.push_back(clearAll);
+
+        constexpr float kArrowLength = 0.6f;
+        constexpr float kArrowShaft = 0.03f;
+        constexpr float kArrowHead = 0.08f;
+        int markerId = 0;
+
+        for (const auto &sample : samples)
+        {
+            if (!std::isfinite(sample.normal_map.x()) || !std::isfinite(sample.normal_map.y()) || !std::isfinite(sample.normal_map.z()))
+                continue;
+
+            if (!std::isfinite(sample.residual_vector_map.x()) || !std::isfinite(sample.residual_vector_map.y()) || !std::isfinite(sample.residual_vector_map.z()))
+                continue;
+
+            const float nNorm = sample.normal_map.norm();
+            if (nNorm <= 1e-6f)
+                continue;
+
+            const Eigen::Vector3f nUnit = sample.normal_map / nNorm;
+            const Eigen::Vector3f projectedPoint(
+                sample.point_map.x + sample.residual_vector_map.x(),
+                sample.point_map.y + sample.residual_vector_map.y(),
+                sample.point_map.z + sample.residual_vector_map.z());
+
+            visualization_msgs::msg::Marker marker;
+            marker.header.stamp = timeLaserInfoStamp;
+            marker.header.frame_id = mapFrameLocal;
+            marker.ns = "kdtree_plane_normals";
+            marker.id = markerId++;
+            marker.type = visualization_msgs::msg::Marker::ARROW;
+            marker.action = visualization_msgs::msg::Marker::ADD;
+            marker.scale.x = kArrowShaft;
+            marker.scale.y = kArrowHead;
+            marker.scale.z = kArrowHead;
+            marker.color.r = 0.2f;
+            marker.color.g = 0.9f;
+            marker.color.b = 1.0f;
+            marker.color.a = 0.9f;
+
+            geometry_msgs::msg::Point p0;
+            p0.x = static_cast<double>(projectedPoint.x());
+            p0.y = static_cast<double>(projectedPoint.y());
+            p0.z = static_cast<double>(projectedPoint.z());
+
+            geometry_msgs::msg::Point p1;
+            p1.x = p0.x + static_cast<double>(nUnit.x() * kArrowLength);
+            p1.y = p0.y + static_cast<double>(nUnit.y() * kArrowLength);
+            p1.z = p0.z + static_cast<double>(nUnit.z() * kArrowLength);
+
+            marker.points.push_back(p0);
+            marker.points.push_back(p1);
+            markerArray.markers.push_back(marker);
+        }
+
+        pubKdTreePlaneNormals->publish(markerArray);
+    }
+
+    if (wantsResiduals)
+    {
+        visualization_msgs::msg::MarkerArray markerArray;
+        visualization_msgs::msg::Marker clearAll;
+        clearAll.action = visualization_msgs::msg::Marker::DELETEALL;
+        markerArray.markers.push_back(clearAll);
+
+        constexpr float kArrowShaft = 0.04f;
+        constexpr float kArrowHead = 0.08f;
+        int markerId = 0;
+
+        for (const auto &sample : samples)
+        {
+            if (!std::isfinite(sample.residual_vector_map.x()) || !std::isfinite(sample.residual_vector_map.y()) || !std::isfinite(sample.residual_vector_map.z()))
+                continue;
+
+            const float residualNorm = sample.residual_vector_map.norm();
+            if (residualNorm <= 1e-6f)
+                continue;
+
+            visualization_msgs::msg::Marker marker;
+            marker.header.stamp = timeLaserInfoStamp;
+            marker.header.frame_id = mapFrameLocal;
+            marker.ns = "kdtree_plane_residuals";
+            marker.id = markerId++;
+            marker.type = visualization_msgs::msg::Marker::ARROW;
+            marker.action = visualization_msgs::msg::Marker::ADD;
+            marker.scale.x = kArrowShaft;
+            marker.scale.y = kArrowHead;
+            marker.scale.z = kArrowHead;
+            marker.color.r = 1.0f;
+            marker.color.g = 0.25f;
+            marker.color.b = 0.1f;
+            marker.color.a = 0.95f;
+
+            geometry_msgs::msg::Point p0;
+            p0.x = sample.point_map.x;
+            p0.y = sample.point_map.y;
+            p0.z = sample.point_map.z;
+
+            geometry_msgs::msg::Point p1;
+            p1.x = sample.point_map.x + static_cast<double>(sample.residual_vector_map.x());
+            p1.y = sample.point_map.y + static_cast<double>(sample.residual_vector_map.y());
+            p1.z = sample.point_map.z + static_cast<double>(sample.residual_vector_map.z());
+
+            marker.points.push_back(p0);
+            marker.points.push_back(p1);
+            markerArray.markers.push_back(marker);
+        }
+
+        pubKdTreePlaneResiduals->publish(markerArray);
+    }
+}
+
 void mapOptimization::publishFrames()
 {
     if (cloudKeyPoses3D->points.empty())
@@ -811,6 +953,9 @@ void mapOptimization::publishFrames()
         *cloudOut += *transformPointCloud(mappingBackend->getLaserCloudOri(), &thisPose6D);
         publishCloud(pubMatchedSurfFeatures, cloudOut, timeLaserInfoStamp, mapFrameLocal);
     }
+
+    publishKdTreePlaneDebug();
+
     // publish registered high-res raw cloud
     if (pubCloudRegisteredRaw->get_subscription_count() != 0)
     {
