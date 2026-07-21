@@ -32,6 +32,11 @@ change SLAM/logging functionality.
 
 - [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp)
 - [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
+- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [CMakeLists.txt](CMakeLists.txt)
+- [AGENTS.md](AGENTS.md)
 - [include/utility.h](include/utility.h)
 - [config/anymal.yaml](config/anymal.yaml)
 - [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
@@ -67,8 +72,17 @@ change SLAM/logging functionality.
 	`complementaryOdom.*`.
 - Updated `anymal.yaml` and `lio_sam_ouster.yaml` to the new structured keys,
 	including default complementary-odom values in `lio_sam_ouster.yaml`.
-
-### Migration/runtime risk notes
+- Split degeneracy detection and complementary odometry handling into a
+  dedicated translation unit `mapOptimization_degeneracy.cpp`:
+  - moved `applyDegeneracyStateOverride(...)` from `mapOptimization_scan.cpp`,
+  - moved `complementaryOdomHandler(...)` and
+    `resolveComplementaryOdomExtrinsics(...)` from `mapOptimization_core.cpp`,
+  - extracted the inline degeneracy orchestration block from
+    `scan2MapOptimization()` into a new method
+    `runDegeneracyDetectionAndCompensation()`.
+- Moved `publishComplementaryOdomDisplacementDebug(...)` from
+  `mapOptimization_scan.cpp` to `mapOptimization_publish.cpp` so publishing
+  stays owned by the publish translation unit.
 
 - Low to medium. Algorithmic behavior is unchanged, but configuration keys for
 	complementary-odom integration changed from flat names to

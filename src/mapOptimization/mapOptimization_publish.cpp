@@ -1011,3 +1011,117 @@ void mapOptimization::publishDegeneracyPaths(
     
     pub->publish(markerArray);
 }
+
+void mapOptimization::publishComplementaryOdomDisplacementDebug(const Eigen::Affine3f &T_base_abs,
+                                                      const Eigen::Affine3f &T_raw_abs,
+                                                      const Eigen::Affine3f &T_proj_abs,
+                                                      bool hasNonDegenerateComponents,
+                                                      const Eigen::Vector3f &t_lidar_nondeg_map,
+                                                      const Eigen::Vector3f &t_complementary_nondeg_map)
+{
+    if (!pubComplementaryOdomCorrectionDirection)
+        return;
+
+    const auto stamp = timeLaserInfoStamp;
+
+    if (pubComplementaryOdomCorrectionDirection && pubComplementaryOdomCorrectionDirection->get_subscription_count() > 0)
+    {
+        visualization_msgs::msg::MarkerArray markers;
+
+        visualization_msgs::msg::Marker delete_all;
+        delete_all.action = visualization_msgs::msg::Marker::DELETEALL;
+        markers.markers.push_back(delete_all);
+
+        geometry_msgs::msg::Point p_base;
+        p_base.x = T_base_abs.translation().x();
+        p_base.y = T_base_abs.translation().y();
+        p_base.z = T_base_abs.translation().z();
+
+        geometry_msgs::msg::Point p_raw;
+        p_raw.x = T_raw_abs.translation().x();
+        p_raw.y = T_raw_abs.translation().y();
+        p_raw.z = T_raw_abs.translation().z();
+
+        geometry_msgs::msg::Point p_proj;
+        p_proj.x = T_proj_abs.translation().x();
+        p_proj.y = T_proj_abs.translation().y();
+        p_proj.z = T_proj_abs.translation().z();
+
+        double additional_arrow_scale = 0.2;
+
+        visualization_msgs::msg::Marker raw_arrow;
+        raw_arrow.header.frame_id = mapFrameLocal;
+        raw_arrow.header.stamp = stamp;
+        raw_arrow.ns = "complementary_odom_correction_raw";
+        raw_arrow.id = 0;
+        raw_arrow.type = visualization_msgs::msg::Marker::ARROW;
+        raw_arrow.action = visualization_msgs::msg::Marker::ADD;
+        raw_arrow.scale.x = 0.08 * additional_arrow_scale;
+        raw_arrow.scale.y = 0.16 * additional_arrow_scale;
+        raw_arrow.scale.z = 0.16 * additional_arrow_scale;
+        raw_arrow.color.r = 1.0;
+        raw_arrow.color.g = 0.55;
+        raw_arrow.color.b = 0.0;
+        raw_arrow.color.a = 0.9;
+        raw_arrow.points.push_back(p_base);
+        raw_arrow.points.push_back(p_raw);
+        markers.markers.push_back(raw_arrow);
+
+        visualization_msgs::msg::Marker proj_arrow;
+        proj_arrow.header.frame_id = mapFrameLocal;
+        proj_arrow.header.stamp = stamp;
+        proj_arrow.ns = "complementary_odom_correction_projected";
+        proj_arrow.id = 1;
+        proj_arrow.type = visualization_msgs::msg::Marker::ARROW;
+        proj_arrow.action = visualization_msgs::msg::Marker::ADD;
+        proj_arrow.scale.x = 0.10 * additional_arrow_scale;
+        proj_arrow.scale.y = 0.20 * additional_arrow_scale;
+        proj_arrow.scale.z = 0.20 * additional_arrow_scale;
+
+        proj_arrow.color.r = 0.0;
+        proj_arrow.color.g = 0.95;
+        proj_arrow.color.b = 0.95;
+        proj_arrow.color.a = 0.95;
+        proj_arrow.points.push_back(p_base);
+        proj_arrow.points.push_back(p_proj);
+        markers.markers.push_back(proj_arrow);
+
+        // Non-degenerate translation components (only when the observability
+        // gate passed and the scale estimate was applied).
+        if (hasNonDegenerateComponents)
+        {
+            const auto makeNondegArrow = [&](int id, const char *ns_name,
+                                             const Eigen::Vector3f &v_map,
+                                             float r, float g, float b) {
+                visualization_msgs::msg::Marker arrow;
+                arrow.header.frame_id = mapFrameLocal;
+                arrow.header.stamp = stamp;
+                arrow.ns = ns_name;
+                arrow.id = id;
+                arrow.type = visualization_msgs::msg::Marker::ARROW;
+                arrow.action = visualization_msgs::msg::Marker::ADD;
+                arrow.scale.x = 0.10 * additional_arrow_scale;
+                arrow.scale.y = 0.20 * additional_arrow_scale;
+                arrow.scale.z = 0.20 * additional_arrow_scale;
+                arrow.color.r = r;
+                arrow.color.g = g;
+                arrow.color.b = b;
+                arrow.color.a = 0.95;
+                geometry_msgs::msg::Point p_end;
+                p_end.x = p_base.x + v_map.x();
+                p_end.y = p_base.y + v_map.y();
+                p_end.z = p_base.z + v_map.z();
+                arrow.points.push_back(p_base);
+                arrow.points.push_back(p_end);
+                return arrow;
+            };
+
+            markers.markers.push_back(makeNondegArrow(
+                2, "nondeg_lidar_displacement", t_lidar_nondeg_map, 0.2f, 1.0f, 0.2f)); // Green
+            markers.markers.push_back(makeNondegArrow(
+                3, "nondeg_complementary_odom_displacement", t_complementary_nondeg_map, 1.0f, 0.0f, 1.0f)); // Magenta
+        }
+
+        pubComplementaryOdomCorrectionDirection->publish(markers);
+    }
+}

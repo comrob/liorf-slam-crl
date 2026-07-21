@@ -27,6 +27,7 @@ The runtime architecture is topic-driven and split across front-end deskewing, I
     - `src/mapOptimization/mapOptimization_core.cpp`
     - `src/mapOptimization/mapOptimization_map.cpp`
     - `src/mapOptimization/mapOptimization_scan.cpp`
+    - `src/mapOptimization/mapOptimization_degeneracy.cpp`
     - `src/mapOptimization/mapOptimization_gps.cpp`
     - `src/mapOptimization/mapOptimization_loop.cpp`
     - `src/mapOptimization/mapOptimization_publish.cpp`
@@ -94,6 +95,7 @@ The runtime architecture is topic-driven and split across front-end deskewing, I
     - [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp): node constructor, memory setup, LiDAR callback orchestration.
     - [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp): local/global map management, map extraction/cache, save-map service hooks.
     - [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp): scan alignment and optimization (`scan2MapOptimization`, LM, pose update).
+    - [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp): perturbation-based degeneracy detection orchestration and complementary odometry compensation (input handler, extrinsics resolution, state override).
     - [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp): datum init, GPS fusion factors, GPS outputs.
     - [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp): RS/SC loop closure and loop visualization.
     - [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp): TF/odometry/frame publication + geometry helpers.

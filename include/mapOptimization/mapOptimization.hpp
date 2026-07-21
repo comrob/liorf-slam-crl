@@ -346,6 +346,9 @@ public:
     void publishKeyframeDeskewedDownsampledDebug(const pcl::PointCloud<PointType>::Ptr &cloud);
     void publishFrames();
 
+    // Degeneracy detection + complementary odometry compensation
+    // (implemented in mapOptimization_degeneracy.cpp; visualization in
+    // mapOptimization_publish.cpp).
     std::deque<nav_msgs::msg::Odometry> complementaryOdomQueue;
     std::mutex complementaryOdomMutex;
 
@@ -358,5 +361,6 @@ public:
                                          bool hasNonDegenerateComponents = false,
                                          const Eigen::Vector3f &t_lidar_nondeg_map = Eigen::Vector3f::Zero(),
                                          const Eigen::Vector3f &t_complementary_nondeg_map = Eigen::Vector3f::Zero());
+    void runDegeneracyDetectionAndCompensation();
     void applyDegeneracyStateOverride(double dt_scan);
 };
