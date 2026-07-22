@@ -4,7 +4,7 @@ USER root
 
 RUN sed -i 's/archive.ubuntu.com/us.archive.ubuntu.com/g' /etc/apt/sources.list
 
-# 1. HEAVY DEPENDENCIES (GTSAM)
+# 1. HEAVY DEPENDENCIES (GTSAM) + distcc added to install list
 RUN apt-get update && apt-get install -y \
     software-properties-common \
     libpcl-dev \
@@ -19,11 +19,20 @@ RUN apt-get update && apt-get install -y \
     wget \
     x11-apps \
     ccache \
+    distcc \
     mold \
     ros-jazzy-rmw-zenoh-cpp \
     && rm -rf /var/lib/apt/lists/*
 
+# Accept optional distributed build arguments with safe local fallbacks
+ARG DISTCC_HOSTS=""
+ARG CCACHE_PREFIX=""
+ARG PARALLEL_WORKERS=""
+ENV DISTCC_HOSTS=${DISTCC_HOSTS}
+ENV CCACHE_PREFIX=${CCACHE_PREFIX}
+
 WORKDIR /tmp
+# Compile GTSAM leveraging ccache/distcc over Tailscale if configured
 RUN git clone https://github.com/borglab/gtsam.git \
     && cd gtsam && git checkout 4.2.0 \
     && sed -i 's/add_subdirectory(examples)/# add_subdirectory(examples)/g' CMakeLists.txt \
@@ -31,7 +40,8 @@ RUN git clone https://github.com/borglab/gtsam.git \
     && mkdir build && cd build \
     && cmake .. -DGTSAM_WITH_TBB=OFF -DGTSAM_BUILD_WITH_MARCH_NATIVE=OFF \
        -DGTSAM_USE_SYSTEM_EIGEN=ON -DGTSAM_BUILD_UNSTABLE=ON -DCMAKE_BUILD_TYPE=Release \
-    && make -j$(nproc) && make install && ldconfig \
+       -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+    && make -j${PARALLEL_WORKERS:-$(nproc)} && make install && ldconfig \
     && cd /tmp && rm -rf gtsam
 
 # 3. USER SETUP
@@ -66,6 +76,13 @@ CMD ["sleep", "infinity"]
 # This stage continues and copies code into the image.
 FROM base AS prod
 
+# Re-declare ARGs for this build stage
+ARG DISTCC_HOSTS=""
+ARG CCACHE_PREFIX=""
+ARG COLCON_PARALLEL_WORKERS=""
+ENV DISTCC_HOSTS=${DISTCC_HOSTS}
+ENV CCACHE_PREFIX=${CCACHE_PREFIX}
+
 # 5. PRE-BUILD APPLICATION
 RUN mkdir -p /home/$USERNAME/ros2_ws/src/liorf
 
@@ -89,12 +106,14 @@ COPY rviz/.empty rviz/
 
 WORKDIR /home/$USERNAME/ros2_ws
 
-# Build C++ code with placeholders
-# This layer is cached and reused unless C++ source changes
+# Build C++ code with ccache/distcc and dynamic parallelism
 RUN echo "Building C++ code"
 RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
     cd /home/$USERNAME/ros2_ws && \
-    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+    colcon build \
+      --cmake-args -DCMAKE_BUILD_TYPE=Release -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+                   -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+      --parallel-workers ${COLCON_PARALLEL_WORKERS:-$(nproc)}"
 
 WORKDIR /home/$USERNAME/ros2_ws/src/liorf
 
@@ -107,11 +126,13 @@ COPY rviz/ ./rviz
 WORKDIR /home/$USERNAME/ros2_ws
 
 # Reinstall only the changed files (colcon incremental build)
-# This is fast - only processes new/changed files
 RUN echo "Updating config/launch/rviz files"
 RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
     cd /home/$USERNAME/ros2_ws && \
-    colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release"
+    colcon build \
+      --cmake-args -DCMAKE_BUILD_TYPE=Release \
+                   -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+      --parallel-workers ${COLCON_PARALLEL_WORKERS:-$(nproc)}"
 
 # Add entrypoint for benchmark compatibility
 COPY --chown=$USERNAME:$USERNAME docker/entrypoint.sh /home/$USERNAME/ros2_ws/entrypoint.sh

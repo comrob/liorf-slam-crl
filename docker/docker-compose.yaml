@@ -1,17 +1,52 @@
 # --- Shared Configuration Template (Root Level) ---
+# --- Shared Configuration Template (Root Level) ---
 x-dev-config: &common-config
   network_mode: host
   ipc: host
   pid: host
   user: "${USER_UID:-1000}:${USER_GID:-1000}"
+  devices:
+    - /dev/dri:/dev/dri
+  group_add:
+    - video
+    - "${RENDER_GID:-992}" # <--- Use numeric GID variable instead of text string
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities:
+              - gpu
+              - graphics
+              - display
+              - compute
+              - utility
   environment:
     - DISPLAY=${DISPLAY}
     - ROS_DOMAIN_ID=0
-    - NVIDIA_VISIBLE_DEVICES=all
-    - NVIDIA_DRIVER_CAPABILITIES=all
     - QT_X11_NO_MITSHM=1
     - RMW_IMPLEMENTATION=rmw_zenoh_cpp
     - ZENOH_CONFIG_URI=file:///home/dev/zenoh.json5
+    # --- Force Hybrid eGPU PRIME Offloading to NVIDIA ---
+    - __NV_PRIME_RENDER_OFFLOAD=1
+    - __GLX_VENDOR_LIBRARY_NAME=nvidia
+    - __VK_LAYER_NV_optimus=NVIDIA_only
+    # --- Legacy fallbacks for backward compatibility ---
+    - NVIDIA_VISIBLE_DEVICES=all
+    - NVIDIA_DRIVER_CAPABILITIES=all
+    # --- Distributed compilation arguments ---
+    - DISTCC_HOSTS=${DISTCC_HOSTS:-}
+    - CCACHE_PREFIX=${CCACHE_PREFIX:-}
+    - COLCON_PARALLEL_WORKERS=${COLCON_PARALLEL_WORKERS:-16}
+
+# --- Shared Build Arguments Anchor ---
+x-build-args: &common-build-args
+  USER_UID: ${USER_UID:-1000}
+  USER_GID: ${USER_GID:-1000}
+  DISTCC_HOSTS: ${DISTCC_HOSTS:-}
+  CCACHE_PREFIX: ${CCACHE_PREFIX:-}
+  COLCON_PARALLEL_WORKERS: ${COLCON_PARALLEL_WORKERS:-16}
 
 services:
   # --- 0. Zenoh Router (Coordinator) ---
@@ -23,9 +58,8 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       target: deps
-      args:
-        USER_UID: ${USER_UID:-1000}
-        USER_GID: ${USER_GID:-1000}
+      network: host
+      args: *common-build-args
     environment:
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_zenoh_cpp
@@ -41,14 +75,14 @@ services:
     build: 
       context: ..
       dockerfile: docker/Dockerfile
-      target: deps  # <--- USES DEPS STAGE (No Source Code inside)
-      args:
-        USER_UID: ${USER_UID:-1000} 
-        USER_GID: ${USER_GID:-1000}
+      target: deps
+      network: host
+      args: *common-build-args
     volumes:
       - ..:/home/dev/ros2_ws/src/liorf
       - ${HOST_MAPS_PATH}:/home/dev/Downloads/LOAM
       - ${HOST_BAGS_PATH:-../bags}:/home/dev/bags
+      - ${HOST_ROS_PATH:-/home/seva/.ros}:/home/dev/.ros
       - ./cache/build:/home/dev/ros2_ws/build
       - ./cache/install:/home/dev/ros2_ws/install
       - ./cache/log:/home/dev/ros2_ws/log
@@ -66,14 +100,14 @@ services:
     build: 
       context: ..
       dockerfile: docker/Dockerfile
-      target: deps  # <--- USES DEPS STAGE
-      args:
-        USER_UID: ${USER_UID:-1000} 
-        USER_GID: ${USER_GID:-1000}
+      target: deps
+      network: host
+      args: *common-build-args
     volumes:
       - ..:/home/dev/ros2_ws/src/liorf
       - ${HOST_MAPS_PATH}:/home/dev/Downloads/LOAM
       - ${HOST_BAGS_PATH:-../bags}:/home/dev/bags
+      - ${HOST_ROS_PATH:-/home/seva/.ros}:/home/dev/.ros
       - ./cache/build:/home/dev/ros2_ws/build
       - ./cache/install:/home/dev/ros2_ws/install
       - ./cache/log:/home/dev/ros2_ws/log
@@ -91,13 +125,13 @@ services:
     build: 
       context: ..
       dockerfile: docker/Dockerfile
-      target: prod  # <--- USES PROD STAGE (Compiled Code inside)
-      args:
-        USER_UID: ${USER_UID:-1000} 
-        USER_GID: ${USER_GID:-1000}
+      target: prod
+      network: host
+      args: *common-build-args
     volumes:
       - ${HOST_MAPS_PATH}:/home/dev/Downloads/LOAM
       - ${HOST_BAGS_PATH:-../bags}:/home/dev/bags
+      - ${HOST_ROS_PATH:-/home/seva/.ros}:/home/dev/.ros
       - ../config:/home/dev/ros2_ws/install/liorf/share/liorf/config
       - ../launch:/home/dev/ros2_ws/install/liorf/share/liorf/launch
       - /tmp/.X11-unix:/tmp/.X11-unix
@@ -142,6 +176,7 @@ services:
       - RMW_IMPLEMENTATION=rmw_zenoh_cpp
       - ZENOH_CONFIG_URI=file:///config/dds/zenoh.json5
     volumes:
+      - ${HOST_ROS_PATH:-/home/seva/.ros}:/home/dev/.ros
       - /tmp/.X11-unix:/tmp/.X11-unix
       - ./zenoh.json5:/config/dds/zenoh.json5:ro
       - ../config/docker_override.yaml:/config/docker_override.yaml:ro

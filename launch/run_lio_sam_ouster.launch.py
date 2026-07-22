@@ -19,6 +19,7 @@ def generate_launch_description():
     default_rviz_config = default_rviz_config_path(share_dir)
 
     params_file = LaunchConfiguration('params_file')
+    config_override = LaunchConfiguration('config_override')
     use_sim_time = LaunchConfiguration('use_sim_time')
     rviz = LaunchConfiguration('rviz')
     rviz_config = LaunchConfiguration('rviz_config')
@@ -28,6 +29,12 @@ def generate_launch_description():
         default_value=os.path.join(
             share_dir, 'config', 'lio_sam_ouster.yaml'),
         description='FPath to the ROS2 parameters file to use.')
+
+    config_override_declare = DeclareLaunchArgument(
+        'config_override',
+        default_value='',
+        description='Optional second ROS 2 parameters file applied after params_file.'
+    )
 
     use_sim_time_declare = DeclareLaunchArgument(
         'use_sim_time',
@@ -51,6 +58,7 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(os.path.join(launch_dir, 'liorf.launch.py')),
         launch_arguments={
             'params_file': params_file,
+            'config_override': config_override,
             'use_sim_time': use_sim_time,
             'rviz': rviz,
             'rviz_config': rviz_config,
@@ -59,6 +67,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         params_declare,
+        config_override_declare,
         rviz_declare,
         rviz_config_declare,
         use_sim_time_declare,

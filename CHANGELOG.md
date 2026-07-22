@@ -26,6 +26,37 @@ change SLAM/logging functionality.
 
 ---
 
+## 2026-07-22 - Enable docker override for make slam and persist .ros logs
+
+### Files changed
+
+- [launch/liorf.launch.py](launch/liorf.launch.py)
+- [launch/run_lio_sam_ouster.launch.py](launch/run_lio_sam_ouster.launch.py)
+- [docker/mk/dev.mk](docker/mk/dev.mk)
+- [docker/docker-compose.yaml](docker/docker-compose.yaml)
+- [docker/.env](docker/.env)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Added optional `config_override` launch argument support to the core launch
+	path (`run_lio_sam_ouster.launch.py` -> `liorf.launch.py`).
+- Updated `make slam` and `make prod` launch commands to pass
+	`config_override:=/home/dev/ros2_ws/install/liorf/share/liorf/config/docker_override.yaml`,
+	so settings in `config/docker_override.yaml` are now applied in those flows.
+- Added bind mounts for host ROS user directory (`HOST_ROS_PATH`, defaulting to
+	`/home/seva/.ros` in `.env`) into `/home/dev/.ros` for `liorf_vscode`,
+	`liorf_dev`, `liorf_run`, and `run_slam`, so runtime logs/results persist on
+	host.
+
+### Migration/runtime risk notes
+
+- Low. Launch behavior is unchanged unless `config_override` is provided.
+- `make slam`/`make prod` now intentionally apply docker override parameters;
+	if unexpected behavior appears, inspect `config/docker_override.yaml` first.
+- If `HOST_ROS_PATH` is invalid or missing, container startup will fail until
+	the path is corrected.
+
 ## 2026-07-22 - Group log outputs under log.* and add odom TUM trajectory export
 
 ### Files changed

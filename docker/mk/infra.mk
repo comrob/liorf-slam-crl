@@ -3,10 +3,13 @@
 #  up, down, clean, prune, reimage, image building
 # ================================================================
 
-DOCKER_DIR := $(realpath $(dir $(abspath $(lastword $(MAKEFILE_LIST))))../)
-COMPOSE := docker compose -f $(DOCKER_DIR)/docker-compose.yaml --env-file $(DOCKER_DIR)/.env
-Q := @
+HOST_RENDER_GID := $(shell stat -c "%g" /dev/dri/renderD128 2>/dev/null || getent group render | cut -d: -f3 2>/dev/null || echo 110)
 
+DOCKER_DIR := $(realpath $(dir $(abspath $(lastword $(MAKEFILE_LIST))))../)
+
+# 2. Inject RENDER_GID dynamically as an inline environment variable into Docker Compose 
+COMPOSE := RENDER_GID=$(HOST_RENDER_GID) docker compose -f $(DOCKER_DIR)/docker-compose.yaml --env-file $(DOCKER_DIR)/.env
+Q := @
 .PHONY: up down clean prune clean-build reimage stop image rebuild
 
 up:
