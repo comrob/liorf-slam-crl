@@ -26,6 +26,64 @@ change SLAM/logging functionality.
 
 ---
 
+## 2026-07-22 - Group log outputs under log.* and add odom TUM trajectory export
+
+### Files changed
+
+- [include/utility.h](include/utility.h)
+- [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/liorf_diagnostics.cpp](src/liorf_diagnostics.cpp)
+- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [config/anymal.yaml](config/anymal.yaml)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Added unified log/output parameter tree under `log.*`:
+	- `log.base_dir`, `log.run_suffix`
+	- `log.diagnostics.write_files`
+	- `log.diagnostics.enable_stats`
+	- `log.diagnostics.enable_event`
+	- `log.diagnostics.enable_warnings`
+	- `log.diagnostics.enable_telemetry`
+	- `log.diagnostics.enable_time_deltas`
+	- `log.diagnostics.enable_frame_metrics`
+	- `log.trajectory.odom.enabled`
+- Refactored runtime parameter storage to a single flat `LogOutputConfig`
+	structure in `ParamServer` while preserving diagnostics behavior.
+- Added optional continuous TUM export of the incremental odometry trajectory
+	in odom frame (`odom -> lidar_link`) with format:
+	`timestamp tx ty tz qx qy qz qw`.
+- TUM export is disabled by default and only active when
+	`log.trajectory.odom.enabled` is true.
+- When enabled, trajectory output is always written to the current run
+	diagnostics directory as `trajectory_odom.tum` (alongside diagnostics files)
+	and does not depend on `log.diagnostics.write_files`.
+- Trajectory file ownership and formatting are handled in
+	`LiorfDiagnostics`; map optimization only forwards odometry samples.
+- `LiorfDiagnostics` does not read ROS parameters directly for trajectory
+	logging; the enable flag is passed from `ParamServer` via constructor,
+	consistent with other diagnostics output flags.
+- Replaced the long diagnostics constructor bool-list with explicit
+	`DiagnosticsOutputPolicy` and `TrajectoryOutputPolicy` argument structs,
+	making the independence of odom-trajectory export from diagnostics-file
+	master switch explicit in the API.
+- Replaced diagnostics trajectory API input from
+	`nav_msgs::msg::Odometry` to a small ROS-free POD (`TumPoseSample`), with
+	ROS-message-to-POD conversion performed at mapOptimization publish call site
+	to reduce diagnostics compile-time coupling.
+- Added legacy fallback support for existing `diagnostics_write_*` keys, with
+	a deprecation warning when legacy overrides are detected.
+
+### Migration/runtime risk notes
+
+- Low. Default behavior is unchanged.
+- Existing configs should migrate diagnostics settings to `log.diagnostics.*`.
+	Legacy diagnostics keys are still accepted as fallback for now.
+
 ## 2026-07-21 - Centralize source-first RViz config resolution in launch files
 
 ### Files changed

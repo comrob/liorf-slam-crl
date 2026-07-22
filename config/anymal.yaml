@@ -1,12 +1,19 @@
 /**:
   ros__parameters:
-    diagnostics_write_files_master: true
-    diagnostics_write_timing_stats: true
-    diagnostics_write_event: true
-    diagnostics_write_warnings: true
-    diagnostics_write_telemetry: true
-    diagnostics_write_time_deltas: true
-    diagnostics_write_frame_metrics: true
+    log:
+      base_dir: "~/.ros/liorf_logs"
+      run_suffix: ""
+      diagnostics:
+        write_files: true
+        enable_stats: true
+        enable_event: true
+        enable_warnings: true
+        enable_telemetry: true
+        enable_time_deltas: true
+        enable_frame_metrics: true
+      trajectory:
+        odom:
+          enabled: true
 
     # Topics
     pointCloudTopic: "/lidar/point_cloud"               # Point cloud data
@@ -115,8 +122,7 @@
                     0.0, 1.0, 0.0,
                     0.0, 0.0, 1.0]
 
-    # voxel filter paprams (Legacy/Global variables)
-    mappingSurfLeafSize: 0.2                      
+                          
                      
     useSorFilter: false                           
     sorMeanK: 5                                   
@@ -128,14 +134,7 @@
 
     # CPU Params
     numberOfCores: 16                              
-    mappingProcessInterval: 0.0                  
-
-    # Surrounding map
-    surroundingkeyframeAddingDistThreshold: 1.0   
-    surroundingkeyframeAddingAngleThreshold: 0.2  
-    surroundingKeyframeDensity: 2.0               
-    surroundingKeyframeSearchRadius: 50.0
-    localMapTruncationRadius: 60.0               
+    mappingProcessInterval: 0.0                              
 
     # Loop closure
     loopClosureEnableFlag: true
@@ -166,6 +165,16 @@
     # ==========================================================
     # Algorithmic Configurations (Decoupled Architecture)
     # ==========================================================
+    # voxel filter paprams
+    mappingSurfLeafSize: 0.2
+
+    # Surrounding map
+    surroundingkeyframeAddingDistThreshold: 1.0   
+    surroundingkeyframeAddingAngleThreshold: 0.2  
+    surroundingKeyframeDensity: 2.0               
+    surroundingKeyframeSearchRadius: 50.0
+    localMapTruncationRadius: 60.0
+
     mapping:
       backend_type: "kdtree_lm" # Options: "voxel_pko" or "kdtree_lm"
       

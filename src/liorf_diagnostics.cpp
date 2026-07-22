@@ -6,47 +6,44 @@ LiorfDiagnostics::LiorfDiagnostics(
     const std::string &history_policy,
     const std::string &reliability_policy,
     const std::string &base_dir,
-        const std::string &run_suffix,
-        const std::string &topic,
-        double publish_hz,
-        bool write_files_master,
-        bool write_timing_stats,
-        bool write_event,
-        bool write_warnings,
-        bool write_telemetry,
-        bool write_time_deltas,
-        bool write_frame_metrics)
+    const std::string &run_suffix,
+    const std::string &topic,
+    double publish_hz,
+    DiagnosticsOutputPolicy diagnostics_output_policy,
+    TrajectoryOutputPolicy trajectory_output_policy)
     : node_(node),
       history_policy_(history_policy),
-            reliability_policy_(reliability_policy),
-            write_files_master_(write_files_master),
-            write_timing_stats_(write_timing_stats),
-            write_event_(write_event),
-            write_warnings_(write_warnings),
-            write_telemetry_(write_telemetry),
-            write_time_deltas_(write_time_deltas),
-            write_frame_metrics_(write_frame_metrics)
+      reliability_policy_(reliability_policy),
+      diagnostics_output_policy_(diagnostics_output_policy),
+      trajectory_output_policy_(trajectory_output_policy)
 {
     if (!node_)
         return;
 
     run_dir_ = createRunDirectory(base_dir, run_suffix);
 
+    const bool diagnostics_files_enabled = diagnostics_output_policy_.write_files_master;
+    const bool odom_trajectory_export_enabled = trajectory_output_policy_.write_odom_trajectory_tum;
+
     run_parameters_.open((run_dir_ / "run_parameters.yaml").string(), std::ios::out);
-    if (write_files_master_ && write_timing_stats_)
+    if (diagnostics_files_enabled && diagnostics_output_policy_.write_timing_stats)
         timing_stats_.open((run_dir_ / "timing_stats.csv").string(), std::ios::out);
-    if (write_files_master_ && write_event_)
+    if (diagnostics_files_enabled && diagnostics_output_policy_.write_event)
         event_log_.open((run_dir_ / "event.txt").string(), std::ios::out);
-    if (write_files_master_ && write_warnings_)
+    if (diagnostics_files_enabled && diagnostics_output_policy_.write_warnings)
         warning_log_.open((run_dir_ / "warnings.txt").string(), std::ios::out);
-    if (write_files_master_ && write_telemetry_)
+    if (diagnostics_files_enabled && diagnostics_output_policy_.write_telemetry)
         telemetry_csv_.open((run_dir_ / "telemetry.csv").string(), std::ios::out);
-    if (write_files_master_ && write_time_deltas_)
+    if (diagnostics_files_enabled && diagnostics_output_policy_.write_time_deltas)
         time_deltas_csv_.open((run_dir_ / "time_deltas.csv").string(), std::ios::out);
-    if (write_files_master_ && write_frame_metrics_)
+    if (diagnostics_files_enabled && diagnostics_output_policy_.write_frame_metrics)
         frame_metrics_csv_.open((run_dir_ / "frame_metrics.csv").string(), std::ios::out);
+
+    // Odom trajectory TUM export is controlled independently from diagnostics file gating.
+    if (odom_trajectory_export_enabled)
+        odom_trajectory_tum_.open((run_dir_ / "trajectory_odom.tum").string(), std::ios::out);
     
-    if (write_files_master_ && write_telemetry_) // Or a new write_degeneracy flag
+    if (diagnostics_files_enabled && diagnostics_output_policy_.write_telemetry) // Or a new write_degeneracy flag
     {
         degeneracy_metrics_csv_.open((run_dir_ / "degeneracy_metrics.csv").string(), std::ios::out);
         if (degeneracy_metrics_csv_.is_open())
@@ -90,23 +87,26 @@ LiorfDiagnostics::LiorfDiagnostics(
 LiorfDiagnostics::~LiorfDiagnostics()
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    const bool diagnostics_files_enabled = diagnostics_output_policy_.write_files_master;
     if (timing_stats_.is_open())
         timing_stats_.flush();
-    if (write_files_master_ && event_log_.is_open())
+    if (diagnostics_files_enabled && event_log_.is_open())
         event_log_.flush();
-    if (write_files_master_ && warning_log_.is_open())
+    if (diagnostics_files_enabled && warning_log_.is_open())
         warning_log_.flush();
     if (run_parameters_.is_open())
         run_parameters_.flush();
-    if (write_files_master_ && telemetry_csv_.is_open())
+    if (diagnostics_files_enabled && telemetry_csv_.is_open())
         telemetry_csv_.flush();
-    if (write_files_master_ && time_deltas_csv_.is_open())
+    if (diagnostics_files_enabled && time_deltas_csv_.is_open())
         time_deltas_csv_.flush();
-    if (write_files_master_ && frame_metrics_csv_.is_open())
+    if (diagnostics_files_enabled && frame_metrics_csv_.is_open())
         frame_metrics_csv_.flush();
-    if (write_files_master_ && jacobian_degeneracy_metrics_csv_.is_open())
+    if (odom_trajectory_tum_.is_open())
+        odom_trajectory_tum_.flush();
+    if (diagnostics_files_enabled && jacobian_degeneracy_metrics_csv_.is_open())
         jacobian_degeneracy_metrics_csv_.flush();
-    if (write_files_master_ && perturbation_degeneracy_metrics_csv_.is_open())
+    if (diagnostics_files_enabled && perturbation_degeneracy_metrics_csv_.is_open())
         perturbation_degeneracy_metrics_csv_.flush();
 }
 
@@ -446,6 +446,23 @@ void LiorfDiagnostics::recordPerturbationDegeneracyTelemetry(
         msg.data = ss.str();
         degeneracy_metrics_pub_->publish(msg);
     }
+}
+
+void LiorfDiagnostics::recordOdomTrajectoryTum(const TumPoseSample &sample)
+{
+    if (!trajectory_output_policy_.write_odom_trajectory_tum || !odom_trajectory_tum_.is_open())
+        return;
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    odom_trajectory_tum_ << std::fixed << std::setprecision(9)
+                         << sample.stamp_sec << " "
+                         << sample.tx << " "
+                         << sample.ty << " "
+                         << sample.tz << " "
+                         << sample.qx << " "
+                         << sample.qy << " "
+                         << sample.qz << " "
+                         << sample.qw << "\n";
 }
 
 double LiorfDiagnostics::getLastPredictionDelta() const

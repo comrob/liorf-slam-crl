@@ -117,6 +117,22 @@ struct ComplementaryOdomParameters
     Eigen::Vector3d extTrans = Eigen::Vector3d::Zero();
 };
 
+struct LogOutputConfig
+{
+    std::string base_dir = "~/.ros/liorf_logs";
+    std::string run_suffix;
+
+    bool write_files = true;
+    bool enable_stats = true;
+    bool enable_event = true;
+    bool enable_warnings = true;
+    bool enable_telemetry = true;
+    bool enable_time_deltas = true;
+    bool enable_frame_metrics = true;
+
+    bool odom_enabled = false;
+};
+
 // enum TranslationPredictionSource to string
 inline std::string TranslationPredictionSourceToString(TranslationPredictionSource v)
 {
@@ -140,13 +156,7 @@ public:
 
     string history_policy;
     string reliability_policy;
-    bool diagnostics_write_files_master;
-    bool diagnostics_write_timing_stats;
-    bool diagnostics_write_event;
-    bool diagnostics_write_warnings;
-    bool diagnostics_write_telemetry;
-    bool diagnostics_write_time_deltas;
-    bool diagnostics_write_frame_metrics;
+    LogOutputConfig logOutput;
 
     std::string robot_id;
 
@@ -290,20 +300,76 @@ public:
         get_parameter("history_policy", history_policy);
         declare_parameter<string>("reliability_policy", "reliability_reliable");
         get_parameter("reliability_policy", reliability_policy);
-        declare_parameter<bool>("diagnostics_write_files_master", true);
-        get_parameter("diagnostics_write_files_master", diagnostics_write_files_master);
-        declare_parameter<bool>("diagnostics_write_timing_stats", true);
-        get_parameter("diagnostics_write_timing_stats", diagnostics_write_timing_stats);
-        declare_parameter<bool>("diagnostics_write_event", true);
-        get_parameter("diagnostics_write_event", diagnostics_write_event);
-        declare_parameter<bool>("diagnostics_write_warnings", true);
-        get_parameter("diagnostics_write_warnings", diagnostics_write_warnings);
-        declare_parameter<bool>("diagnostics_write_telemetry", true);
-        get_parameter("diagnostics_write_telemetry", diagnostics_write_telemetry);
-        declare_parameter<bool>("diagnostics_write_time_deltas", true);
-        get_parameter("diagnostics_write_time_deltas", diagnostics_write_time_deltas);
-        declare_parameter<bool>("diagnostics_write_frame_metrics", true);
-        get_parameter("diagnostics_write_frame_metrics", diagnostics_write_frame_metrics);
+
+        declare_parameter<string>("log.base_dir", logOutput.base_dir);
+        get_parameter("log.base_dir", logOutput.base_dir);
+        declare_parameter<string>("log.run_suffix", logOutput.run_suffix);
+        get_parameter("log.run_suffix", logOutput.run_suffix);
+
+        declare_parameter<bool>("log.diagnostics.write_files", logOutput.write_files);
+        get_parameter("log.diagnostics.write_files", logOutput.write_files);
+        declare_parameter<bool>("log.diagnostics.enable_stats", logOutput.enable_stats);
+        get_parameter("log.diagnostics.enable_stats", logOutput.enable_stats);
+        declare_parameter<bool>("log.diagnostics.enable_event", logOutput.enable_event);
+        get_parameter("log.diagnostics.enable_event", logOutput.enable_event);
+        declare_parameter<bool>("log.diagnostics.enable_warnings", logOutput.enable_warnings);
+        get_parameter("log.diagnostics.enable_warnings", logOutput.enable_warnings);
+        declare_parameter<bool>("log.diagnostics.enable_telemetry", logOutput.enable_telemetry);
+        get_parameter("log.diagnostics.enable_telemetry", logOutput.enable_telemetry);
+        declare_parameter<bool>("log.diagnostics.enable_time_deltas", logOutput.enable_time_deltas);
+        get_parameter("log.diagnostics.enable_time_deltas", logOutput.enable_time_deltas);
+        declare_parameter<bool>("log.diagnostics.enable_frame_metrics", logOutput.enable_frame_metrics);
+        get_parameter("log.diagnostics.enable_frame_metrics", logOutput.enable_frame_metrics);
+
+        declare_parameter<bool>("log.trajectory.odom.enabled", logOutput.odom_enabled);
+        get_parameter("log.trajectory.odom.enabled", logOutput.odom_enabled);
+
+        // Legacy fallback for pre-log.* diagnostics keys.
+        bool legacy_write_files_master = true;
+        bool legacy_write_timing_stats = true;
+        bool legacy_write_event = true;
+        bool legacy_write_warnings = true;
+        bool legacy_write_telemetry = true;
+        bool legacy_write_time_deltas = true;
+        bool legacy_write_frame_metrics = true;
+
+        declare_parameter<bool>("diagnostics_write_files_master", legacy_write_files_master);
+        get_parameter("diagnostics_write_files_master", legacy_write_files_master);
+        declare_parameter<bool>("diagnostics_write_timing_stats", legacy_write_timing_stats);
+        get_parameter("diagnostics_write_timing_stats", legacy_write_timing_stats);
+        declare_parameter<bool>("diagnostics_write_event", legacy_write_event);
+        get_parameter("diagnostics_write_event", legacy_write_event);
+        declare_parameter<bool>("diagnostics_write_warnings", legacy_write_warnings);
+        get_parameter("diagnostics_write_warnings", legacy_write_warnings);
+        declare_parameter<bool>("diagnostics_write_telemetry", legacy_write_telemetry);
+        get_parameter("diagnostics_write_telemetry", legacy_write_telemetry);
+        declare_parameter<bool>("diagnostics_write_time_deltas", legacy_write_time_deltas);
+        get_parameter("diagnostics_write_time_deltas", legacy_write_time_deltas);
+        declare_parameter<bool>("diagnostics_write_frame_metrics", legacy_write_frame_metrics);
+        get_parameter("diagnostics_write_frame_metrics", legacy_write_frame_metrics);
+
+        const bool usesLegacyDiagnosticsOverrides =
+            legacy_write_files_master != true ||
+            legacy_write_timing_stats != true ||
+            legacy_write_event != true ||
+            legacy_write_warnings != true ||
+            legacy_write_telemetry != true ||
+            legacy_write_time_deltas != true ||
+            legacy_write_frame_metrics != true;
+
+        if (usesLegacyDiagnosticsOverrides)
+        {
+            RCLCPP_WARN(
+                get_logger(),
+                "Using legacy diagnostics_write_* parameters. Prefer log.diagnostics.* keys.");
+            logOutput.write_files = legacy_write_files_master;
+            logOutput.enable_stats = legacy_write_timing_stats;
+            logOutput.enable_event = legacy_write_event;
+            logOutput.enable_warnings = legacy_write_warnings;
+            logOutput.enable_telemetry = legacy_write_telemetry;
+            logOutput.enable_time_deltas = legacy_write_time_deltas;
+            logOutput.enable_frame_metrics = legacy_write_frame_metrics;
+        }
 
         declare_parameter<string>("pointCloudTopic", "/points_raw");
         get_parameter("pointCloudTopic", pointCloudTopic);

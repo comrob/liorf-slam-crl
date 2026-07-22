@@ -658,6 +658,24 @@ void mapOptimization::publishOdometry()
     else
         laserOdomIncremental.pose.covariance[0] = 0;
 
+    if (diagnostics)
+    {
+        const auto &stamp = laserOdomIncremental.header.stamp;
+        const auto &p = laserOdomIncremental.pose.pose.position;
+        const auto &q = laserOdomIncremental.pose.pose.orientation;
+
+        TumPoseSample odomTumSample;
+        odomTumSample.stamp_sec = static_cast<double>(stamp.sec) + static_cast<double>(stamp.nanosec) * 1e-9;
+        odomTumSample.tx = p.x;
+        odomTumSample.ty = p.y;
+        odomTumSample.tz = p.z;
+        odomTumSample.qx = q.x;
+        odomTumSample.qy = q.y;
+        odomTumSample.qz = q.z;
+        odomTumSample.qw = q.w;
+        diagnostics->recordOdomTrajectoryTum(odomTumSample);
+    }
+
     pubLaserOdometryIncremental->publish(laserOdomIncremental);
 
     if (canPublishBaselinkPose)

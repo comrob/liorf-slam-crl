@@ -12,22 +12,29 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     parameters.relinearizeSkip = 1;
     isam = new ISAM2(parameters);
 
+    DiagnosticsOutputPolicy diagnosticsOutputPolicy;
+    diagnosticsOutputPolicy.write_files_master = logOutput.write_files;
+    diagnosticsOutputPolicy.write_timing_stats = logOutput.enable_stats;
+    diagnosticsOutputPolicy.write_event = logOutput.enable_event;
+    diagnosticsOutputPolicy.write_warnings = logOutput.enable_warnings;
+    diagnosticsOutputPolicy.write_telemetry = logOutput.enable_telemetry;
+    diagnosticsOutputPolicy.write_time_deltas = logOutput.enable_time_deltas;
+    diagnosticsOutputPolicy.write_frame_metrics = logOutput.enable_frame_metrics;
+
+    TrajectoryOutputPolicy trajectoryOutputPolicy;
+    trajectoryOutputPolicy.write_odom_trajectory_tum = logOutput.odom_enabled;
+
     diagnostics = std::make_shared<LiorfDiagnostics>(
         this,
         QosPolicy(history_policy, reliability_policy),
         history_policy,
         reliability_policy,
-        "~/.ros/liorf_logs",
-        backend_type,
+        logOutput.base_dir,
+        logOutput.run_suffix.empty() ? backend_type : logOutput.run_suffix,
         "/liorf/debug/telemetry",
         1.0,
-        diagnostics_write_files_master,
-        diagnostics_write_timing_stats,
-        diagnostics_write_event,
-        diagnostics_write_warnings,
-        diagnostics_write_telemetry,
-        diagnostics_write_time_deltas,
-        diagnostics_write_frame_metrics);
+        diagnosticsOutputPolicy,
+        trajectoryOutputPolicy);
 
     auto cloudInfoQos = QosPolicy(history_policy, reliability_policy);
     cloudInfoQos.keep_last(std::max(1, cloud_info_queue_depth));
@@ -124,6 +131,7 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
             manual_global_heading);
     }
 }
+
 
 void mapOptimization::allocateMemory()
 {

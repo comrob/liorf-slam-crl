@@ -20,6 +20,34 @@
 #include <Eigen/Core>
 #include "scanAlignment/IMappingBackend.hpp"
 
+struct TumPoseSample
+{
+    double stamp_sec = 0.0;
+    double tx = 0.0;
+    double ty = 0.0;
+    double tz = 0.0;
+    double qx = 0.0;
+    double qy = 0.0;
+    double qz = 0.0;
+    double qw = 1.0;
+};
+
+struct DiagnosticsOutputPolicy
+{
+    bool write_files_master = true;
+    bool write_timing_stats = true;
+    bool write_event = true;
+    bool write_warnings = true;
+    bool write_telemetry = true;
+    bool write_time_deltas = true;
+    bool write_frame_metrics = true;
+};
+
+struct TrajectoryOutputPolicy
+{
+    bool write_odom_trajectory_tum = false;
+};
+
 class LiorfDiagnostics
 {
 public:
@@ -32,13 +60,8 @@ public:
         const std::string &run_suffix = "",
         const std::string &topic = "/liorf/debug/telemetry",
         double publish_hz = 1.0,
-        bool write_files_master = true,
-        bool write_timing_stats = true,
-        bool write_event = true,
-        bool write_warnings = true,
-        bool write_telemetry = true,
-        bool write_time_deltas = true,
-        bool write_frame_metrics = true);
+        DiagnosticsOutputPolicy diagnostics_output_policy = {},
+        TrajectoryOutputPolicy trajectory_output_policy = {});
 
     ~LiorfDiagnostics();
 
@@ -73,7 +96,9 @@ public:
         size_t sparsified_basis_count,
         bool failed,
         const std::string &fail_reason);
+    void recordOdomTrajectoryTum(const TumPoseSample &sample);
     double getLastPredictionDelta() const;
+    std::filesystem::path runDirectory() const { return run_dir_; }
 
 private:
     std::filesystem::path createRunDirectory(const std::string &base_dir, const std::string &run_suffix);
@@ -92,6 +117,7 @@ private:
     std::ofstream telemetry_csv_;
     std::ofstream time_deltas_csv_;
     std::ofstream frame_metrics_csv_;
+    std::ofstream odom_trajectory_tum_;
     std::ofstream degeneracy_metrics_csv_;
     std::ofstream jacobian_degeneracy_metrics_csv_;
     std::ofstream perturbation_degeneracy_metrics_csv_;
@@ -106,13 +132,8 @@ private:
     rclcpp::TimerBase::SharedPtr diagnostics_timer_;
 
     mutable std::mutex mutex_;
-    bool write_files_master_ = true;
-    bool write_timing_stats_ = true;
-    bool write_event_ = true;
-    bool write_warnings_ = true;
-    bool write_telemetry_ = true;
-    bool write_time_deltas_ = true;
-    bool write_frame_metrics_ = true;
+    DiagnosticsOutputPolicy diagnostics_output_policy_{};
+    TrajectoryOutputPolicy trajectory_output_policy_{};
     rclcpp::Time last_lidar_update_;
     rclcpp::Time last_gps_update_;
     double max_translation_delta_last_batch_m_ = 0.0;
