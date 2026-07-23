@@ -1,3 +1,208 @@
 # Empty override configuration for SLAM evaluation framework compatibility
 # External evaluation frameworks can mount custom parameter overrides to this path
 # This file must exist as a tracked file (not tolerated as missing)
+
+/**:
+  ros__parameters:
+    log:
+      base_dir: "~/.ros/liorf_logs"
+      run_suffix: ""
+      diagnostics:
+        write_files: true
+        enable_stats: true
+        enable_event: true
+        enable_warnings: true
+        enable_telemetry: true
+        enable_time_deltas: true
+        enable_frame_metrics: true
+      trajectory:
+        odom:
+          enabled: true
+
+    # Topics
+    pointCloudTopic: "/lidar/point_cloud"               # Point cloud data
+    imuTopic: "/sensors/imu"                         # IMU data
+    gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
+    complementaryOdomTopic: "/legged_odometry/odom"  # Complementary odometry topic
+
+    degeneracyDetection:
+      enable: true
+      compensation_source: "complementary_odom"  # Options: "none", "identity", "complementary_odom"
+      jacobianBased:
+        compute: true
+        log: true
+        threshold: 0.001
+      perturbationBased:
+        n_multiplier: 3.0
+        max_icp_steps: 4
+        max_perturbation_angle_deg: 6.0
+        descriptive_number_threshold: 0.3
+        eigen_value_threshold: 0.05
+        verbose: false
+
+    complementaryOdom:
+      minDeltaTime: 0.1
+      scaleEstimationEnabled: true            # Scale complementary-odom translation by non-degenerate LiDAR/complementary-odom displacement ratio
+      scaleMinNonDegenerateSpeed: 0.2         # m/s; min non-degenerate speed (both displacements) to estimate the scale
+      autoLookupLidarToTf: false
+      frame: ""                               # Inferred from message if empty
+      extrinsicTrans: [0.0, 0.0, 0.0]
+      extrinsicRot: [-1.0, 0.0, 0.0,
+                     0.0, -1.0, 0.0,
+                     0.0, 0.0, 1.0]
+
+
+    translationPredictionSource: constant_velocity
+    maxTranslationPrediction: 5.0
+    minTranslationPredictionSpeed: 0.0
+
+    # enable this if deskewing is not working well, e.g. for fast turns, but works well for smooth platforms such as husky.
+    # disable this for legged robots.
+    reject_fast_turn_scans: false
+    fast_turn_max_angular_speed_rad_s: 0.5
+
+
+    # Frames
+    lidarFrame: ""
+    baselinkFrame: "base"
+    odometryFrame: "odom"
+    mapFrameLocal: "map"
+    mapFrameEnu: "map_enu"
+    mapFrameNed: "map_ned"
+    ECEFframe: "earth"
+    debugTFs: false
+
+    # GPS Settings
+    useImuHeadingInitialization: true           
+    useGpsElevation: false                      
+    gpsCovThreshold: 2.0                        
+    poseCovThreshold: 25.0                      
+    gps_processing_delay_sec: 1.0               
+    gps_covariance_inflation_m: 2.0             
+    gps_reject_on_invalid_status: false         
+    gps_keyframe_search_window: 10              
+    gps_max_constraint_dt_sec: 0.30             
+    
+    force_initial_gps: true
+    manual_gps_origin: [46.75602856, 7.59374951, 617.67]   # LLA GPS origin for manual georeference initialization (if `force_initial_gps` enabled)
+    manual_global_heading: 0.0                   # global yaw heading in degrees to rotate EN
+
+    # keep liorf without GPS conpletely
+    # kalman filter on top of it with liorf anfd GPS
+
+    # Export settings
+    savePCD: false                              
+    savePCDDirectory: "/Downloads/LOAM/"        
+    save_dense_gps_trajectory: true             
+    save_dense_odom_trajectory: true            
+
+    # Sensor Settings
+    sensor: ouster                            
+    N_SCAN: 128                                  
+    Horizon_SCAN: 1024                          
+    downsampleRate: 1                           
+    point_filter_num: 5                         
+    lidarMinRange: 1.0                          
+    lidarMaxRange: 100.0                       
+
+    # IMU Settings
+    imuType: 0                                  
+    imuRate: 500.0
+    imuAccNoise: 3.9939570888238808e-03
+    imuGyrNoise: 1.5636343949698187e-03
+    imuAccBiasN: 6.4356659353532566e-05
+    imuGyrBiasN: 3.5640318696367613e-05
+    imuGravity: 9.80511
+    imuRPYWeight: 0.01
+
+    autoLookupLidarToImuTf: true
+    # Extrinsics: T_lb (lidar -> imu)
+    extrinsicTrans: [0.0, 0.0, 0.0]
+    extrinsicRot: [-1.0, 0.0, 0.0,
+                    0.0, -1.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+    extrinsicRPY: [1.0, 0.0, 0.0,
+                    0.0, 1.0, 0.0,
+                    0.0, 0.0, 1.0]
+
+                          
+                     
+    useSorFilter: false                           
+    sorMeanK: 5                                   
+    sorStddevMulThresh: 1.0                       
+
+    # robot motion constraint
+    z_tollerance: 1000.0                            
+    rotation_tollerance: 1000.0                     
+
+    # CPU Params
+    numberOfCores: 16                              
+    mappingProcessInterval: 0.0                              
+
+    # Loop closure
+    loopClosureEnableFlag: true
+    loopClosureFrequency: 0.1                     
+    surroundingKeyframeSize: 50                   
+    historyKeyframeSearchRadius: 15.0             
+    historyKeyframeSearchTimeDiff: 200.0          
+    historyKeyframeSearchNum: 25                  
+    loopClosureICPSurfLeafSize: 0.5               
+    historyKeyframeFitnessScore: 0.3              
+    rebuild_on_loop_closure: true                 
+    rebuild_on_gps_jump: false                    
+    transformed_cloud_cache_max_age_sec: 0.5      
+    cloud_info_queue_depth: 5                     
+    drop_stale_lidar_frames: true                 
+    max_lidar_processing_lag_sec: 0.5             
+
+    # Visualization
+    globalMapVisualizationSearchRadius: 1000.0    
+    globalMapVisualizationPoseDensity: 1.0       
+    globalMapVisualizationLeafSize: 0.5           
+    
+    odomTopic: "odometry/imu"                       # IMU pre-preintegration odometry
+    history_policy: "history_keep_last"
+    reliability_policy: "reliability_reliable"
+
+
+    # ==========================================================
+    # Algorithmic Configurations (Decoupled Architecture)
+    # ==========================================================
+    # voxel filter paprams
+    mappingSurfLeafSize: 0.2
+
+    # Surrounding map
+    surroundingkeyframeAddingDistThreshold: 1.0   
+    surroundingkeyframeAddingAngleThreshold: 0.2  
+    surroundingKeyframeDensity: 2.0               
+    surroundingKeyframeSearchRadius: 50.0
+    localMapTruncationRadius: 60.0
+
+    mapping:
+      backend_type: "kdtree_lm" # Options: "voxel_pko" or "kdtree_lm"
+      
+      # Parameters for VoxelMap + Probabilistic Kernel Optimizer
+      voxel_pko:
+        hierarchy_factor: 3
+        planarity_threshold: 0.1
+        point_to_surfel_threshold: 0.1
+        min_surfel_inliers: 3
+        min_linearity_ratio: 0.3
+        map_box_multiplier: 2.0
+      
+        use_adaptive: true
+        min_scale_factor: 0.001
+        max_scale_factor: 10.0
+        num_alpha_segments: 25
+        truncated_threshold: 10.0
+        gmm_components: 2
+        gmm_sample_size: 100
+
+      # Parameters for legacy KD-Tree + Levenberg-Marquardt Optimizer
+      kdtree_lm:
+        surroundingKeyframeMapLeafSize: 0.3
+        surroundingKeyframeSearchNum: 50
+        surfKnnMinDistance: 5.0
+        edgeFeatureMinValidNum: 10.0
+        surfFeatureMinValidNum: 100.0

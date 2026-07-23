@@ -16,6 +16,7 @@
 #include <ctime>
 #include <functional>
 #include <algorithm>
+#include <vector>
 
 #include <Eigen/Core>
 #include "scanAlignment/IMappingBackend.hpp"
@@ -96,6 +97,8 @@ public:
         size_t sparsified_basis_count,
         bool failed,
         const std::string &fail_reason);
+    void recordComplementaryOdomScaleCsv(double stamp_sec, const std::string &message);
+    void recordComplementaryOdomTwistCsv(double stamp_sec, const std::string &message);
     void recordOdomTrajectoryTum(const TumPoseSample &sample);
     double getLastPredictionDelta() const;
     std::filesystem::path runDirectory() const { return run_dir_; }
@@ -121,6 +124,8 @@ private:
     std::ofstream degeneracy_metrics_csv_;
     std::ofstream jacobian_degeneracy_metrics_csv_;
     std::ofstream perturbation_degeneracy_metrics_csv_;
+    std::ofstream complementary_odom_scale_csv_;
+    std::ofstream complementary_odom_twist_csv_;
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr telemetry_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr timing_stats_pub_;
@@ -140,4 +145,6 @@ private:
     double last_prediction_delta_m_ = 0.0;
     std::unordered_map<std::string, double> moving_avg_ms_;
     std::unordered_map<std::string, double> last_event_sec_;
+
+    static std::unordered_map<std::string, std::string> parseEventKv(const std::string &message);
 };

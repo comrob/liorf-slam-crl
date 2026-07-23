@@ -109,6 +109,7 @@ struct ComplementaryOdomParameters
     double minDeltaTime = 0.1;
     bool scaleEstimationEnabled = true;
     double scaleMinNonDegenerateSpeed = 0.2; // m/s, observability gate for scale estimation
+    int scaleSmoothingWindowSize = 20;
     bool autoLookupLidarToTf = true;
     string frame;
     vector<double> extRotV;
@@ -474,6 +475,11 @@ public:
 
         declare_parameter<double>("complementaryOdom.scaleMinNonDegenerateSpeed", 0.2);
         get_parameter("complementaryOdom.scaleMinNonDegenerateSpeed", complementaryOdom.scaleMinNonDegenerateSpeed);
+
+        declare_parameter<int>("complementaryOdom.scaleSmoothingWindowSize", 20);
+        get_parameter("complementaryOdom.scaleSmoothingWindowSize", complementaryOdom.scaleSmoothingWindowSize);
+        if (complementaryOdom.scaleSmoothingWindowSize < 1)
+            complementaryOdom.scaleSmoothingWindowSize = 1;
 
         declare_parameter<bool>("complementaryOdom.autoLookupLidarToTf", true);
         get_parameter("complementaryOdom.autoLookupLidarToTf", complementaryOdom.autoLookupLidarToTf);

@@ -1,5 +1,18 @@
 #include "liorf_diagnostics.h"
 
+#include <regex>
+
+namespace
+{
+std::string csvValueOrNan(const std::unordered_map<std::string, std::string> &kv, const char *key)
+{
+    const auto it = kv.find(key);
+    if (it == kv.end() || it->second.empty())
+        return "nan";
+    return it->second;
+}
+}
+
 LiorfDiagnostics::LiorfDiagnostics(
     rclcpp::Node *node,
     const rclcpp::QoS &qos,
@@ -38,6 +51,11 @@ LiorfDiagnostics::LiorfDiagnostics(
         time_deltas_csv_.open((run_dir_ / "time_deltas.csv").string(), std::ios::out);
     if (diagnostics_files_enabled && diagnostics_output_policy_.write_frame_metrics)
         frame_metrics_csv_.open((run_dir_ / "frame_metrics.csv").string(), std::ios::out);
+    if (diagnostics_files_enabled)
+    {
+        complementary_odom_scale_csv_.open((run_dir_ / "complementary_odom_scale.csv").string(), std::ios::out);
+        complementary_odom_twist_csv_.open((run_dir_ / "complementary_odom_twist.csv").string(), std::ios::out);
+    }
 
     // Odom trajectory TUM export is controlled independently from diagnostics file gating.
     if (odom_trajectory_export_enabled)
@@ -66,6 +84,16 @@ LiorfDiagnostics::LiorfDiagnostics(
         time_deltas_csv_ << "stamp_sec,delta_s\n";
     if (frame_metrics_csv_.is_open())
         frame_metrics_csv_ << "stamp_sec,time_delta_s,last_time_delta_s,prediction_delta_m,optimized_delta_m,estimated_velocity_mps\n";
+    if (complementary_odom_scale_csv_.is_open())
+    {
+        complementary_odom_scale_csv_
+            << "time,complementary_odom_scale/frame_stamp_s,complementary_odom_scale/enabled,complementary_odom_scale/gate_passed,complementary_odom_scale/scale_applied,complementary_odom_scale/scale_instant,complementary_odom_scale/scale_smoothed,complementary_odom_scale/scale_ratio_raw,complementary_odom_scale/scale_ls_raw,complementary_odom_scale/theta_deg,complementary_odom_scale/lidar_nondeg_m,complementary_odom_scale/complementary_nondeg_m,complementary_odom_scale/min_nondeg_m,complementary_odom_scale/scale_smoothing_window,complementary_odom_scale/complementary_odom_lin_speed_orig_mps,complementary_odom_scale/lidar_lin_speed_nondeg_mps,complementary_odom_scale/complementary_odom_lin_speed_nondeg_mps,complementary_odom_scale/lidar_lin_speed_proj_scale1_mps,complementary_odom_scale/lidar_lin_speed_after_scale_mps,complementary_odom_scale/dt_scan_s\n";
+    }
+    if (complementary_odom_twist_csv_.is_open())
+    {
+        complementary_odom_twist_csv_
+            << "time,complementary_odom_twist/dt_complementary_s,complementary_odom_twist/prev_match_abs_dt_s,complementary_odom_twist/curr_match_abs_dt_s,complementary_odom_twist/lin_norm,complementary_odom_twist/ang_norm\n";
+    }
 
     dumpActiveParameters();
 
@@ -102,6 +130,10 @@ LiorfDiagnostics::~LiorfDiagnostics()
         time_deltas_csv_.flush();
     if (diagnostics_files_enabled && frame_metrics_csv_.is_open())
         frame_metrics_csv_.flush();
+    if (diagnostics_files_enabled && complementary_odom_scale_csv_.is_open())
+        complementary_odom_scale_csv_.flush();
+    if (diagnostics_files_enabled && complementary_odom_twist_csv_.is_open())
+        complementary_odom_twist_csv_.flush();
     if (odom_trajectory_tum_.is_open())
         odom_trajectory_tum_.flush();
     if (diagnostics_files_enabled && jacobian_degeneracy_metrics_csv_.is_open())
@@ -197,6 +229,74 @@ void LiorfDiagnostics::logEventThrottle(const std::string &key, double period_se
         msg.data = ss.str();
         event_pub_->publish(msg);
     }
+}
+
+std::unordered_map<std::string, std::string> LiorfDiagnostics::parseEventKv(const std::string &message)
+{
+    std::unordered_map<std::string, std::string> kv;
+    static const std::regex pattern(R"(([A-Za-z0-9_]+)=([^\s]+))");
+    for (std::sregex_iterator it(message.begin(), message.end(), pattern), end; it != end; ++it)
+    {
+        std::string value = (*it)[2].str();
+        while (!value.empty() && value.back() == ',')
+            value.pop_back();
+        kv[(*it)[1].str()] = value;
+    }
+    return kv;
+}
+
+void LiorfDiagnostics::recordComplementaryOdomScaleCsv(double stamp_sec, const std::string &message)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!complementary_odom_scale_csv_.is_open())
+        return;
+
+    if (message.find("[COMPLEMENTARY_ODOM_SCALE]") == std::string::npos)
+        return;
+
+    const auto kv = parseEventKv(message);
+
+    complementary_odom_scale_csv_ << std::fixed << std::setprecision(6)
+                                   << stamp_sec << ","
+                                   << csvValueOrNan(kv, "frame_stamp_s") << ","
+                                   << csvValueOrNan(kv, "enabled") << ","
+                                   << csvValueOrNan(kv, "gate_passed") << ","
+                                   << csvValueOrNan(kv, "scale_applied") << ","
+                                   << csvValueOrNan(kv, "scale_instant") << ","
+                                   << csvValueOrNan(kv, "scale_smoothed") << ","
+                                   << csvValueOrNan(kv, "scale_ratio_raw") << ","
+                                   << csvValueOrNan(kv, "scale_ls_raw") << ","
+                                   << csvValueOrNan(kv, "theta_deg") << ","
+                                   << csvValueOrNan(kv, "lidar_nondeg_m") << ","
+                                   << csvValueOrNan(kv, "complementary_nondeg_m") << ","
+                                   << csvValueOrNan(kv, "min_nondeg_m") << ","
+                                   << csvValueOrNan(kv, "scale_smoothing_window") << ","
+                                   << csvValueOrNan(kv, "complementary_odom_lin_speed_orig_mps") << ","
+                                   << csvValueOrNan(kv, "lidar_lin_speed_nondeg_mps") << ","
+                                   << csvValueOrNan(kv, "complementary_odom_lin_speed_nondeg_mps") << ","
+                                   << csvValueOrNan(kv, "lidar_lin_speed_proj_scale1_mps") << ","
+                                   << csvValueOrNan(kv, "lidar_lin_speed_after_scale_mps") << ","
+                                   << csvValueOrNan(kv, "dt_scan_s") << "\n";
+}
+
+void LiorfDiagnostics::recordComplementaryOdomTwistCsv(double stamp_sec, const std::string &message)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!complementary_odom_twist_csv_.is_open())
+        return;
+
+    if (message.find("[COMPLEMENTARY_ODOM_TWIST]") == std::string::npos)
+        return;
+
+    const auto kv = parseEventKv(message);
+
+    complementary_odom_twist_csv_ << std::fixed << std::setprecision(6)
+                                   << stamp_sec << ","
+                                   << csvValueOrNan(kv, "dt_complementary_s") << ","
+                                   << csvValueOrNan(kv, "prev_match_abs_dt_s") << ","
+                                   << csvValueOrNan(kv, "curr_match_abs_dt_s") << ","
+                                   << csvValueOrNan(kv, "lin_norm") << ","
+                                   << csvValueOrNan(kv, "ang_norm") << "\n";
 }
 
 void LiorfDiagnostics::publishWarning(const std::string &message)

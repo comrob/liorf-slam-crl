@@ -356,6 +356,9 @@ public:
     std::deque<nav_msgs::msg::Odometry> complementaryOdomQueue;
     std::mutex complementaryOdomMutex;
 
+    std::deque<float> complementaryOdomScaleHistory;
+    float complementaryOdomScaleHistorySum = 0.0f;
+
     bool complementaryOdomTfResolved = false;
     Eigen::Matrix4f T_complementary_to_lidar = Eigen::Matrix4f::Identity();
 
@@ -368,6 +371,7 @@ public:
     void runDegeneracyDetectionAndCompensation();
     bool prepareDegeneracyOrthoBasis(std::vector<TwistVector> &orthoBasis);
     bool inferComplementaryOdomTwist(double dt_scan, TwistVector &xi_complementary_lidar);
+    float smoothComplementaryOdomScale(float scaleInstant);
     Eigen::Affine3f buildScaledComplementaryPrediction(const Eigen::Affine3f &T_previous,
                                                        const Eigen::Affine3f &T_optimized,
                                                        const std::vector<TwistVector> &orthoBasis,

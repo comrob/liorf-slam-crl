@@ -42,6 +42,7 @@
       minDeltaTime: 0.1
       scaleEstimationEnabled: true
       scaleMinNonDegenerateSpeed: 0.2
+      scaleSmoothingWindowSize: 20
       autoLookupLidarToTf: true
       frame: ""
       extrinsicTrans: [0.0, 0.0, 0.0]

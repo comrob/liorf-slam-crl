@@ -194,8 +194,8 @@ bool mapOptimization::inferComplementaryOdomTwist(double dt_scan, TwistVector &x
     if (!resolveComplementaryOdomExtrinsics(complementaryOdomQueue[idx2].header.frame_id))
         return false;
 
-    const double dt_add = ROS_TIME(complementaryOdomQueue[idx2].header.stamp) - ROS_TIME(complementaryOdomQueue[idx1].header.stamp);
-    if (dt_add < 1e-3)
+    const double dt_complementary = ROS_TIME(complementaryOdomQueue[idx2].header.stamp) - ROS_TIME(complementaryOdomQueue[idx1].header.stamp);
+    if (dt_complementary < 1e-3)
         return false;
 
     Eigen::Isometry3d iso1;
@@ -208,11 +208,11 @@ bool mapOptimization::inferComplementaryOdomTwist(double dt_scan, TwistVector &x
 
     // Conjugate motion into LiDAR frame: T_l_delta = T_l_a * T_a_delta * T_a_l
     const Eigen::Matrix4f T_complementary_lidar_delta = T_complementary_to_lidar * T_add_delta * T_complementary_to_lidar.inverse();
-    xi_complementary_lidar = matrixToTwist(T_complementary_lidar_delta, static_cast<float>(dt_add));
+    xi_complementary_lidar = matrixToTwist(T_complementary_lidar_delta, static_cast<float>(dt_complementary));
 
     std::ostringstream oss;
     oss << "[COMPLEMENTARY_ODOM_TWIST]"
-        << " dt_add_s=" << std::fixed << std::setprecision(4) << dt_add
+        << " dt_complementary_s=" << std::fixed << std::setprecision(4) << dt_complementary
         << " prev_match_abs_dt_s=" << prev_abs_dt
         << " curr_match_abs_dt_s=" << curr_abs_dt
         << " lin_xyz=["
@@ -221,9 +221,36 @@ bool mapOptimization::inferComplementaryOdomTwist(double dt_scan, TwistVector &x
         << xi_complementary_lidar[3] << ", " << xi_complementary_lidar[4] << ", " << xi_complementary_lidar[5] << "]"
         << " lin_norm=" << xi_complementary_lidar.head<3>().norm()
         << " ang_norm=" << xi_complementary_lidar.tail<3>().norm();
-    RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, oss.str());
+    const std::string msg = oss.str();
+    if (diagnostics)
+        diagnostics->recordComplementaryOdomTwistCsv(timeLaserInfoCur, msg);
+    RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, msg);
 
     return true;
+}
+
+float mapOptimization::smoothComplementaryOdomScale(float scaleInstant)
+{
+    const size_t windowSize = static_cast<size_t>(std::max(1, complementaryOdom.scaleSmoothingWindowSize));
+
+    // Pre-fill with the first sample to avoid startup transients from an
+    // undersized history window.
+    if (complementaryOdomScaleHistory.empty())
+    {
+        complementaryOdomScaleHistory.assign(windowSize, scaleInstant);
+        complementaryOdomScaleHistorySum = scaleInstant * static_cast<float>(windowSize);
+        return scaleInstant;
+    }
+
+    complementaryOdomScaleHistory.push_back(scaleInstant);
+    complementaryOdomScaleHistorySum += scaleInstant;
+    while (complementaryOdomScaleHistory.size() > windowSize)
+    {
+        complementaryOdomScaleHistorySum -= complementaryOdomScaleHistory.front();
+        complementaryOdomScaleHistory.pop_front();
+    }
+
+    return complementaryOdomScaleHistorySum / static_cast<float>(complementaryOdomScaleHistory.size());
 }
 
 Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen::Affine3f &T_previous,
@@ -284,11 +311,16 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
         t_complementary_nondeg_map = R_prev * t_complementary_nondeg;
     }
 
+    const float complementaryOdomScaleSmooth = smoothComplementaryOdomScale(complementaryOdomScale);
+    const float complementaryOdomScaleApplied =
+        complementaryOdom.scaleEstimationEnabled ? complementaryOdomScaleSmooth : 1.0f;
+
+
     const float complementaryOdomLinearSpeedOrig = xi_complementary_lidar.head<3>().norm();
     const float lidarLinearSpeedNondeg = lidarNondegNorm / static_cast<float>(dt_scan);
     const float complementaryOdomLinearSpeedNondeg = complementaryNondegNorm / static_cast<float>(dt_scan);
     const float lidarLinearSpeedAfterScale =
-        (complementaryNondegNorm * complementaryOdomScale) / static_cast<float>(dt_scan);
+        (complementaryNondegNorm * complementaryOdomScaleApplied) / static_cast<float>(dt_scan);
 
     const Eigen::Affine3f T_complementary_odom_scale1(
         T_previous.matrix() * T_lidar_complementary_predicted);
@@ -307,13 +339,16 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
             << std::setprecision(4)
             << " enabled=" << (complementaryOdom.scaleEstimationEnabled ? 1 : 0)
             << " gate_passed=" << (gatePassed ? 1 : 0)
-            << " scale_applied=" << complementaryOdomScale
+            << " scale_applied=" << complementaryOdomScaleApplied
+            << " scale_instant=" << complementaryOdomScale
+            << " scale_smoothed=" << complementaryOdomScaleSmooth
             << " scale_ratio_raw=" << scaleRatioRaw
             << " scale_ls_raw=" << scaleLsRaw
             << " theta_deg=" << thetaDeg
             << " lidar_nondeg_m=" << lidarNondegNorm
             << " complementary_nondeg_m=" << complementaryNondegNorm
             << " min_nondeg_m=" << minNondegNorm
+            << " scale_smoothing_window=" << complementaryOdom.scaleSmoothingWindowSize
             << " complementary_odom_lin_speed_orig_mps=" << complementaryOdomLinearSpeedOrig
             << " lidar_lin_speed_nondeg_mps=" << lidarLinearSpeedNondeg
             << " complementary_odom_lin_speed_nondeg_mps=" << complementaryOdomLinearSpeedNondeg
@@ -322,13 +357,13 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
             << " dt_scan_s=" << dt_scan;
         const std::string msg = oss.str();
         if (diagnostics)
-            diagnostics->logEventThrottle("complementary_odom_scale", 0.0, msg); // every degeneracy frame
+            diagnostics->recordComplementaryOdomScaleCsv(timeLaserInfoCur, msg);
         RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, msg);
     }
 
     // Rescale only the translation of the complementary-odom displacement; its
     // rotation is typically gyro-backed and kept as-is.
-    T_lidar_complementary_predicted.block<3, 1>(0, 3) *= complementaryOdomScale;
+    T_lidar_complementary_predicted.block<3, 1>(0, 3) *= complementaryOdomScaleApplied;
     return Eigen::Affine3f(T_previous.matrix() * T_lidar_complementary_predicted);
 }
 

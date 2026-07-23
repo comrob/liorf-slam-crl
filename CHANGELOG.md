@@ -26,6 +26,52 @@ change SLAM/logging functionality.
 
 ---
 
+## 2026-07-23 - Class-owned complementary-odom scale smoothing + config window
+
+### Files changed
+
+- [include/utility.h](include/utility.h)
+- [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/liorf_diagnostics.cpp](src/liorf_diagnostics.cpp)
+- [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [config/anymal.yaml](config/anymal.yaml)
+- [scripts/plot_complementary_odom_scale_diagnostics.py](scripts/plot_complementary_odom_scale_diagnostics.py)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Replaced function-static complementary-odom scale smoothing queue with
+	class-owned smoothing state (`complementaryOdomScaleHistory` + running sum),
+	so smoothing lifecycle is explicit and managed by node instance state.
+- Added configurable parameter:
+	`complementaryOdom.scaleSmoothingWindowSize` (clamped to minimum 1),
+	and exposed it in primary runtime configs.
+- Scale application now uses the smoothed value when scale estimation is
+	enabled, while preserving `1.0` application when disabled.
+- Extended `[COMPLEMENTARY_ODOM_SCALE]` diagnostics payload with:
+	`scale_instant`, `scale_smoothed`, and `scale_smoothing_window`.
+- Added direct PlotJuggler-friendly CSV emission for complementary odometry
+	metrics in run directory:
+	- `complementary_odom_scale.csv`
+	- `complementary_odom_twist.csv`
+- Complementary odometry CSV emission is now independent from event logging;
+	rows are written via dedicated diagnostics CSV APIs with a leading monotonic
+	`time` column followed by scalar fields only.
+- CSV headers now use slash-separated hierarchical names
+	(e.g. `complementary_odom_scale/scale_applied`) so PlotJuggler groups
+	the series similarly to ROS message subfields.
+- Removed backward-compatibility fallback fields for complementary odometry
+	CSV extraction (`add_nondeg_m`, `lidar_lin_speed_reproject_mps`) and deleted
+	the legacy plotting helper so diagnostics are consumed from direct CSV.
+
+### Migration/runtime risk notes
+
+- Low. Default smoothing behavior remains equivalent with window size 20.
+- Users can tune smoothing responsiveness via
+	`complementaryOdom.scaleSmoothingWindowSize`.
+
 ## 2026-07-22 - Enable docker override for make slam and persist .ros logs
 
 ### Files changed
