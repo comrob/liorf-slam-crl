@@ -1,0 +1,11 @@
+std_msgs/Header header
+float64 scale_instant_raw
+float64 scale_instant_raw_clamped
+float64 scale_instant_raw_safe
+float64 scale_fallback_history
+float64 scale_smooth
+float64 scale_applied
+float64 gate_observable
+float64 scale_estimation_enabled
+float64 dt_scan_s
+float64 dt_odom_s

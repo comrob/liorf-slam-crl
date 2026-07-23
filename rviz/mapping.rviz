@@ -4,7 +4,6 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
-        - /Global Options1
         - /Mapping1/LIO1/Shape1
       Splitter Ratio: 0.39970502257347107
     Tree Height: 1175
@@ -16,161 +15,22 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
-    - Class: rviz_common/Group
-      Displays:
-        - Class: rviz_default_plugins/Axes
-          Enabled: false
-          Length: 1.5
-          Name: lidar_link
-          Radius: 0.15000000596046448
-          Reference Frame: lidar_link
-          Value: false
-        - Class: rviz_default_plugins/Axes
-          Enabled: false
-          Length: 5
-          Name: map
-          Radius: 0.4000000059604645
-          Reference Frame: map
-          Value: false
-      Enabled: true
-      Name: Base
-    - Class: rviz_common/Group
-      Displays:
-        - Alpha: 1
-          Buffer Length: 1
-          Class: rviz_default_plugins/Path
-          Color: 25; 255; 0
-          Enabled: true
-          Head Diameter: 0.30000001192092896
-          Head Length: 0.20000000298023224
-          Length: 0.30000001192092896
-          Line Style: Billboards
-          Line Width: 0.30000001192092896
-          Name: Path
-          Offset:
-            X: 0
-            Y: 0
-            Z: 0
-          Pose Color: 255; 85; 255
-          Pose Style: None
-          Radius: 0.029999999329447746
-          Shaft Diameter: 0.10000000149011612
-          Shaft Length: 0.10000000149011612
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            Filter size: 10
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /liorf/mapping/path
-          Value: true
-        - Alpha: 1
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: 4.98996114730835
-            Min Value: 0.8717496395111084
-            Value: true
-          Axis: Z
-          Channel Name: intensity
-          Class: rviz_default_plugins/PointCloud2
-          Color: 255; 255; 255
-          Color Transformer: AxisColor
-          Decay Time: 0
-          Enabled: false
-          Invert Rainbow: false
-          Max Color: 255; 255; 255
-          Max Intensity: 100
-          Min Color: 0; 0; 0
-          Min Intensity: 0
-          Name: Scan
-          Position Transformer: XYZ
-          Selectable: true
-          Size (Pixels): 3
-          Size (m): 0.009999999776482582
-          Style: Points
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /liorf/mapping/cloud_registered_raw
-          Use Fixed Frame: true
-          Use rainbow: true
-          Value: false
-        - Alpha: 1
-          Autocompute Intensity Bounds: true
-          Autocompute Value Bounds:
-            Max Value: 10
-            Min Value: -10
-            Value: true
-          Axis: Z
-          Channel Name: intensity
-          Class: rviz_default_plugins/PointCloud2
-          Color: 255; 255; 255
-          Color Transformer: Intensity
-          Decay Time: 0
-          Enabled: true
-          Invert Rainbow: false
-          Max Color: 255; 255; 255
-          Max Intensity: 100
-          Min Color: 0; 0; 0
-          Min Intensity: 0
-          Name: GlobalMap
-          Position Transformer: XYZ
-          Selectable: true
-          Size (Pixels): 1.5
-          Size (m): 0.009999999776482582
-          Style: Points
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /liorf/mapping/map_global
-          Use Fixed Frame: true
-          Use rainbow: true
-          Value: true
-        - Angle Tolerance: 0.10000000149011612
-          Class: rviz_default_plugins/Odometry
-          Covariance:
-            Orientation:
-              Alpha: 0.5
-              Color: 255; 255; 127
-              Color Style: Unique
-              Frame: Local
-              Offset: 1
-              Scale: 1
-              Value: true
-            Position:
-              Alpha: 0.30000001192092896
-              Color: 204; 51; 204
-              Scale: 1
-              Value: true
-            Value: true
-          Enabled: false
-          Keep: 1
-          Name: LIO
-          Position Tolerance: 0.10000000149011612
-          Shape:
-            Alpha: 1
-            Axes Length: 3
-            Axes Radius: 0.4000000059604645
-            Color: 255; 25; 0
-            Head Length: 0.30000001192092896
-            Head Radius: 0.10000000149011612
-            Shaft Length: 1
-            Shaft Radius: 0.05000000074505806
-            Value: Axes
-          Topic:
-            Depth: 5
-            Durability Policy: Volatile
-            Filter size: 10
-            History Policy: Keep Last
-            Reliability Policy: Reliable
-            Value: /liorf/mapping/odometry
-          Value: false
-      Enabled: true
-      Name: Mapping
+    - Class: rviz_default_plugins/TF
+      Enabled: false
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Tree:
+        {}
+      Update Interval: 0
+      Value: false
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: gpsConstraints
@@ -253,6 +113,161 @@ Visualization Manager:
       Value: true
     - Class: rviz_common/Group
       Displays:
+        - Class: rviz_default_plugins/Axes
+          Enabled: false
+          Length: 1.5
+          Name: lidar_link
+          Radius: 0.15000000596046448
+          Reference Frame: lidar_link
+          Value: false
+        - Class: rviz_default_plugins/Axes
+          Enabled: false
+          Length: 5
+          Name: map
+          Radius: 0.4000000059604645
+          Reference Frame: map
+          Value: false
+      Enabled: true
+      Name: links
+    - Class: rviz_common/Group
+      Displays:
+        - Alpha: 1
+          Buffer Length: 1
+          Class: rviz_default_plugins/Path
+          Color: 25; 255; 0
+          Enabled: true
+          Head Diameter: 0.30000001192092896
+          Head Length: 0.20000000298023224
+          Length: 0.30000001192092896
+          Line Style: Billboards
+          Line Width: 0.30000001192092896
+          Name: Path
+          Offset:
+            X: 0
+            Y: 0
+            Z: 0
+          Pose Color: 255; 85; 255
+          Pose Style: None
+          Radius: 0.029999999329447746
+          Shaft Diameter: 0.10000000149011612
+          Shaft Length: 0.10000000149011612
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/path
+          Value: true
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 4.98996114730835
+            Min Value: 0.8717496395111084
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: AxisColor
+          Decay Time: 0
+          Enabled: false
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 100
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: Scan
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 3
+          Size (m): 0.009999999776482582
+          Style: Points
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/cloud_registered_raw
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: false
+        - Alpha: 1
+          Autocompute Intensity Bounds: true
+          Autocompute Value Bounds:
+            Max Value: 10
+            Min Value: -10
+            Value: true
+          Axis: Z
+          Channel Name: intensity
+          Class: rviz_default_plugins/PointCloud2
+          Color: 255; 255; 255
+          Color Transformer: Intensity
+          Decay Time: 0
+          Enabled: true
+          Invert Rainbow: false
+          Max Color: 255; 255; 255
+          Max Intensity: 103.83333587646484
+          Min Color: 0; 0; 0
+          Min Intensity: 0
+          Name: GlobalMap
+          Position Transformer: XYZ
+          Selectable: true
+          Size (Pixels): 1.5
+          Size (m): 0.009999999776482582
+          Style: Points
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/map_global
+          Use Fixed Frame: true
+          Use rainbow: true
+          Value: true
+        - Angle Tolerance: 0.10000000149011612
+          Class: rviz_default_plugins/Odometry
+          Covariance:
+            Orientation:
+              Alpha: 0.5
+              Color: 255; 255; 127
+              Color Style: Unique
+              Frame: Local
+              Offset: 1
+              Scale: 1
+              Value: true
+            Position:
+              Alpha: 0.30000001192092896
+              Color: 204; 51; 204
+              Scale: 1
+              Value: true
+            Value: true
+          Enabled: false
+          Keep: 1
+          Name: LIO
+          Position Tolerance: 0.10000000149011612
+          Shape:
+            Alpha: 1
+            Axes Length: 3
+            Axes Radius: 0.4000000059604645
+            Color: 255; 25; 0
+            Head Length: 0.30000001192092896
+            Head Radius: 0.10000000149011612
+            Shaft Length: 1
+            Shaft Radius: 0.05000000074505806
+            Value: Axes
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/odometry
+          Value: false
+      Enabled: true
+      Name: Mapping
+    - Class: rviz_common/Group
+      Displays:
         - Class: rviz_default_plugins/MarkerArray
           Enabled: false
           Name: degRaw
@@ -302,7 +317,7 @@ Visualization Manager:
             Value: /liorf/mapping/degeneracy_paths
           Value: true
       Enabled: false
-      Name: degDetection
+      Name: Deg Directions
     - Class: rviz_common/Group
       Displays:
         - Alpha: 1
@@ -529,23 +544,7 @@ Visualization Manager:
             Value: /liorf/mapping/degeneracy/optimization_paths
           Value: true
       Enabled: true
-      Name: Degeneracy Perturbation Debug
-    - Class: rviz_default_plugins/TF
-      Enabled: false
-      Filter (blacklist): ""
-      Filter (whitelist): ""
-      Frame Timeout: 15
-      Frames:
-        All Enabled: true
-      Marker Scale: 1
-      Name: TF
-      Show Arrows: true
-      Show Axes: true
-      Show Names: false
-      Tree:
-        {}
-      Update Interval: 0
-      Value: false
+      Name: Deg Perturbation Debug
     - Class: rviz_common/Group
       Displays:
         - Alpha: 1
@@ -649,18 +648,6 @@ Visualization Manager:
           Value: true
       Enabled: false
       Name: Prediction Debug
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: false
-      Name: Complementary
-      Namespaces:
-        {}
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /liorf/mapping/complementary_odom/correction_direction
-      Value: false
     - Class: rviz_common/Group
       Displays:
         - Class: rviz_default_plugins/MarkerArray
@@ -721,7 +708,111 @@ Visualization Manager:
           Use rainbow: true
           Value: true
       Enabled: false
-      Name: p2plane
+      Name: p2plane debug
+    - Class: rviz_common/Group
+      Displays:
+        - Class: rviz_2d_plot_plugin/Plot2D
+          Clear History: false
+          Enabled: true
+          Grid:
+            Major Grid: true
+            Minor Divisions: 1
+            Minor Grid: true
+            X Major Ticks: 6
+            Y Major Ticks: 5
+          Layout:
+            Height: 320
+            Horizontal Alignment: Right
+            Vertical Alignment: Top
+            Width: 560
+            X Offset: 10
+            Y Offset: 10
+          Legend:
+            Enabled: true
+            Position: Top Left
+            Show Values: true
+            X Offset: 4
+            Y Offset: 4
+          Name: Scale Applied Plot
+          Pause Plot: false
+          Plot Mode: Time Series
+          QoS:
+            Depth: 10
+            Durability: Volatile
+            Reliability: Reliable
+          References:
+            Preset: None
+            Preset Tolerance: 0.10000000149011612
+            Preset Value: 0
+            Reference Count: 0
+          Series:
+            Series 1:
+              Color: 80; 170; 255
+              Field: data
+              Label: ""
+              Line Alpha: 1
+              Line Style: Solid
+              Line Width: 2
+              Plot Style: Line
+              Topic: /liorf/mapping/complementary_odom/scale_instant
+              Unit: ""
+              Value: true
+              Value Offset: 0
+              Value Scale: 1
+              X Field: ""
+              Y Field: ""
+            Series 2:
+              Color: 80; 220; 130
+              Field: data
+              Label: ""
+              Line Alpha: 1
+              Line Style: Solid
+              Line Width: 2
+              Plot Style: Line
+              Topic: /liorf/mapping/complementary_odom/scale_applied
+              Unit: ""
+              Value: true
+              Value Offset: 0
+              Value Scale: 1
+              X Field: ""
+              Y Field: ""
+            Series Count: 2
+          Style:
+            Axis Color: 230; 230; 230
+            Background Alpha: 0.7450980544090271
+            Background Color: 0; 0; 0
+            Font Size: 8
+            Grid Color: 130; 130; 130
+            Text Color: 245; 245; 245
+          Time:
+            Refresh Rate: 20
+            Time Source: Message Header Stamp
+            Window Seconds: 30
+            XY History Mode: Rolling Time Window
+          Value: true
+          X Axis:
+            Auto Scale: true
+            Axis Scale: Independent
+            X Max: 1
+            X Min: -1
+          Y Axis:
+            Auto Scale: false
+            Y Max: 1.2000000476837158
+            Y Min: 0.800000011920929
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: false
+          Name: Complementary
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/complementary_odom/correction_direction
+          Value: false
+      Enabled: true
+      Name: Complementary Odom Debug
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -765,25 +856,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 4.678395748138428
+      Distance: 43.92681884765625
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 1.3649680614471436
-        Y: -1.094792127609253
-        Z: 2.6720266342163086
+        X: -1.3685184717178345
+        Y: 2.0391910076141357
+        Z: 2.652498483657837
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.1147964000701904
+      Pitch: 1.4297963380813599
       Target Frame: lidar_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.5358967781066895
+      Yaw: 3.930910110473633
     Saved: ~
 Window Geometry:
   Displays:
@@ -791,7 +882,7 @@ Window Geometry:
   Height: 1403
   Hide Left Dock: false
   Hide Right Dock: true
-  QMainWindow State: 000000ff00000000fd0000000200000000000001dd0000051dfc0200000001fb000000100044006900730070006c006100790073010000003f0000051d000000cc00ffffff00000001000001cb0000040dfc0200000001fb0000000a00560069006500770073000000003f0000040d000000a900ffffff0000081d0000051d00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000200000000000002ab0000051dfc0200000001fb000000100044006900730070006c006100790073010000003f0000051d000000cc00ffffff00000001000001cb0000040dfc0200000001fb0000000a00560069006500770073000000003f0000040d000000a900ffffff0000074f0000051d00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: true
   Width: 2560

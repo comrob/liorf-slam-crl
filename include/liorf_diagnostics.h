@@ -17,6 +17,7 @@
 #include <functional>
 #include <algorithm>
 #include <vector>
+#include <limits>
 
 #include <Eigen/Core>
 #include "scanAlignment/IMappingBackend.hpp"
@@ -47,6 +48,72 @@ struct DiagnosticsOutputPolicy
 struct TrajectoryOutputPolicy
 {
     bool write_odom_trajectory_tum = false;
+};
+
+struct ComplementaryOdomTwistDebugSample
+{
+    double stamp_sec = 0.0;
+    double lidar_prev_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double lidar_curr_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double odom_prev_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double odom_curr_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    int odom_queue_size = 0;
+    int odom_samples_between = 0;
+    double dt_complementary_s = std::numeric_limits<double>::quiet_NaN();
+    double prev_match_abs_dt_s = std::numeric_limits<double>::quiet_NaN();
+    double curr_match_abs_dt_s = std::numeric_limits<double>::quiet_NaN();
+    double lin_norm = std::numeric_limits<double>::quiet_NaN();
+    double ang_norm = std::numeric_limits<double>::quiet_NaN();
+};
+
+struct ComplementaryOdomScaleDebugSample
+{
+    double stamp_sec = 0.0;
+    double frame_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double lidar_prev_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double lidar_curr_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double odom_prev_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double odom_curr_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    int odom_queue_size = 0;
+    int odom_samples_between = 0;
+    double odom_span_s = std::numeric_limits<double>::quiet_NaN();
+    double prev_match_abs_dt_s = std::numeric_limits<double>::quiet_NaN();
+    double curr_match_abs_dt_s = std::numeric_limits<double>::quiet_NaN();
+    bool enabled = false;
+    bool gate_observable = false;
+    double scale_instant_raw = std::numeric_limits<double>::quiet_NaN();
+    double scale_instant_raw_clamped = std::numeric_limits<double>::quiet_NaN();
+    double scale_instant_raw_safe = std::numeric_limits<double>::quiet_NaN();
+    double scale_fallback_history = std::numeric_limits<double>::quiet_NaN();
+    double scale_smooth = std::numeric_limits<double>::quiet_NaN();
+    double scale_applied = std::numeric_limits<double>::quiet_NaN();
+    double scale_ratio_raw = std::numeric_limits<double>::quiet_NaN();
+    double scale_ratio_unprojected_raw = std::numeric_limits<double>::quiet_NaN();
+    double scale_ls_raw = std::numeric_limits<double>::quiet_NaN();
+    double theta_deg = std::numeric_limits<double>::quiet_NaN();
+    double lidar_body_dx_m = std::numeric_limits<double>::quiet_NaN();
+    double lidar_body_dy_m = std::numeric_limits<double>::quiet_NaN();
+    double lidar_body_dz_m = std::numeric_limits<double>::quiet_NaN();
+    double complementary_body_dx_m = std::numeric_limits<double>::quiet_NaN();
+    double complementary_body_dy_m = std::numeric_limits<double>::quiet_NaN();
+    double complementary_body_dz_m = std::numeric_limits<double>::quiet_NaN();
+    double lidar_body_nondeg_dx_m = std::numeric_limits<double>::quiet_NaN();
+    double lidar_body_nondeg_dy_m = std::numeric_limits<double>::quiet_NaN();
+    double lidar_body_nondeg_dz_m = std::numeric_limits<double>::quiet_NaN();
+    double complementary_body_nondeg_dx_m = std::numeric_limits<double>::quiet_NaN();
+    double complementary_body_nondeg_dy_m = std::numeric_limits<double>::quiet_NaN();
+    double complementary_body_nondeg_dz_m = std::numeric_limits<double>::quiet_NaN();
+    double lidar_nondeg_unprojected_m = std::numeric_limits<double>::quiet_NaN();
+    double lidar_nondeg_m = std::numeric_limits<double>::quiet_NaN();
+    double complementary_nondeg_m = std::numeric_limits<double>::quiet_NaN();
+    double min_nondeg_m = std::numeric_limits<double>::quiet_NaN();
+    int scale_smoothing_window = 0;
+    double complementary_odom_lin_speed_orig_mps = std::numeric_limits<double>::quiet_NaN();
+    double lidar_lin_speed_nondeg_mps = std::numeric_limits<double>::quiet_NaN();
+    double complementary_odom_lin_speed_nondeg_mps = std::numeric_limits<double>::quiet_NaN();
+    double lidar_lin_speed_proj_scale1_mps = std::numeric_limits<double>::quiet_NaN();
+    double lidar_lin_speed_after_scale_mps = std::numeric_limits<double>::quiet_NaN();
+    double dt_scan_s = std::numeric_limits<double>::quiet_NaN();
 };
 
 class LiorfDiagnostics
@@ -97,8 +164,8 @@ public:
         size_t sparsified_basis_count,
         bool failed,
         const std::string &fail_reason);
-    void recordComplementaryOdomScaleCsv(double stamp_sec, const std::string &message);
-    void recordComplementaryOdomTwistCsv(double stamp_sec, const std::string &message);
+    void recordComplementaryOdomScaleCsv(const ComplementaryOdomScaleDebugSample &sample);
+    void recordComplementaryOdomTwistCsv(const ComplementaryOdomTwistDebugSample &sample);
     void recordOdomTrajectoryTum(const TumPoseSample &sample);
     double getLastPredictionDelta() const;
     std::filesystem::path runDirectory() const { return run_dir_; }
@@ -146,5 +213,4 @@ private:
     std::unordered_map<std::string, double> moving_avg_ms_;
     std::unordered_map<std::string, double> last_event_sec_;
 
-    static std::unordered_map<std::string, std::string> parseEventKv(const std::string &message);
 };

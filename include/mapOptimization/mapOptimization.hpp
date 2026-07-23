@@ -5,6 +5,7 @@
 #include "utility.h"
 #include "export/map_types.hpp"
 #include "export/MapExporter.hpp"
+#include "liorf/msg/complementary_odom_scale_debug.hpp"
 #include "liorf/msg/cloud_info.hpp"
 #include "liorf/srv/save_map.hpp"
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
@@ -40,6 +41,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <unordered_map>
+#include <limits>
 
 enum class SCInputType
 {
@@ -91,6 +93,19 @@ public:
 class mapOptimization : public ParamServer
 {
 public:
+    struct ComplementaryOdomMatchInfo
+    {
+        double lidar_prev_stamp_s = std::numeric_limits<double>::quiet_NaN();
+        double lidar_curr_stamp_s = std::numeric_limits<double>::quiet_NaN();
+        double odom_prev_stamp_s = std::numeric_limits<double>::quiet_NaN();
+        double odom_curr_stamp_s = std::numeric_limits<double>::quiet_NaN();
+        double dt_complementary_s = std::numeric_limits<double>::quiet_NaN();
+        double prev_match_abs_dt_s = std::numeric_limits<double>::quiet_NaN();
+        double curr_match_abs_dt_s = std::numeric_limits<double>::quiet_NaN();
+        int odom_queue_size = 0;
+        int odom_samples_between = 0;
+    };
+
     MapExporter map_exporter_;
     std::shared_ptr<lio::IMappingBackend> mappingBackend;
     std::shared_ptr<DegeneracyDetector> degeneracyDetector;
@@ -159,6 +174,7 @@ public:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyDisplacements;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyOptimizationPaths;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubComplementaryOdomCorrectionDirection;
+    rclcpp::Publisher<liorf::msg::ComplementaryOdomScaleDebug>::SharedPtr pubComplementaryOdomScaleDebug;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
     bool T_EL_initialized = false;
@@ -358,6 +374,8 @@ public:
 
     std::deque<float> complementaryOdomScaleHistory;
     float complementaryOdomScaleHistorySum = 0.0f;
+    std::deque<float> complementaryOdomFallbackScaleHistory;
+    float complementaryOdomFallbackScaleHistorySum = 0.0f;
 
     bool complementaryOdomTfResolved = false;
     Eigen::Matrix4f T_complementary_to_lidar = Eigen::Matrix4f::Identity();
@@ -370,12 +388,16 @@ public:
                                          const Eigen::Vector3f &t_complementary_nondeg_map = Eigen::Vector3f::Zero());
     void runDegeneracyDetectionAndCompensation();
     bool prepareDegeneracyOrthoBasis(std::vector<TwistVector> &orthoBasis);
-    bool inferComplementaryOdomTwist(double dt_scan, TwistVector &xi_complementary_lidar);
+    bool inferComplementaryOdomTwist(double dt_scan,
+                                     TwistVector &xi_complementary_lidar,
+                                     ComplementaryOdomMatchInfo *match_info = nullptr);
     float smoothComplementaryOdomScale(float scaleInstant);
+    float smoothComplementaryOdomFallbackScale(float scaleInstant);
     Eigen::Affine3f buildScaledComplementaryPrediction(const Eigen::Affine3f &T_previous,
                                                        const Eigen::Affine3f &T_optimized,
                                                        const std::vector<TwistVector> &orthoBasis,
                                                        const TwistVector &xi_complementary_lidar,
+                                                       const ComplementaryOdomMatchInfo &match_info,
                                                        double dt_scan,
                                                        bool &hasNonDegenerateComponents,
                                                        Eigen::Vector3f &t_lidar_nondeg_map,

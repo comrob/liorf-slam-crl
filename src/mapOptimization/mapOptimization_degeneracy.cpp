@@ -99,7 +99,6 @@ void mapOptimization::runDegeneracyDetectionAndCompensation()
             << " raw=" << rawTwists.size()
             << " pca=" << pcaBasis.size()
             << " basis=" << sparsifiedBasis.size();
-        RCLCPP_WARN_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, oss.str());
         if (diagnostics)
             diagnostics->logEventThrottle("degeneracy_detected", 1.0, oss.str());
     }
@@ -141,7 +140,9 @@ bool mapOptimization::prepareDegeneracyOrthoBasis(std::vector<TwistVector> &orth
     return !orthoBasis.empty();
 }
 
-bool mapOptimization::inferComplementaryOdomTwist(double dt_scan, TwistVector &xi_complementary_lidar)
+bool mapOptimization::inferComplementaryOdomTwist(double dt_scan,
+                                                  TwistVector &xi_complementary_lidar,
+                                                  ComplementaryOdomMatchInfo *match_info)
 {
     xi_complementary_lidar = TwistVector::Zero();
     if (degeneracyDetection.compensation_source != "complementary_odom")
@@ -194,9 +195,24 @@ bool mapOptimization::inferComplementaryOdomTwist(double dt_scan, TwistVector &x
     if (!resolveComplementaryOdomExtrinsics(complementaryOdomQueue[idx2].header.frame_id))
         return false;
 
-    const double dt_complementary = ROS_TIME(complementaryOdomQueue[idx2].header.stamp) - ROS_TIME(complementaryOdomQueue[idx1].header.stamp);
+    const double odom_prev_stamp_s = ROS_TIME(complementaryOdomQueue[idx1].header.stamp);
+    const double odom_curr_stamp_s = ROS_TIME(complementaryOdomQueue[idx2].header.stamp);
+    const double dt_complementary = odom_curr_stamp_s - odom_prev_stamp_s;
     if (dt_complementary < 1e-3)
         return false;
+
+    if (match_info)
+    {
+        match_info->lidar_prev_stamp_s = prev_lidar_time;
+        match_info->lidar_curr_stamp_s = curr_lidar_time;
+        match_info->odom_prev_stamp_s = odom_prev_stamp_s;
+        match_info->odom_curr_stamp_s = odom_curr_stamp_s;
+        match_info->dt_complementary_s = dt_complementary;
+        match_info->prev_match_abs_dt_s = prev_abs_dt;
+        match_info->curr_match_abs_dt_s = curr_abs_dt;
+        match_info->odom_queue_size = static_cast<int>(complementaryOdomQueue.size());
+        match_info->odom_samples_between = std::abs(idx2 - idx1) + 1;
+    }
 
     Eigen::Isometry3d iso1;
     Eigen::Isometry3d iso2;
@@ -210,21 +226,23 @@ bool mapOptimization::inferComplementaryOdomTwist(double dt_scan, TwistVector &x
     const Eigen::Matrix4f T_complementary_lidar_delta = T_complementary_to_lidar * T_add_delta * T_complementary_to_lidar.inverse();
     xi_complementary_lidar = matrixToTwist(T_complementary_lidar_delta, static_cast<float>(dt_complementary));
 
-    std::ostringstream oss;
-    oss << "[COMPLEMENTARY_ODOM_TWIST]"
-        << " dt_complementary_s=" << std::fixed << std::setprecision(4) << dt_complementary
-        << " prev_match_abs_dt_s=" << prev_abs_dt
-        << " curr_match_abs_dt_s=" << curr_abs_dt
-        << " lin_xyz=["
-        << xi_complementary_lidar[0] << ", " << xi_complementary_lidar[1] << ", " << xi_complementary_lidar[2] << "]"
-        << " ang_xyz=["
-        << xi_complementary_lidar[3] << ", " << xi_complementary_lidar[4] << ", " << xi_complementary_lidar[5] << "]"
-        << " lin_norm=" << xi_complementary_lidar.head<3>().norm()
-        << " ang_norm=" << xi_complementary_lidar.tail<3>().norm();
-    const std::string msg = oss.str();
     if (diagnostics)
-        diagnostics->recordComplementaryOdomTwistCsv(timeLaserInfoCur, msg);
-    RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, msg);
+    {
+        ComplementaryOdomTwistDebugSample sample;
+        sample.stamp_sec = timeLaserInfoCur;
+        sample.lidar_prev_stamp_s = prev_lidar_time;
+        sample.lidar_curr_stamp_s = curr_lidar_time;
+        sample.odom_prev_stamp_s = odom_prev_stamp_s;
+        sample.odom_curr_stamp_s = odom_curr_stamp_s;
+        sample.odom_queue_size = static_cast<int>(complementaryOdomQueue.size());
+        sample.odom_samples_between = std::abs(idx2 - idx1) + 1;
+        sample.dt_complementary_s = dt_complementary;
+        sample.prev_match_abs_dt_s = prev_abs_dt;
+        sample.curr_match_abs_dt_s = curr_abs_dt;
+        sample.lin_norm = xi_complementary_lidar.head<3>().norm();
+        sample.ang_norm = xi_complementary_lidar.tail<3>().norm();
+        diagnostics->recordComplementaryOdomTwistCsv(sample);
+    }
 
     return true;
 }
@@ -253,10 +271,34 @@ float mapOptimization::smoothComplementaryOdomScale(float scaleInstant)
     return complementaryOdomScaleHistorySum / static_cast<float>(complementaryOdomScaleHistory.size());
 }
 
+float mapOptimization::smoothComplementaryOdomFallbackScale(float scaleInstant)
+{
+    constexpr size_t kFallbackWindowSize = 30;
+
+    // Pre-fill with the first valid sample to avoid startup transients.
+    if (complementaryOdomFallbackScaleHistory.empty())
+    {
+        complementaryOdomFallbackScaleHistory.assign(kFallbackWindowSize, scaleInstant);
+        complementaryOdomFallbackScaleHistorySum = scaleInstant * static_cast<float>(kFallbackWindowSize);
+        return scaleInstant;
+    }
+
+    complementaryOdomFallbackScaleHistory.push_back(scaleInstant);
+    complementaryOdomFallbackScaleHistorySum += scaleInstant;
+    while (complementaryOdomFallbackScaleHistory.size() > kFallbackWindowSize)
+    {
+        complementaryOdomFallbackScaleHistorySum -= complementaryOdomFallbackScaleHistory.front();
+        complementaryOdomFallbackScaleHistory.pop_front();
+    }
+
+    return complementaryOdomFallbackScaleHistorySum / static_cast<float>(complementaryOdomFallbackScaleHistory.size());
+}
+
 Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen::Affine3f &T_previous,
                                                                     const Eigen::Affine3f &T_optimized,
                                                                     const std::vector<TwistVector> &orthoBasis,
                                                                     const TwistVector &xi_complementary_lidar,
+                                                                    const ComplementaryOdomMatchInfo &match_info,
                                                                     double dt_scan,
                                                                     bool &hasNonDegenerateComponents,
                                                                     Eigen::Vector3f &t_lidar_nondeg_map,
@@ -273,54 +315,93 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
     const Eigen::Vector3f t_lidar_nondeg = t_lidar - projectOntoBasisTranslation(t_lidar, orthoBasis);
     const Eigen::Vector3f t_complementary_nondeg = t_complementary - projectOntoBasisTranslation(t_complementary, orthoBasis);
     // project lidar displacement onto complementary odometry displacement to get a scale estimate for the complementary odometry
-    const Eigen::Vector3f t_complementary_nondeg_unit = t_complementary_nondeg.normalized();
+    const float complementaryNondegNorm = t_complementary_nondeg.norm();
+    const float lidarNondegNormUnprojected = t_lidar_nondeg.norm();
+    Eigen::Vector3f t_complementary_nondeg_unit = Eigen::Vector3f::Zero();
+    if (complementaryNondegNorm > 1e-6f)
+        t_complementary_nondeg_unit = t_complementary_nondeg / complementaryNondegNorm;
 
-    const Eigen::Vector3f t_lidar_nondeg_proj = t_lidar_nondeg.dot(t_complementary_nondeg_unit) * t_complementary_nondeg_unit;
+    const Eigen::Vector3f t_lidar_nondeg_proj =
+        t_lidar_nondeg.dot(t_complementary_nondeg_unit) * t_complementary_nondeg_unit;
     // const float complementaryOdomScale = t_complementary_nondeg.norm() > 1e-5f ? t_lidar_nondeg_proj.norm() / t_complementary_nondeg.norm() : 1.0f;
 
     constexpr float kMinScale = 0.2f;
-    constexpr float kMaxScale = 5.0f;
+    constexpr float kMaxScale = 2.0f;
     const float minNondegNorm =
         static_cast<float>(complementaryOdom.scaleMinNonDegenerateSpeed) * static_cast<float>(dt_scan);
 
-    // const float lidarNondegNorm = t_lidar_nondeg.norm();
     const float lidarNondegNorm = t_lidar_nondeg_proj.norm();
-    const float complementaryNondegNorm = t_complementary_nondeg.norm();
-    const bool gatePassed = lidarNondegNorm > minNondegNorm && complementaryNondegNorm > minNondegNorm;
+    const bool gateObservable = lidarNondegNorm > minNondegNorm && complementaryNondegNorm > minNondegNorm;
 
-    float complementaryOdomScale = 1.0f;
+    float scaleInstantRaw = std::numeric_limits<float>::quiet_NaN();
     float scaleRatioRaw = std::numeric_limits<float>::quiet_NaN();
+    float scaleRatioUnprojectedRaw = std::numeric_limits<float>::quiet_NaN();
     float scaleLsRaw = std::numeric_limits<float>::quiet_NaN();
     float thetaDeg = std::numeric_limits<float>::quiet_NaN();
 
-    if (gatePassed)
+    if (complementaryNondegNorm > 1e-6f)
     {
         scaleRatioRaw = lidarNondegNorm / complementaryNondegNorm;
+        scaleRatioUnprojectedRaw = lidarNondegNormUnprojected / complementaryNondegNorm;
 
         const float dot = t_complementary_nondeg.dot(t_lidar_nondeg);
         scaleLsRaw = dot / (complementaryNondegNorm * complementaryNondegNorm);
-        const float cosTheta = std::clamp(dot / (complementaryNondegNorm * lidarNondegNorm), -1.0f, 1.0f);
-        thetaDeg = std::acos(cosTheta) * 180.0f / static_cast<float>(M_PI);
+        if (lidarNondegNormUnprojected > 1e-6f)
+        {
+            const float cosTheta = std::clamp(dot / (complementaryNondegNorm * lidarNondegNormUnprojected), -1.0f, 1.0f);
+            thetaDeg = std::acos(cosTheta) * 180.0f / static_cast<float>(M_PI);
+        }
 
-        if (complementaryOdom.scaleEstimationEnabled)
-            complementaryOdomScale = std::clamp(scaleRatioRaw, kMinScale, kMaxScale);
+        // Direct scale estimate from the current frame pair only.
+        scaleInstantRaw = scaleRatioRaw;
+    }
 
+    const bool hasInstantRaw = std::isfinite(scaleInstantRaw);
+    const float scaleInstantRawClamped = hasInstantRaw ? std::clamp(scaleInstantRaw, kMinScale, kMaxScale) : 1.0f;
+
+    float scaleFallbackHistory = complementaryOdomFallbackScaleHistory.empty()
+                                     ? 1.0f
+                                     : (complementaryOdomFallbackScaleHistorySum /
+                                        static_cast<float>(complementaryOdomFallbackScaleHistory.size()));
+    if (gateObservable && hasInstantRaw)
+        scaleFallbackHistory = smoothComplementaryOdomFallbackScale(scaleInstantRawClamped);
+
+    const float scaleInstantRawSafe = (gateObservable && hasInstantRaw) ? scaleInstantRawClamped : scaleFallbackHistory;
+    const float scaleSmooth = complementaryOdom.scaleEstimationEnabled ? smoothComplementaryOdomScale(scaleInstantRawSafe) : 1.0f;
+    const float scaleApplied = scaleSmooth;
+
+    if (gateObservable)
+    {
         hasNonDegenerateComponents = true;
         const Eigen::Matrix3f R_prev = T_previous.rotation();
         t_lidar_nondeg_map = R_prev * t_lidar_nondeg;
         t_complementary_nondeg_map = R_prev * t_complementary_nondeg;
     }
 
-    const float complementaryOdomScaleSmooth = smoothComplementaryOdomScale(complementaryOdomScale);
-    const float complementaryOdomScaleApplied =
-        complementaryOdom.scaleEstimationEnabled ? complementaryOdomScaleSmooth : 1.0f;
+    if (pubComplementaryOdomScaleDebug)
+    {
+        liorf::msg::ComplementaryOdomScaleDebug msg;
+        msg.header.stamp = timeLaserInfoStamp;
+        msg.header.frame_id = lidarFrame;
+        msg.scale_instant_raw = static_cast<double>(scaleInstantRaw);
+        msg.scale_instant_raw_clamped = static_cast<double>(scaleInstantRawClamped);
+        msg.scale_instant_raw_safe = static_cast<double>(scaleInstantRawSafe);
+        msg.scale_fallback_history = static_cast<double>(scaleFallbackHistory);
+        msg.scale_smooth = static_cast<double>(scaleSmooth);
+        msg.scale_applied = static_cast<double>(scaleApplied);
+        msg.gate_observable = gateObservable ? 1.0 : 0.0;
+        msg.scale_estimation_enabled = complementaryOdom.scaleEstimationEnabled ? 1.0 : 0.0;
+        msg.dt_scan_s = dt_scan;
+        msg.dt_odom_s = match_info.dt_complementary_s;
+        pubComplementaryOdomScaleDebug->publish(msg);
+    }
 
 
     const float complementaryOdomLinearSpeedOrig = xi_complementary_lidar.head<3>().norm();
     const float lidarLinearSpeedNondeg = lidarNondegNorm / static_cast<float>(dt_scan);
     const float complementaryOdomLinearSpeedNondeg = complementaryNondegNorm / static_cast<float>(dt_scan);
     const float lidarLinearSpeedAfterScale =
-        (complementaryNondegNorm * complementaryOdomScaleApplied) / static_cast<float>(dt_scan);
+        (complementaryNondegNorm * scaleApplied) / static_cast<float>(dt_scan);
 
     const Eigen::Affine3f T_complementary_odom_scale1(
         T_previous.matrix() * T_lidar_complementary_predicted);
@@ -332,38 +413,61 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
     const float lidarLinearSpeedProjScale1 =
         T_proj_motion_scale1.block<3, 1>(0, 3).norm() / static_cast<float>(dt_scan);
 
+    if (diagnostics)
     {
-        std::ostringstream oss;
-        oss << "[COMPLEMENTARY_ODOM_SCALE]"
-            << " frame_stamp_s=" << std::fixed << std::setprecision(6) << timeLaserInfoCur
-            << std::setprecision(4)
-            << " enabled=" << (complementaryOdom.scaleEstimationEnabled ? 1 : 0)
-            << " gate_passed=" << (gatePassed ? 1 : 0)
-            << " scale_applied=" << complementaryOdomScaleApplied
-            << " scale_instant=" << complementaryOdomScale
-            << " scale_smoothed=" << complementaryOdomScaleSmooth
-            << " scale_ratio_raw=" << scaleRatioRaw
-            << " scale_ls_raw=" << scaleLsRaw
-            << " theta_deg=" << thetaDeg
-            << " lidar_nondeg_m=" << lidarNondegNorm
-            << " complementary_nondeg_m=" << complementaryNondegNorm
-            << " min_nondeg_m=" << minNondegNorm
-            << " scale_smoothing_window=" << complementaryOdom.scaleSmoothingWindowSize
-            << " complementary_odom_lin_speed_orig_mps=" << complementaryOdomLinearSpeedOrig
-            << " lidar_lin_speed_nondeg_mps=" << lidarLinearSpeedNondeg
-            << " complementary_odom_lin_speed_nondeg_mps=" << complementaryOdomLinearSpeedNondeg
-            << " lidar_lin_speed_proj_scale1_mps=" << lidarLinearSpeedProjScale1
-            << " lidar_lin_speed_after_scale_mps=" << lidarLinearSpeedAfterScale
-            << " dt_scan_s=" << dt_scan;
-        const std::string msg = oss.str();
-        if (diagnostics)
-            diagnostics->recordComplementaryOdomScaleCsv(timeLaserInfoCur, msg);
-        RCLCPP_INFO_STREAM_THROTTLE(get_logger(), *get_clock(), 1000, msg);
+        ComplementaryOdomScaleDebugSample sample;
+        sample.stamp_sec = timeLaserInfoCur;
+        sample.frame_stamp_s = timeLaserInfoCur;
+        sample.lidar_prev_stamp_s = match_info.lidar_prev_stamp_s;
+        sample.lidar_curr_stamp_s = match_info.lidar_curr_stamp_s;
+        sample.odom_prev_stamp_s = match_info.odom_prev_stamp_s;
+        sample.odom_curr_stamp_s = match_info.odom_curr_stamp_s;
+        sample.odom_queue_size = match_info.odom_queue_size;
+        sample.odom_samples_between = match_info.odom_samples_between;
+        sample.odom_span_s = match_info.dt_complementary_s;
+        sample.prev_match_abs_dt_s = match_info.prev_match_abs_dt_s;
+        sample.curr_match_abs_dt_s = match_info.curr_match_abs_dt_s;
+        sample.enabled = complementaryOdom.scaleEstimationEnabled;
+        sample.gate_observable = gateObservable;
+        sample.scale_instant_raw = scaleInstantRaw;
+        sample.scale_instant_raw_clamped = scaleInstantRawClamped;
+        sample.scale_instant_raw_safe = scaleInstantRawSafe;
+        sample.scale_fallback_history = scaleFallbackHistory;
+        sample.scale_smooth = scaleSmooth;
+        sample.scale_applied = scaleApplied;
+        sample.scale_ratio_raw = scaleRatioRaw;
+        sample.scale_ratio_unprojected_raw = scaleRatioUnprojectedRaw;
+        sample.scale_ls_raw = scaleLsRaw;
+        sample.theta_deg = thetaDeg;
+        sample.lidar_body_dx_m = t_lidar.x();
+        sample.lidar_body_dy_m = t_lidar.y();
+        sample.lidar_body_dz_m = t_lidar.z();
+        sample.complementary_body_dx_m = t_complementary.x();
+        sample.complementary_body_dy_m = t_complementary.y();
+        sample.complementary_body_dz_m = t_complementary.z();
+        sample.lidar_body_nondeg_dx_m = t_lidar_nondeg.x();
+        sample.lidar_body_nondeg_dy_m = t_lidar_nondeg.y();
+        sample.lidar_body_nondeg_dz_m = t_lidar_nondeg.z();
+        sample.complementary_body_nondeg_dx_m = t_complementary_nondeg.x();
+        sample.complementary_body_nondeg_dy_m = t_complementary_nondeg.y();
+        sample.complementary_body_nondeg_dz_m = t_complementary_nondeg.z();
+        sample.lidar_nondeg_unprojected_m = lidarNondegNormUnprojected;
+        sample.lidar_nondeg_m = lidarNondegNorm;
+        sample.complementary_nondeg_m = complementaryNondegNorm;
+        sample.min_nondeg_m = minNondegNorm;
+        sample.scale_smoothing_window = complementaryOdom.scaleSmoothingWindowSize;
+        sample.complementary_odom_lin_speed_orig_mps = complementaryOdomLinearSpeedOrig;
+        sample.lidar_lin_speed_nondeg_mps = lidarLinearSpeedNondeg;
+        sample.complementary_odom_lin_speed_nondeg_mps = complementaryOdomLinearSpeedNondeg;
+        sample.lidar_lin_speed_proj_scale1_mps = lidarLinearSpeedProjScale1;
+        sample.lidar_lin_speed_after_scale_mps = lidarLinearSpeedAfterScale;
+        sample.dt_scan_s = dt_scan;
+        diagnostics->recordComplementaryOdomScaleCsv(sample);
     }
 
     // Rescale only the translation of the complementary-odom displacement; its
     // rotation is typically gyro-backed and kept as-is.
-    T_lidar_complementary_predicted.block<3, 1>(0, 3) *= complementaryOdomScaleApplied;
+    T_lidar_complementary_predicted.block<3, 1>(0, 3) *= scaleApplied;
     return Eigen::Affine3f(T_previous.matrix() * T_lidar_complementary_predicted);
 }
 
@@ -407,9 +511,10 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
     bool hasNonDegenerateComponents = false;
     Eigen::Vector3f t_lidar_nondeg_map = Eigen::Vector3f::Zero();
     Eigen::Vector3f t_complementary_nondeg_map = Eigen::Vector3f::Zero();
+    ComplementaryOdomMatchInfo match_info;
 
     TwistVector xi_complementary_lidar = TwistVector::Zero();
-    const bool hasComplementaryPrediction = inferComplementaryOdomTwist(dt_scan, xi_complementary_lidar);
+    const bool hasComplementaryPrediction = inferComplementaryOdomTwist(dt_scan, xi_complementary_lidar, &match_info);
     if (hasComplementaryPrediction)
     {
         T_complementary_odom = buildScaledComplementaryPrediction(
@@ -417,6 +522,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
             T_optimized,
             orthoBasis,
             xi_complementary_lidar,
+            match_info,
             dt_scan,
             hasNonDegenerateComponents,
             t_lidar_nondeg_map,

@@ -1,18 +1,5 @@
 #include "liorf_diagnostics.h"
 
-#include <regex>
-
-namespace
-{
-std::string csvValueOrNan(const std::unordered_map<std::string, std::string> &kv, const char *key)
-{
-    const auto it = kv.find(key);
-    if (it == kv.end() || it->second.empty())
-        return "nan";
-    return it->second;
-}
-}
-
 LiorfDiagnostics::LiorfDiagnostics(
     rclcpp::Node *node,
     const rclcpp::QoS &qos,
@@ -87,12 +74,68 @@ LiorfDiagnostics::LiorfDiagnostics(
     if (complementary_odom_scale_csv_.is_open())
     {
         complementary_odom_scale_csv_
-            << "time,complementary_odom_scale/frame_stamp_s,complementary_odom_scale/enabled,complementary_odom_scale/gate_passed,complementary_odom_scale/scale_applied,complementary_odom_scale/scale_instant,complementary_odom_scale/scale_smoothed,complementary_odom_scale/scale_ratio_raw,complementary_odom_scale/scale_ls_raw,complementary_odom_scale/theta_deg,complementary_odom_scale/lidar_nondeg_m,complementary_odom_scale/complementary_nondeg_m,complementary_odom_scale/min_nondeg_m,complementary_odom_scale/scale_smoothing_window,complementary_odom_scale/complementary_odom_lin_speed_orig_mps,complementary_odom_scale/lidar_lin_speed_nondeg_mps,complementary_odom_scale/complementary_odom_lin_speed_nondeg_mps,complementary_odom_scale/lidar_lin_speed_proj_scale1_mps,complementary_odom_scale/lidar_lin_speed_after_scale_mps,complementary_odom_scale/dt_scan_s\n";
+            << "time"
+            << ",complementary_odom_scale/stamp/frame_s"
+            << ",complementary_odom_scale/stamp/lidar_prev_s"
+            << ",complementary_odom_scale/stamp/lidar_curr_s"
+            << ",complementary_odom_scale/stamp/odom_prev_s"
+            << ",complementary_odom_scale/stamp/odom_curr_s"
+            << ",complementary_odom_scale/alignment/odom_queue_size"
+            << ",complementary_odom_scale/alignment/odom_samples_between"
+            << ",complementary_odom_scale/alignment/odom_span_s"
+            << ",complementary_odom_scale/alignment/prev_match_abs_dt_s"
+            << ",complementary_odom_scale/alignment/curr_match_abs_dt_s"
+            << ",complementary_odom_scale/gate/enabled"
+            << ",complementary_odom_scale/gate/observable"
+            << ",complementary_odom_scale/scale/instant_raw"
+            << ",complementary_odom_scale/scale/instant_raw_clamped"
+            << ",complementary_odom_scale/scale/instant_raw_safe"
+            << ",complementary_odom_scale/scale/fallback_history"
+            << ",complementary_odom_scale/scale/smooth"
+            << ",complementary_odom_scale/scale/applied"
+            << ",complementary_odom_scale/scale/raw/projected_ratio"
+            << ",complementary_odom_scale/scale/raw/unprojected_ratio"
+            << ",complementary_odom_scale/scale/raw/least_squares"
+            << ",complementary_odom_scale/scale/raw/theta_deg"
+            << ",complementary_odom_scale/body/lidar/dx_m"
+            << ",complementary_odom_scale/body/lidar/dy_m"
+            << ",complementary_odom_scale/body/lidar/dz_m"
+            << ",complementary_odom_scale/body/complementary/dx_m"
+            << ",complementary_odom_scale/body/complementary/dy_m"
+            << ",complementary_odom_scale/body/complementary/dz_m"
+            << ",complementary_odom_scale/body_nondeg/lidar/dx_m"
+            << ",complementary_odom_scale/body_nondeg/lidar/dy_m"
+            << ",complementary_odom_scale/body_nondeg/lidar/dz_m"
+            << ",complementary_odom_scale/body_nondeg/complementary/dx_m"
+            << ",complementary_odom_scale/body_nondeg/complementary/dy_m"
+            << ",complementary_odom_scale/body_nondeg/complementary/dz_m"
+            << ",complementary_odom_scale/magnitude/lidar_nondeg_unprojected_m"
+            << ",complementary_odom_scale/magnitude/lidar_nondeg_projected_m"
+            << ",complementary_odom_scale/magnitude/complementary_nondeg_m"
+            << ",complementary_odom_scale/magnitude/min_nondeg_m"
+            << ",complementary_odom_scale/smoothing/window"
+            << ",complementary_odom_scale/speed/complementary_orig_mps"
+            << ",complementary_odom_scale/speed/lidar_nondeg_mps"
+            << ",complementary_odom_scale/speed/complementary_nondeg_mps"
+            << ",complementary_odom_scale/speed/lidar_proj_scale1_mps"
+            << ",complementary_odom_scale/speed/lidar_after_scale_mps"
+            << ",complementary_odom_scale/dt/scan_s\n";
     }
     if (complementary_odom_twist_csv_.is_open())
     {
         complementary_odom_twist_csv_
-            << "time,complementary_odom_twist/dt_complementary_s,complementary_odom_twist/prev_match_abs_dt_s,complementary_odom_twist/curr_match_abs_dt_s,complementary_odom_twist/lin_norm,complementary_odom_twist/ang_norm\n";
+            << "time"
+            << ",complementary_odom_twist/stamp/lidar_prev_s"
+            << ",complementary_odom_twist/stamp/lidar_curr_s"
+            << ",complementary_odom_twist/stamp/odom_prev_s"
+            << ",complementary_odom_twist/stamp/odom_curr_s"
+            << ",complementary_odom_twist/alignment/odom_queue_size"
+            << ",complementary_odom_twist/alignment/odom_samples_between"
+            << ",complementary_odom_twist/alignment/dt_complementary_s"
+            << ",complementary_odom_twist/alignment/prev_match_abs_dt_s"
+            << ",complementary_odom_twist/alignment/curr_match_abs_dt_s"
+            << ",complementary_odom_twist/norm/lin"
+            << ",complementary_odom_twist/norm/ang\n";
     }
 
     dumpActiveParameters();
@@ -231,72 +274,80 @@ void LiorfDiagnostics::logEventThrottle(const std::string &key, double period_se
     }
 }
 
-std::unordered_map<std::string, std::string> LiorfDiagnostics::parseEventKv(const std::string &message)
-{
-    std::unordered_map<std::string, std::string> kv;
-    static const std::regex pattern(R"(([A-Za-z0-9_]+)=([^\s]+))");
-    for (std::sregex_iterator it(message.begin(), message.end(), pattern), end; it != end; ++it)
-    {
-        std::string value = (*it)[2].str();
-        while (!value.empty() && value.back() == ',')
-            value.pop_back();
-        kv[(*it)[1].str()] = value;
-    }
-    return kv;
-}
-
-void LiorfDiagnostics::recordComplementaryOdomScaleCsv(double stamp_sec, const std::string &message)
+void LiorfDiagnostics::recordComplementaryOdomScaleCsv(const ComplementaryOdomScaleDebugSample &sample)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!complementary_odom_scale_csv_.is_open())
         return;
 
-    if (message.find("[COMPLEMENTARY_ODOM_SCALE]") == std::string::npos)
-        return;
-
-    const auto kv = parseEventKv(message);
-
     complementary_odom_scale_csv_ << std::fixed << std::setprecision(6)
-                                   << stamp_sec << ","
-                                   << csvValueOrNan(kv, "frame_stamp_s") << ","
-                                   << csvValueOrNan(kv, "enabled") << ","
-                                   << csvValueOrNan(kv, "gate_passed") << ","
-                                   << csvValueOrNan(kv, "scale_applied") << ","
-                                   << csvValueOrNan(kv, "scale_instant") << ","
-                                   << csvValueOrNan(kv, "scale_smoothed") << ","
-                                   << csvValueOrNan(kv, "scale_ratio_raw") << ","
-                                   << csvValueOrNan(kv, "scale_ls_raw") << ","
-                                   << csvValueOrNan(kv, "theta_deg") << ","
-                                   << csvValueOrNan(kv, "lidar_nondeg_m") << ","
-                                   << csvValueOrNan(kv, "complementary_nondeg_m") << ","
-                                   << csvValueOrNan(kv, "min_nondeg_m") << ","
-                                   << csvValueOrNan(kv, "scale_smoothing_window") << ","
-                                   << csvValueOrNan(kv, "complementary_odom_lin_speed_orig_mps") << ","
-                                   << csvValueOrNan(kv, "lidar_lin_speed_nondeg_mps") << ","
-                                   << csvValueOrNan(kv, "complementary_odom_lin_speed_nondeg_mps") << ","
-                                   << csvValueOrNan(kv, "lidar_lin_speed_proj_scale1_mps") << ","
-                                   << csvValueOrNan(kv, "lidar_lin_speed_after_scale_mps") << ","
-                                   << csvValueOrNan(kv, "dt_scan_s") << "\n";
+                                   << sample.stamp_sec << ","
+                                   << sample.frame_stamp_s << ","
+                                   << sample.lidar_prev_stamp_s << ","
+                                   << sample.lidar_curr_stamp_s << ","
+                                   << sample.odom_prev_stamp_s << ","
+                                   << sample.odom_curr_stamp_s << ","
+                                   << sample.odom_queue_size << ","
+                                   << sample.odom_samples_between << ","
+                                   << sample.odom_span_s << ","
+                                   << sample.prev_match_abs_dt_s << ","
+                                   << sample.curr_match_abs_dt_s << ","
+                                   << (sample.enabled ? 1 : 0) << ","
+                                   << (sample.gate_observable ? 1 : 0) << ","
+                                   << sample.scale_instant_raw << ","
+                                   << sample.scale_instant_raw_clamped << ","
+                                   << sample.scale_instant_raw_safe << ","
+                                   << sample.scale_fallback_history << ","
+                                   << sample.scale_smooth << ","
+                                   << sample.scale_applied << ","
+                                   << sample.scale_ratio_raw << ","
+                                   << sample.scale_ratio_unprojected_raw << ","
+                                   << sample.scale_ls_raw << ","
+                                   << sample.theta_deg << ","
+                                   << sample.lidar_body_dx_m << ","
+                                   << sample.lidar_body_dy_m << ","
+                                   << sample.lidar_body_dz_m << ","
+                                   << sample.complementary_body_dx_m << ","
+                                   << sample.complementary_body_dy_m << ","
+                                   << sample.complementary_body_dz_m << ","
+                                   << sample.lidar_body_nondeg_dx_m << ","
+                                   << sample.lidar_body_nondeg_dy_m << ","
+                                   << sample.lidar_body_nondeg_dz_m << ","
+                                   << sample.complementary_body_nondeg_dx_m << ","
+                                   << sample.complementary_body_nondeg_dy_m << ","
+                                   << sample.complementary_body_nondeg_dz_m << ","
+                                   << sample.lidar_nondeg_unprojected_m << ","
+                                   << sample.lidar_nondeg_m << ","
+                                   << sample.complementary_nondeg_m << ","
+                                   << sample.min_nondeg_m << ","
+                                   << sample.scale_smoothing_window << ","
+                                   << sample.complementary_odom_lin_speed_orig_mps << ","
+                                   << sample.lidar_lin_speed_nondeg_mps << ","
+                                   << sample.complementary_odom_lin_speed_nondeg_mps << ","
+                                   << sample.lidar_lin_speed_proj_scale1_mps << ","
+                                   << sample.lidar_lin_speed_after_scale_mps << ","
+                                   << sample.dt_scan_s << "\n";
 }
 
-void LiorfDiagnostics::recordComplementaryOdomTwistCsv(double stamp_sec, const std::string &message)
+void LiorfDiagnostics::recordComplementaryOdomTwistCsv(const ComplementaryOdomTwistDebugSample &sample)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!complementary_odom_twist_csv_.is_open())
         return;
 
-    if (message.find("[COMPLEMENTARY_ODOM_TWIST]") == std::string::npos)
-        return;
-
-    const auto kv = parseEventKv(message);
-
     complementary_odom_twist_csv_ << std::fixed << std::setprecision(6)
-                                   << stamp_sec << ","
-                                   << csvValueOrNan(kv, "dt_complementary_s") << ","
-                                   << csvValueOrNan(kv, "prev_match_abs_dt_s") << ","
-                                   << csvValueOrNan(kv, "curr_match_abs_dt_s") << ","
-                                   << csvValueOrNan(kv, "lin_norm") << ","
-                                   << csvValueOrNan(kv, "ang_norm") << "\n";
+                                   << sample.stamp_sec << ","
+                                   << sample.lidar_prev_stamp_s << ","
+                                   << sample.lidar_curr_stamp_s << ","
+                                   << sample.odom_prev_stamp_s << ","
+                                   << sample.odom_curr_stamp_s << ","
+                                   << sample.odom_queue_size << ","
+                                   << sample.odom_samples_between << ","
+                                   << sample.dt_complementary_s << ","
+                                   << sample.prev_match_abs_dt_s << ","
+                                   << sample.curr_match_abs_dt_s << ","
+                                   << sample.lin_norm << ","
+                                   << sample.ang_norm << "\n";
 }
 
 void LiorfDiagnostics::publishWarning(const std::string &message)

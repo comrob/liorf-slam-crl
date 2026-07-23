@@ -50,7 +50,7 @@ change SLAM/logging functionality.
 	and exposed it in primary runtime configs.
 - Scale application now uses the smoothed value when scale estimation is
 	enabled, while preserving `1.0` application when disabled.
-- Extended `[COMPLEMENTARY_ODOM_SCALE]` diagnostics payload with:
+- Extended complementary-odom scale diagnostics fields with
 	`scale_instant`, `scale_smoothed`, and `scale_smoothing_window`.
 - Added direct PlotJuggler-friendly CSV emission for complementary odometry
 	metrics in run directory:
@@ -65,6 +65,38 @@ change SLAM/logging functionality.
 - Removed backward-compatibility fallback fields for complementary odometry
 	CSV extraction (`add_nondeg_m`, `lidar_lin_speed_reproject_mps`) and deleted
 	the legacy plotting helper so diagnostics are consumed from direct CSV.
+- Suppressed terminal log output for degeneracy detection and complementary
+	odom twist diagnostics while preserving their CSV diagnostics emission.
+- Expanded complementary-odom CSV schema with explicit LiDAR/odom sample
+	timestamps, odom sample span/count metadata, projected and unprojected raw
+	scale candidates, and body-frame plus observable non-degenerate displacement
+	components for per-frame diagnosability.
+- Fixed an Eigen compile error in complementary-odom scale diagnostics by
+	replacing a mixed-expression ternary with explicit vector assignment.
+- Reworked complementary-odometry CSV logging to pass typed debug structs
+	directly to diagnostics writers, removing event-style string serialization
+	and key-value parsing from these odometry-specific logging paths.
+- Reorganized complementary-odometry CSV column names into deeper grouped
+	hierarchies (stamp/alignment/gate/scale/body/magnitude/smoothing/speed/dt)
+	to improve PlotJuggler field navigation and readability.
+- Added a second complementary-odometry scale buffer that keeps a fixed
+	30-sample moving average from observable frames and uses that value as the
+	fallback scale in unobservable directions, replacing the previous hardcoded
+	`1.0` fallback.
+- Added a packed custom debug topic
+	`liorf/mapping/complementary_odom/scale_debug`
+	(`liorf/msg/ComplementaryOdomScaleDebug`) so the same runtime values logged
+	to CSV can also be plotted online in RViz 2D plot / PlotJuggler without
+	managing multiple scalar topics.
+- Clarified complementary-odom scale semantics across runtime, topic, and CSV
+	with explicit three-stage values:
+	`scale_instant_raw` (direct estimate, gate-independent),
+	`scale_instant_raw_safe` (raw-or-fallback by gate), and
+	`scale_smooth` (final applied value).
+- Updated `ComplementaryOdomScaleDebug.msg` and complementary-odom CSV columns
+	to use the transparent naming flow above, plus explicit
+	`scale_instant_raw_clamped`, `scale_fallback_history`,
+	`gate_observable`, and `scale_estimation_enabled` fields.
 
 ### Migration/runtime risk notes
 
