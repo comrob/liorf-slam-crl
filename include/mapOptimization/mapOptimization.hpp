@@ -374,6 +374,10 @@ public:
 
     std::deque<float> complementaryOdomScaleHistory;
     float complementaryOdomScaleHistorySum = 0.0f;
+    std::deque<float> complementaryOdomScaleNumeratorHistory;
+    float complementaryOdomScaleNumeratorHistorySum = 0.0f;
+    std::deque<float> complementaryOdomScaleDenominatorHistory;
+    float complementaryOdomScaleDenominatorHistorySum = 0.0f;
     std::deque<float> complementaryOdomFallbackScaleHistory;
     float complementaryOdomFallbackScaleHistorySum = 0.0f;
 
@@ -382,16 +386,24 @@ public:
 
     void complementaryOdomHandler(const nav_msgs::msg::Odometry::SharedPtr msg);
     bool resolveComplementaryOdomExtrinsics(const std::string &msgFrameId);
-    void publishComplementaryOdomDisplacementDebug(const Eigen::Affine3f &T_base_abs, const Eigen::Affine3f &T_raw_abs, const Eigen::Affine3f &T_proj_abs,
-                                         bool hasNonDegenerateComponents = false,
-                                         const Eigen::Vector3f &t_lidar_nondeg_map = Eigen::Vector3f::Zero(),
-                                         const Eigen::Vector3f &t_complementary_nondeg_map = Eigen::Vector3f::Zero());
+    void publishComplementaryOdomDisplacementDebug(
+        const Eigen::Affine3f &T_base_abs,
+        const Eigen::Affine3f &T_complementary_unscaled_abs,
+        const Eigen::Affine3f &T_complementary_scaled_abs,
+        const Eigen::Affine3f &T_corrected_no_scale_abs,
+        const Eigen::Affine3f &T_corrected_scaled_abs,
+        const Eigen::Vector3f &t_complementary_nondeg_map,
+        const Eigen::Vector3f &t_lidar_nondeg_map,
+        const Eigen::Vector3f &t_lidar_nondeg_proj_on_complementary_map,
+        const Eigen::Vector3f &t_complementary_raw_map,
+        const Eigen::Vector3f &t_complementary_scaled_map);
     void runDegeneracyDetectionAndCompensation();
     bool prepareDegeneracyOrthoBasis(std::vector<TwistVector> &orthoBasis);
     bool inferComplementaryOdomTwist(double dt_scan,
                                      TwistVector &xi_complementary_lidar,
                                      ComplementaryOdomMatchInfo *match_info = nullptr);
     float smoothComplementaryOdomScale(float scaleInstant);
+    float smoothComplementaryOdomScaleFromNumDen(float numerator, float denominator, bool pushSample);
     float smoothComplementaryOdomFallbackScale(float scaleInstant);
     Eigen::Affine3f buildScaledComplementaryPrediction(const Eigen::Affine3f &T_previous,
                                                        const Eigen::Affine3f &T_optimized,
@@ -399,9 +411,13 @@ public:
                                                        const TwistVector &xi_complementary_lidar,
                                                        const ComplementaryOdomMatchInfo &match_info,
                                                        double dt_scan,
-                                                       bool &hasNonDegenerateComponents,
                                                        Eigen::Vector3f &t_lidar_nondeg_map,
-                                                       Eigen::Vector3f &t_complementary_nondeg_map);
+                                                       Eigen::Vector3f &t_complementary_nondeg_map,
+                                                       Eigen::Vector3f &t_lidar_nondeg_proj_on_complementary_map,
+                                                       Eigen::Vector3f &t_complementary_raw_map,
+                                                       Eigen::Vector3f &t_complementary_scaled_map,
+                                                       Eigen::Affine3f &T_complementary_unscaled_abs,
+                                                       Eigen::Affine3f &T_complementary_scaled_abs);
     Eigen::Affine3f projectDegenerateCorrection(const Eigen::Affine3f &T_optimized,
                                                 const Eigen::Affine3f &T_predicted,
                                                 const std::vector<TwistVector> &orthoBasis);

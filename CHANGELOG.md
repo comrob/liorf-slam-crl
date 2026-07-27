@@ -33,8 +33,11 @@ change SLAM/logging functionality.
 - [include/utility.h](include/utility.h)
 - [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
 - [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [msg/ComplementaryOdomScaleDebug.msg](msg/ComplementaryOdomScaleDebug.msg)
 - [src/liorf_diagnostics.cpp](src/liorf_diagnostics.cpp)
 - [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
+- [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp)
+- [CMakeLists.txt](CMakeLists.txt)
 - [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
 - [config/anymal.yaml](config/anymal.yaml)
 - [scripts/plot_complementary_odom_scale_diagnostics.py](scripts/plot_complementary_odom_scale_diagnostics.py)
@@ -97,6 +100,25 @@ change SLAM/logging functionality.
 	to use the transparent naming flow above, plus explicit
 	`scale_instant_raw_clamped`, `scale_fallback_history`,
 	`gate_observable`, and `scale_estimation_enabled` fields.
+- Reworked complementary-odometry displacement markers to publish seven
+	explicit vector/pose arrows from a single base pose:
+	complementary-on-nondeg, lidar-on-nondeg, lidar-nondeg projected onto
+	complementary, corrected(no-scale), corrected(with-scale), complementary
+	original, and complementary scaled.
+- Added `complementaryOdom.ignore_dz` (bool, default `false`) to optionally
+	force `dz=0` on both LiDAR and complementary-odometry displacement vectors
+	during scale determination only (raw/gated/smoothed scale path), while
+	keeping the rest of the compensation pipeline unchanged.
+- Added `complementaryOdom.smoothFromNumDen` (bool, default `false`) as an
+	alternative smoothing mode that aggregates numerator/denominator over the
+	smoothing window and computes scale as ratio-of-sums.
+- Extended online complementary-odom scale debug topic and CSV with both
+	smoothing outputs for A/B comparison:
+	`scale_smooth_legacy`, `scale_smooth_ratio`, selected `scale_smooth`, and
+	mode flag `smooth_from_numden_enabled`.
+- Numerator (`lidar_nondeg_projected_m`) and denominator
+	(`complementary_nondeg_m`) were already logged in CSV, so no duplicate
+	offline-only columns were added.
 
 ### Migration/runtime risk notes
 

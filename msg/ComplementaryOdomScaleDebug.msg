@@ -4,8 +4,13 @@ float64 scale_instant_raw_clamped
 float64 scale_instant_raw_safe
 float64 scale_fallback_history
 float64 scale_smooth
+float64 scale_smooth_ratio
+float64 scale_smooth_legacy
 float64 scale_applied
 float64 gate_observable
 float64 scale_estimation_enabled
+float64 smooth_from_numden_enabled
+float64 numerator_sample
+float64 denominator_sample
 float64 dt_scan_s
 float64 dt_odom_s

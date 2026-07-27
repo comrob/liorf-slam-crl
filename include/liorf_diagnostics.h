@@ -86,7 +86,10 @@ struct ComplementaryOdomScaleDebugSample
     double scale_instant_raw_safe = std::numeric_limits<double>::quiet_NaN();
     double scale_fallback_history = std::numeric_limits<double>::quiet_NaN();
     double scale_smooth = std::numeric_limits<double>::quiet_NaN();
+    double scale_smooth_ratio = std::numeric_limits<double>::quiet_NaN();
+    double scale_smooth_legacy = std::numeric_limits<double>::quiet_NaN();
     double scale_applied = std::numeric_limits<double>::quiet_NaN();
+    bool smooth_from_numden_enabled = false;
     double scale_ratio_raw = std::numeric_limits<double>::quiet_NaN();
     double scale_ratio_unprojected_raw = std::numeric_limits<double>::quiet_NaN();
     double scale_ls_raw = std::numeric_limits<double>::quiet_NaN();

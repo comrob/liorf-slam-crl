@@ -110,6 +110,8 @@ struct ComplementaryOdomParameters
     bool scaleEstimationEnabled = true;
     double scaleMinNonDegenerateSpeed = 0.2; // m/s, observability gate for scale estimation
     int scaleSmoothingWindowSize = 20;
+    bool smoothFromNumDen = false; // if true, smooth numerator/denominator then divide
+    bool ignore_dz = false; // if true, force dz=0 for scale-determination vectors only
     bool autoLookupLidarToTf = true;
     string frame;
     vector<double> extRotV;
@@ -480,6 +482,12 @@ public:
         get_parameter("complementaryOdom.scaleSmoothingWindowSize", complementaryOdom.scaleSmoothingWindowSize);
         if (complementaryOdom.scaleSmoothingWindowSize < 1)
             complementaryOdom.scaleSmoothingWindowSize = 1;
+
+        declare_parameter<bool>("complementaryOdom.smoothFromNumDen", false);
+        get_parameter("complementaryOdom.smoothFromNumDen", complementaryOdom.smoothFromNumDen);
+
+        declare_parameter<bool>("complementaryOdom.ignore_dz", false);
+        get_parameter("complementaryOdom.ignore_dz", complementaryOdom.ignore_dz);
 
         declare_parameter<bool>("complementaryOdom.autoLookupLidarToTf", true);
         get_parameter("complementaryOdom.autoLookupLidarToTf", complementaryOdom.autoLookupLidarToTf);

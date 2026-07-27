@@ -271,6 +271,38 @@ float mapOptimization::smoothComplementaryOdomScale(float scaleInstant)
     return complementaryOdomScaleHistorySum / static_cast<float>(complementaryOdomScaleHistory.size());
 }
 
+float mapOptimization::smoothComplementaryOdomScaleFromNumDen(float numerator, float denominator, bool pushSample)
+{
+    const size_t windowSize = static_cast<size_t>(std::max(1, complementaryOdom.scaleSmoothingWindowSize));
+
+    if (pushSample)
+    {
+        complementaryOdomScaleNumeratorHistory.push_back(numerator);
+        complementaryOdomScaleNumeratorHistorySum += numerator;
+        while (complementaryOdomScaleNumeratorHistory.size() > windowSize)
+        {
+            complementaryOdomScaleNumeratorHistorySum -= complementaryOdomScaleNumeratorHistory.front();
+            complementaryOdomScaleNumeratorHistory.pop_front();
+        }
+
+        complementaryOdomScaleDenominatorHistory.push_back(denominator);
+        complementaryOdomScaleDenominatorHistorySum += denominator;
+        while (complementaryOdomScaleDenominatorHistory.size() > windowSize)
+        {
+            complementaryOdomScaleDenominatorHistorySum -= complementaryOdomScaleDenominatorHistory.front();
+            complementaryOdomScaleDenominatorHistory.pop_front();
+        }
+    }
+
+    if (complementaryOdomScaleDenominatorHistory.empty())
+        return std::numeric_limits<float>::quiet_NaN();
+
+    if (std::abs(complementaryOdomScaleDenominatorHistorySum) < 1e-6f)
+        return std::numeric_limits<float>::quiet_NaN();
+
+    return complementaryOdomScaleNumeratorHistorySum / complementaryOdomScaleDenominatorHistorySum;
+}
+
 float mapOptimization::smoothComplementaryOdomFallbackScale(float scaleInstant)
 {
     constexpr size_t kFallbackWindowSize = 30;
@@ -300,20 +332,33 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
                                                                     const TwistVector &xi_complementary_lidar,
                                                                     const ComplementaryOdomMatchInfo &match_info,
                                                                     double dt_scan,
-                                                                    bool &hasNonDegenerateComponents,
                                                                     Eigen::Vector3f &t_lidar_nondeg_map,
-                                                                    Eigen::Vector3f &t_complementary_nondeg_map)
+                                                                    Eigen::Vector3f &t_complementary_nondeg_map,
+                                                                    Eigen::Vector3f &t_lidar_nondeg_proj_on_complementary_map,
+                                                                    Eigen::Vector3f &t_complementary_raw_map,
+                                                                    Eigen::Vector3f &t_complementary_scaled_map,
+                                                                    Eigen::Affine3f &T_complementary_unscaled_abs,
+                                                                    Eigen::Affine3f &T_complementary_scaled_abs)
 {
-    Eigen::Matrix4f T_lidar_complementary_predicted = expMap(xi_complementary_lidar, static_cast<float>(dt_scan));
+    Eigen::Matrix4f T_lidar_complementary_predicted_unscaled = expMap(xi_complementary_lidar, static_cast<float>(dt_scan));
 
     // Estimate the complementary-odom translation scale from the non-degenerate
     // translation subspace, where the scan matcher is trusted.
     const Eigen::Vector3f t_lidar =
         (T_previous.matrix().inverse() * T_optimized.matrix()).block<3, 1>(0, 3);
-    const Eigen::Vector3f t_complementary = T_lidar_complementary_predicted.block<3, 1>(0, 3);
+    const Eigen::Vector3f t_complementary = T_lidar_complementary_predicted_unscaled.block<3, 1>(0, 3);
 
-    const Eigen::Vector3f t_lidar_nondeg = t_lidar - projectOntoBasisTranslation(t_lidar, orthoBasis);
-    const Eigen::Vector3f t_complementary_nondeg = t_complementary - projectOntoBasisTranslation(t_complementary, orthoBasis);
+    // Optional 2D mode for scale determination only.
+    Eigen::Vector3f t_lidar_scale = t_lidar;
+    Eigen::Vector3f t_complementary_scale = t_complementary;
+    if (complementaryOdom.ignore_dz)
+    {
+        t_lidar_scale.z() = 0.0f;
+        t_complementary_scale.z() = 0.0f;
+    }
+
+    const Eigen::Vector3f t_lidar_nondeg = t_lidar_scale - projectOntoBasisTranslation(t_lidar_scale, orthoBasis);
+    const Eigen::Vector3f t_complementary_nondeg = t_complementary_scale - projectOntoBasisTranslation(t_complementary_scale, orthoBasis);
     // project lidar displacement onto complementary odometry displacement to get a scale estimate for the complementary odometry
     const float complementaryNondegNorm = t_complementary_nondeg.norm();
     const float lidarNondegNormUnprojected = t_lidar_nondeg.norm();
@@ -367,16 +412,25 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
         scaleFallbackHistory = smoothComplementaryOdomFallbackScale(scaleInstantRawClamped);
 
     const float scaleInstantRawSafe = (gateObservable && hasInstantRaw) ? scaleInstantRawClamped : scaleFallbackHistory;
-    const float scaleSmooth = complementaryOdom.scaleEstimationEnabled ? smoothComplementaryOdomScale(scaleInstantRawSafe) : 1.0f;
+    const float scaleSmoothLegacy = complementaryOdom.scaleEstimationEnabled ? smoothComplementaryOdomScale(scaleInstantRawSafe) : 1.0f;
+
+    const float numeratorSample = lidarNondegNorm;
+    const float denominatorSample = complementaryNondegNorm;
+    const bool pushNumDenSample = gateObservable && hasInstantRaw;
+    float scaleSmoothRatio = smoothComplementaryOdomScaleFromNumDen(numeratorSample, denominatorSample, pushNumDenSample);
+    if (std::isfinite(scaleSmoothRatio))
+        scaleSmoothRatio = std::clamp(scaleSmoothRatio, kMinScale, kMaxScale);
+
+    const bool useRatioOfSums = complementaryOdom.smoothFromNumDen;
+    const float scaleSmooth = (useRatioOfSums && std::isfinite(scaleSmoothRatio)) ? scaleSmoothRatio : scaleSmoothLegacy;
     const float scaleApplied = scaleSmooth;
 
-    if (gateObservable)
-    {
-        hasNonDegenerateComponents = true;
-        const Eigen::Matrix3f R_prev = T_previous.rotation();
-        t_lidar_nondeg_map = R_prev * t_lidar_nondeg;
-        t_complementary_nondeg_map = R_prev * t_complementary_nondeg;
-    }
+    const Eigen::Matrix3f R_prev = T_previous.rotation();
+    t_lidar_nondeg_map = R_prev * t_lidar_nondeg;
+    t_complementary_nondeg_map = R_prev * t_complementary_nondeg;
+    t_lidar_nondeg_proj_on_complementary_map = R_prev * t_lidar_nondeg_proj;
+    t_complementary_raw_map = R_prev * t_complementary;
+    t_complementary_scaled_map = scaleApplied * t_complementary_raw_map;
 
     if (pubComplementaryOdomScaleDebug)
     {
@@ -388,9 +442,14 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
         msg.scale_instant_raw_safe = static_cast<double>(scaleInstantRawSafe);
         msg.scale_fallback_history = static_cast<double>(scaleFallbackHistory);
         msg.scale_smooth = static_cast<double>(scaleSmooth);
+        msg.scale_smooth_ratio = static_cast<double>(scaleSmoothRatio);
+        msg.scale_smooth_legacy = static_cast<double>(scaleSmoothLegacy);
         msg.scale_applied = static_cast<double>(scaleApplied);
         msg.gate_observable = gateObservable ? 1.0 : 0.0;
         msg.scale_estimation_enabled = complementaryOdom.scaleEstimationEnabled ? 1.0 : 0.0;
+        msg.smooth_from_numden_enabled = useRatioOfSums ? 1.0 : 0.0;
+        msg.numerator_sample = static_cast<double>(numeratorSample);
+        msg.denominator_sample = static_cast<double>(denominatorSample);
         msg.dt_scan_s = dt_scan;
         msg.dt_odom_s = match_info.dt_complementary_s;
         pubComplementaryOdomScaleDebug->publish(msg);
@@ -403,8 +462,14 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
     const float lidarLinearSpeedAfterScale =
         (complementaryNondegNorm * scaleApplied) / static_cast<float>(dt_scan);
 
+    Eigen::Matrix4f T_lidar_complementary_predicted_scaled = T_lidar_complementary_predicted_unscaled;
+    T_lidar_complementary_predicted_scaled.block<3, 1>(0, 3) *= scaleApplied;
+
+    T_complementary_unscaled_abs = Eigen::Affine3f(T_previous.matrix() * T_lidar_complementary_predicted_unscaled);
+    T_complementary_scaled_abs = Eigen::Affine3f(T_previous.matrix() * T_lidar_complementary_predicted_scaled);
+
     const Eigen::Affine3f T_complementary_odom_scale1(
-        T_previous.matrix() * T_lidar_complementary_predicted);
+        T_complementary_scaled_abs.matrix());
     const Eigen::Matrix4f T_diff_scale1 =
         T_optimized.matrix().inverse() * T_complementary_odom_scale1.matrix();
     const TwistVector xi_diff_scale1 = matrixToTwist(T_diff_scale1);
@@ -434,7 +499,10 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
         sample.scale_instant_raw_safe = scaleInstantRawSafe;
         sample.scale_fallback_history = scaleFallbackHistory;
         sample.scale_smooth = scaleSmooth;
+        sample.scale_smooth_ratio = scaleSmoothRatio;
+        sample.scale_smooth_legacy = scaleSmoothLegacy;
         sample.scale_applied = scaleApplied;
+        sample.smooth_from_numden_enabled = useRatioOfSums;
         sample.scale_ratio_raw = scaleRatioRaw;
         sample.scale_ratio_unprojected_raw = scaleRatioUnprojectedRaw;
         sample.scale_ls_raw = scaleLsRaw;
@@ -465,10 +533,7 @@ Eigen::Affine3f mapOptimization::buildScaledComplementaryPrediction(const Eigen:
         diagnostics->recordComplementaryOdomScaleCsv(sample);
     }
 
-    // Rescale only the translation of the complementary-odom displacement; its
-    // rotation is typically gyro-backed and kept as-is.
-    T_lidar_complementary_predicted.block<3, 1>(0, 3) *= scaleApplied;
-    return Eigen::Affine3f(T_previous.matrix() * T_lidar_complementary_predicted);
+    return T_complementary_scaled_abs;
 }
 
 Eigen::Affine3f mapOptimization::projectDegenerateCorrection(const Eigen::Affine3f &T_optimized,
@@ -508,9 +573,13 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
     const Eigen::Affine3f T_previous = incrementalOdometryAffineFront;
 
     Eigen::Affine3f T_complementary_odom = T_previous;
-    bool hasNonDegenerateComponents = false;
     Eigen::Vector3f t_lidar_nondeg_map = Eigen::Vector3f::Zero();
     Eigen::Vector3f t_complementary_nondeg_map = Eigen::Vector3f::Zero();
+    Eigen::Vector3f t_lidar_nondeg_proj_on_complementary_map = Eigen::Vector3f::Zero();
+    Eigen::Vector3f t_complementary_raw_map = Eigen::Vector3f::Zero();
+    Eigen::Vector3f t_complementary_scaled_map = Eigen::Vector3f::Zero();
+    Eigen::Affine3f T_complementary_unscaled_abs = T_previous;
+    Eigen::Affine3f T_complementary_scaled_abs = T_previous;
     ComplementaryOdomMatchInfo match_info;
 
     TwistVector xi_complementary_lidar = TwistVector::Zero();
@@ -524,19 +593,28 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan)
             xi_complementary_lidar,
             match_info,
             dt_scan,
-            hasNonDegenerateComponents,
             t_lidar_nondeg_map,
-            t_complementary_nondeg_map);
+            t_complementary_nondeg_map,
+            t_lidar_nondeg_proj_on_complementary_map,
+            t_complementary_raw_map,
+            t_complementary_scaled_map,
+            T_complementary_unscaled_abs,
+            T_complementary_scaled_abs);
     }
 
+    const Eigen::Affine3f T_corrected_no_scale = projectDegenerateCorrection(T_optimized, T_complementary_unscaled_abs, orthoBasis);
     const Eigen::Affine3f T_corrected = projectDegenerateCorrection(T_optimized, T_complementary_odom, orthoBasis);
 
     publishComplementaryOdomDisplacementDebug(T_previous,
-                                              T_complementary_odom,
+                                              T_complementary_unscaled_abs,
+                                              T_complementary_scaled_abs,
+                                              T_corrected_no_scale,
                                               T_corrected,
-                                              hasNonDegenerateComponents,
+                                              t_complementary_nondeg_map,
                                               t_lidar_nondeg_map,
-                                              t_complementary_nondeg_map);
+                                              t_lidar_nondeg_proj_on_complementary_map,
+                                              t_complementary_raw_map,
+                                              t_complementary_scaled_map);
 
     writeAffineToTransformTobeMapped(T_corrected);
 }
