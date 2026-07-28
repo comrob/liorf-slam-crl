@@ -10,6 +10,9 @@ float64 scale_applied
 float64 gate_observable
 float64 scale_estimation_enabled
 float64 smooth_from_numden_enabled
+float64 estimator_mode
+float64 scale_estimate_updated
+float64 scale_applied_to_state
 float64 numerator_sample
 float64 denominator_sample
 float64 dt_scan_s

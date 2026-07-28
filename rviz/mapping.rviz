@@ -6,10 +6,14 @@ Panels:
       Expanded:
         - /Mapping1/LIO1/Shape1
         - /Complementary Odom Debug1
-        - /Complementary Odom Debug1/Scale Applied Plot1/Series1
-        - /Complementary Odom Debug1/dt1/Y Axis1
+        - /Complementary Odom Debug1/Scale Applied Plot1
+        - /Complementary Odom Debug1/Scale Applied Plot1/Y Axis1
+        - /Complementary Odom Debug1/Scale Applied Plot1/Right Y Axis1
+        - /Complementary Odom Debug1/dt1
+        - /Complementary Odom Debug1/dt1/Series1
+        - /Complementary Odom Debug1/dt1/Series1/Series 31
       Splitter Ratio: 0.39970502257347107
-    Tree Height: 1175
+    Tree Height: 903
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -731,7 +735,15 @@ Visualization Manager:
             Y Offset: 10
           Legend:
             Enabled: true
+            Field Name Only: true
             Position: Top Left
+            Right Legend:
+              Enabled: true
+              Merge With Left: false
+              Position: Top Right
+              Show Values: true
+              X Offset: 4
+              Y Offset: 4
             Show Values: true
             X Offset: 4
             Y Offset: 4
@@ -747,8 +759,13 @@ Visualization Manager:
             Preset Tolerance: 0.10000000149011612
             Preset Value: 0
             Reference Count: 0
+          Right Y Axis:
+            Auto Scale: false
+            Y Max: 10
+            Y Min: -0.5
           Series:
             Series 1:
+              Axis: Left
               Color: 80; 170; 255
               Field: scale_instant_raw_safe
               Label: ""
@@ -764,6 +781,7 @@ Visualization Manager:
               X Field: ""
               Y Field: ""
             Series 2:
+              Axis: Left
               Color: 80; 220; 130
               Field: scale_smooth
               Label: ""
@@ -779,9 +797,160 @@ Visualization Manager:
               X Field: ""
               Y Field: ""
             Series 3:
+              Axis: Left
               Color: 255; 170; 60
               Field: scale_fallback_history
               Label: ""
+              Line Alpha: 1
+              Line Style: Solid
+              Line Width: 2
+              Plot Style: Line
+              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Unit: ""
+              Value: true
+              Value Offset: 0
+              Value Scale: 1
+              X Field: ""
+              Y Field: ""
+            Series 4:
+              Axis: Right
+              Color: 210; 130; 255
+              Field: scale_applied_to_state
+              Label: ""
+              Line Alpha: 1
+              Line Style: Solid
+              Line Width: 2
+              Plot Style: Line
+              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Unit: ""
+              Value: true
+              Value Offset: 0
+              Value Scale: 1
+              X Field: ""
+              Y Field: ""
+            Series 5:
+              Axis: Right
+              Color: 246; 97; 81
+              Field: gate_observable
+              Label: Series Copy
+              Line Alpha: 1
+              Line Style: Solid
+              Line Width: 2
+              Plot Style: Line
+              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Unit: ""
+              Value: true
+              Value Offset: 0
+              Value Scale: 1
+              X Field: ""
+              Y Field: ""
+            Series Count: 5
+          Style:
+            Axis Color: 230; 230; 230
+            Background Alpha: 0.7450980544090271
+            Background Color: 0; 0; 0
+            Font Size: 8
+            Grid Color: 130; 130; 130
+            Text Color: 245; 245; 245
+          Time:
+            Refresh Rate: 20
+            Time Source: Message Header Stamp
+            Window Seconds: 30
+            XY History Mode: Rolling Time Window
+          Value: true
+          X Axis:
+            Auto Scale: true
+            Axis Scale: Independent
+            X Max: 1
+            X Min: -1
+          Y Axis:
+            Auto Scale: false
+            Y Max: 1.2000000476837158
+            Y Min: 0.5
+        - Class: rviz_2d_plot_plugin/Plot2D
+          Clear History: false
+          Enabled: true
+          Grid:
+            Major Grid: true
+            Minor Divisions: 1
+            Minor Grid: true
+            X Major Ticks: 6
+            Y Major Ticks: 5
+          Layout:
+            Height: 320
+            Horizontal Alignment: Left
+            Vertical Alignment: Top
+            Width: 560
+            X Offset: 10
+            Y Offset: 10
+          Legend:
+            Enabled: true
+            Field Name Only: true
+            Position: Top Left
+            Right Legend:
+              Enabled: true
+              Merge With Left: false
+              Position: Top Right
+              Show Values: true
+              X Offset: 4
+              Y Offset: 4
+            Show Values: true
+            X Offset: 4
+            Y Offset: 4
+          Name: dt
+          Pause Plot: false
+          Plot Mode: Time Series
+          QoS:
+            Depth: 10
+            Durability: Volatile
+            Reliability: Reliable
+          References:
+            Preset: None
+            Preset Tolerance: 0.10000000149011612
+            Preset Value: 0
+            Reference Count: 0
+          Right Y Axis:
+            Auto Scale: true
+            Y Max: 1.100000023841858
+            Y Min: -0.10000000149011612
+          Series:
+            Series 1:
+              Axis: Left
+              Color: 80; 170; 255
+              Field: dt_scan_s
+              Label: ""
+              Line Alpha: 1
+              Line Style: Solid
+              Line Width: 2
+              Plot Style: Line
+              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Unit: ""
+              Value: true
+              Value Offset: 0
+              Value Scale: 1
+              X Field: ""
+              Y Field: ""
+            Series 2:
+              Axis: Left
+              Color: 80; 220; 130
+              Field: dt_odom_s
+              Label: ""
+              Line Alpha: 1
+              Line Style: Solid
+              Line Width: 2
+              Plot Style: Line
+              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Unit: ""
+              Value: true
+              Value Offset: 0
+              Value Scale: 1
+              X Field: ""
+              Y Field: ""
+            Series 3:
+              Axis: Right
+              Color: 230; 97; 0
+              Field: scale_applied_to_state
+              Label: Series Copy
               Line Alpha: 1
               Line Style: Solid
               Line Width: 2
@@ -813,94 +982,6 @@ Visualization Manager:
             X Max: 1
             X Min: -1
           Y Axis:
-            Auto Scale: false
-            Y Max: 1.2000000476837158
-            Y Min: 0.800000011920929
-        - Class: rviz_2d_plot_plugin/Plot2D
-          Clear History: false
-          Enabled: true
-          Grid:
-            Major Grid: true
-            Minor Divisions: 1
-            Minor Grid: true
-            X Major Ticks: 6
-            Y Major Ticks: 5
-          Layout:
-            Height: 320
-            Horizontal Alignment: Left
-            Vertical Alignment: Top
-            Width: 560
-            X Offset: 10
-            Y Offset: 10
-          Legend:
-            Enabled: true
-            Position: Top Left
-            Show Values: true
-            X Offset: 4
-            Y Offset: 4
-          Name: dt
-          Pause Plot: false
-          Plot Mode: Time Series
-          QoS:
-            Depth: 10
-            Durability: Volatile
-            Reliability: Reliable
-          References:
-            Preset: None
-            Preset Tolerance: 0.10000000149011612
-            Preset Value: 0
-            Reference Count: 0
-          Series:
-            Series 1:
-              Color: 80; 170; 255
-              Field: dt_scan_s
-              Label: ""
-              Line Alpha: 1
-              Line Style: Solid
-              Line Width: 2
-              Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
-              Unit: ""
-              Value: true
-              Value Offset: 0
-              Value Scale: 1
-              X Field: ""
-              Y Field: ""
-            Series 2:
-              Color: 80; 220; 130
-              Field: dt_odom_s
-              Label: ""
-              Line Alpha: 1
-              Line Style: Solid
-              Line Width: 2
-              Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
-              Unit: ""
-              Value: true
-              Value Offset: 0
-              Value Scale: 1
-              X Field: ""
-              Y Field: ""
-            Series Count: 2
-          Style:
-            Axis Color: 230; 230; 230
-            Background Alpha: 0.7450980544090271
-            Background Color: 0; 0; 0
-            Font Size: 8
-            Grid Color: 130; 130; 130
-            Text Color: 245; 245; 245
-          Time:
-            Refresh Rate: 20
-            Time Source: Message Header Stamp
-            Window Seconds: 30
-            XY History Mode: Rolling Time Window
-          Value: true
-          X Axis:
-            Auto Scale: true
-            Axis Scale: Independent
-            X Max: 1
-            X Min: -1
-          Y Axis:
             Auto Scale: true
             Y Max: 1.2000000476837158
             Y Min: 0.800000011920929
@@ -908,10 +989,13 @@ Visualization Manager:
           Enabled: true
           Name: Complementary
           Namespaces:
-            complementary_odom_correction_projected: true
-            complementary_odom_correction_raw: true
-            nondeg_complementary_odom_displacement: true
-            nondeg_lidar_displacement: true
+            complementary_odom_original: true
+            complementary_odom_projected_on_nondeg: true
+            complementary_odom_scaled: true
+            lidar_corrected_with_complementary_no_scale: true
+            lidar_corrected_with_complementary_scaled: true
+            lidar_nondeg_projected_on_complementary: true
+            lidar_projected_on_nondeg: true
           Topic:
             Depth: 5
             Durability Policy: Volatile
@@ -982,17 +1066,17 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: lidar_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.545962333679199
+      Yaw: 5.530961990356445
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1403
+  Height: 1131
   Hide Left Dock: false
   Hide Right Dock: true
-  QMainWindow State: 000000ff00000000fd0000000200000000000002ab0000051dfc0200000001fb000000100044006900730070006c006100790073010000003f0000051d000000cc00ffffff00000001000001cb0000040dfc0200000001fb0000000a00560069006500770073000000003f0000040d000000a900ffffff0000074f0000051d00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000200000000000002ab0000040dfc0200000001fb000000100044006900730070006c006100790073010000003f0000040d000000cc00ffffff00000001000001cb0000040dfc0200000001fb0000000a00560069006500770073000000003f0000040d000000a900ffffff0000048d0000040d00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: true
-  Width: 2560
-  X: 1920
-  Y: 0
+  Width: 1854
+  X: 66
+  Y: 32

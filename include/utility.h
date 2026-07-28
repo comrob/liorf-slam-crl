@@ -110,6 +110,7 @@ struct ComplementaryOdomParameters
     bool scaleEstimationEnabled = true;
     double scaleMinNonDegenerateSpeed = 0.2; // m/s, observability gate for scale estimation
     int scaleSmoothingWindowSize = 20;
+    int fallbackScaleSmoothingWindowSize = 30;
     bool smoothFromNumDen = false; // if true, smooth numerator/denominator then divide
     bool ignore_dz = false; // if true, force dz=0 for scale-determination vectors only
     bool autoLookupLidarToTf = true;
@@ -482,6 +483,11 @@ public:
         get_parameter("complementaryOdom.scaleSmoothingWindowSize", complementaryOdom.scaleSmoothingWindowSize);
         if (complementaryOdom.scaleSmoothingWindowSize < 1)
             complementaryOdom.scaleSmoothingWindowSize = 1;
+
+        declare_parameter<int>("complementaryOdom.fallbackScaleSmoothingWindowSize", 30);
+        get_parameter("complementaryOdom.fallbackScaleSmoothingWindowSize", complementaryOdom.fallbackScaleSmoothingWindowSize);
+        if (complementaryOdom.fallbackScaleSmoothingWindowSize < 1)
+            complementaryOdom.fallbackScaleSmoothingWindowSize = 1;
 
         declare_parameter<bool>("complementaryOdom.smoothFromNumDen", false);
         get_parameter("complementaryOdom.smoothFromNumDen", complementaryOdom.smoothFromNumDen);

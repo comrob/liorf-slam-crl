@@ -26,6 +26,64 @@ change SLAM/logging functionality.
 
 ---
 
+## 2026-07-28 - Add shadow-mode complementary-odom scale estimation
+
+### Files changed
+
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
+- [msg/ComplementaryOdomScaleDebug.msg](msg/ComplementaryOdomScaleDebug.msg)
+- [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
+- [src/liorf_diagnostics.cpp](src/liorf_diagnostics.cpp)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Complementary-odometry scale estimation now runs every frame using the same
+	observability gate, even during non-degenerate periods (shadow mode).
+- Degenerate compensation and pose override are now mode-gated:
+	estimator runs in both modes, but state override is applied only in active
+	(degenerate) mode.
+- Added explicit mode/status diagnostics for complementary-odom scale:
+	`estimator_mode` (`0=shadow`, `1=active`),
+	`scale_estimate_updated`, and `scale_applied_to_state` in both online topic
+	and CSV logs.
+- Legacy scale smoother now updates from newly observable samples only; when
+	gate is closed it reuses history/fallback instead of pushing new samples.
+
+### Migration/runtime risk notes
+
+- Medium-low. Estimation telemetry now appears in non-degenerate periods and
+	active compensation behavior is now explicitly separated from estimator mode.
+- Consumers of `ComplementaryOdomScaleDebug.msg` should regenerate interfaces
+	due to added fields.
+
+## 2026-07-27 - Parameterize complementary-odom fallback scale window
+
+### Files changed
+
+- [include/utility.h](include/utility.h)
+- [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [config/anymal.yaml](config/anymal.yaml)
+- [config/docker_override.yaml](config/docker_override.yaml)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Added new ROS parameter:
+	`complementaryOdom.fallbackScaleSmoothingWindowSize` (default `30`,
+	clamped to minimum `1`).
+- Replaced hardcoded fallback moving-average window in complementary-odometry
+	scale fallback smoothing with the new configurable parameter.
+- Exposed the new parameter in active runtime configs
+	(`lio_sam_ouster.yaml`, `anymal.yaml`, `docker_override.yaml`).
+
+### Migration/runtime risk notes
+
+- Low. Default runtime behavior remains unchanged (`30`) unless users tune the
+	new parameter.
+
 ## 2026-07-23 - Class-owned complementary-odom scale smoothing + config window
 
 ### Files changed

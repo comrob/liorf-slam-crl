@@ -410,6 +410,8 @@ public:
                                                        const std::vector<TwistVector> &orthoBasis,
                                                        const TwistVector &xi_complementary_lidar,
                                                        const ComplementaryOdomMatchInfo &match_info,
+                                                       bool estimator_mode_active,
+                                                       bool scale_applied_to_state,
                                                        double dt_scan,
                                                        Eigen::Vector3f &t_lidar_nondeg_map,
                                                        Eigen::Vector3f &t_complementary_nondeg_map,
@@ -422,5 +424,5 @@ public:
                                                 const Eigen::Affine3f &T_predicted,
                                                 const std::vector<TwistVector> &orthoBasis);
     void writeAffineToTransformTobeMapped(const Eigen::Affine3f &T_pose);
-    void applyDegeneracyStateOverride(double dt_scan);
+    void applyDegeneracyStateOverride(double dt_scan, bool degeneracyDetected);
 };

@@ -44,6 +44,7 @@
       minDeltaTime: 0.1
       scaleEstimationEnabled: true            # Scale complementary-odom translation by non-degenerate LiDAR/complementary-odom displacement ratio
       scaleMinNonDegenerateSpeed: 0.2         # m/s; min non-degenerate speed (both displacements) to estimate the scale
+      fallbackScaleSmoothingWindowSize: 30    # Moving-average window for fallback scale when observability gate is closed
       autoLookupLidarToTf: false
       frame: ""                               # Inferred from message if empty
       extrinsicTrans: [0.0, 0.0, 0.0]

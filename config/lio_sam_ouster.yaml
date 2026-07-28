@@ -43,6 +43,7 @@
       scaleEstimationEnabled: true
       scaleMinNonDegenerateSpeed: 0.2
       scaleSmoothingWindowSize: 20
+      fallbackScaleSmoothingWindowSize: 30
       smoothFromNumDen: false
       ignore_dz: false
       autoLookupLidarToTf: true
