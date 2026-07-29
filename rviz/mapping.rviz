@@ -4,15 +4,16 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
+        - /Mapping1
+        - /Mapping1/LIO1
         - /Mapping1/LIO1/Shape1
         - /Complementary Odom Debug1
-        - /Complementary Odom Debug1/Scale Applied Plot1
         - /Complementary Odom Debug1/Scale Applied Plot1/Y Axis1
         - /Complementary Odom Debug1/Scale Applied Plot1/Right Y Axis1
         - /Complementary Odom Debug1/dt1
         - /Complementary Odom Debug1/dt1/Series1
-        - /Complementary Odom Debug1/dt1/Series1/Series 31
-      Splitter Ratio: 0.39970502257347107
+        - /Complementary Odom Debug1/Complementary1/Namespaces1
+      Splitter Ratio: 0.6505139470100403
     Tree Height: 903
   - Class: rviz_common/Views
     Expanded:
@@ -142,7 +143,7 @@ Visualization Manager:
           Buffer Length: 1
           Class: rviz_default_plugins/Path
           Color: 25; 255; 0
-          Enabled: true
+          Enabled: false
           Head Diameter: 0.30000001192092896
           Head Length: 0.20000000298023224
           Length: 0.30000001192092896
@@ -165,7 +166,7 @@ Visualization Manager:
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /liorf/mapping/path
-          Value: true
+          Value: false
         - Alpha: 1
           Autocompute Intensity Bounds: true
           Autocompute Value Bounds:
@@ -211,10 +212,10 @@ Visualization Manager:
           Color: 255; 255; 255
           Color Transformer: Intensity
           Decay Time: 0
-          Enabled: true
+          Enabled: false
           Invert Rainbow: false
           Max Color: 255; 255; 255
-          Max Intensity: 100
+          Max Intensity: 74
           Min Color: 0; 0; 0
           Min Intensity: 0
           Name: GlobalMap
@@ -231,7 +232,7 @@ Visualization Manager:
             Value: /liorf/mapping/map_global
           Use Fixed Frame: true
           Use rainbow: true
-          Value: true
+          Value: false
         - Angle Tolerance: 0.10000000149011612
           Class: rviz_default_plugins/Odometry
           Covariance:
@@ -249,14 +250,14 @@ Visualization Manager:
               Scale: 1
               Value: true
             Value: true
-          Enabled: false
+          Enabled: true
           Keep: 1
           Name: LIO
           Position Tolerance: 0.10000000149011612
           Shape:
             Alpha: 1
-            Axes Length: 3
-            Axes Radius: 0.4000000059604645
+            Axes Length: 0.5
+            Axes Radius: 0.009999999776482582
             Color: 255; 25; 0
             Head Length: 0.30000001192092896
             Head Radius: 0.10000000149011612
@@ -270,7 +271,7 @@ Visualization Manager:
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /liorf/mapping/odometry
-          Value: false
+          Value: true
       Enabled: true
       Name: Mapping
     - Class: rviz_common/Group
@@ -917,7 +918,7 @@ Visualization Manager:
             Series 1:
               Axis: Left
               Color: 80; 170; 255
-              Field: dt_scan_s
+              Field: dt_scale_lidar_interval_s
               Label: ""
               Line Alpha: 1
               Line Style: Solid
@@ -933,7 +934,7 @@ Visualization Manager:
             Series 2:
               Axis: Left
               Color: 80; 220; 130
-              Field: dt_odom_s
+              Field: dt_scale_odom_interval_s
               Label: ""
               Line Alpha: 1
               Line Style: Solid
@@ -990,12 +991,12 @@ Visualization Manager:
           Name: Complementary
           Namespaces:
             complementary_odom_original: true
-            complementary_odom_projected_on_nondeg: true
-            complementary_odom_scaled: true
+            complementary_odom_projected_on_nondeg: false
+            complementary_odom_scaled: false
             lidar_corrected_with_complementary_no_scale: true
-            lidar_corrected_with_complementary_scaled: true
-            lidar_nondeg_projected_on_complementary: true
-            lidar_projected_on_nondeg: true
+            lidar_corrected_with_complementary_scaled: false
+            lidar_nondeg_projected_on_complementary: false
+            lidar_projected_on_nondeg: false
           Topic:
             Depth: 5
             Durability Policy: Volatile
@@ -1048,16 +1049,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 102.61526489257812
+      Distance: 2.2147462368011475
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.8834562301635742
-        Y: 3.260709762573242
-        Z: 2.049360990524292
+        X: 0.4372495710849762
+        Y: 0.3714418411254883
+        Z: 0.06537024676799774
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -1066,7 +1067,7 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: lidar_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 5.530961990356445
+      Yaw: 4.812793731689453
     Saved: ~
 Window Geometry:
   Displays:

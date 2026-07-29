@@ -120,6 +120,10 @@ struct ComplementaryOdomScaleDebugSample
     double lidar_lin_speed_proj_scale1_mps = std::numeric_limits<double>::quiet_NaN();
     double lidar_lin_speed_after_scale_mps = std::numeric_limits<double>::quiet_NaN();
     double dt_scan_s = std::numeric_limits<double>::quiet_NaN();
+    double dt_scale_odom_interval_s = std::numeric_limits<double>::quiet_NaN();
+    double dt_scale_lidar_interval_s = std::numeric_limits<double>::quiet_NaN();
+    double dt_scale_odom_pair_interval_s = std::numeric_limits<double>::quiet_NaN();
+    double dt_immediate_odom_pair_interval_s = std::numeric_limits<double>::quiet_NaN();
 };
 
 class LiorfDiagnostics

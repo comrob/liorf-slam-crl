@@ -17,3 +17,7 @@ float64 numerator_sample
 float64 denominator_sample
 float64 dt_scan_s
 float64 dt_odom_s
+float64 dt_scale_odom_interval_s
+float64 dt_scale_lidar_interval_s
+float64 dt_scale_odom_pair_interval_s
+float64 dt_immediate_odom_pair_interval_s

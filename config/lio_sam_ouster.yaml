@@ -42,6 +42,7 @@
       minDeltaTime: 0.1
       scaleEstimationEnabled: true
       scaleMinNonDegenerateSpeed: 0.2
+      scaleBaselineFrameLag: 1
       scaleSmoothingWindowSize: 20
       fallbackScaleSmoothingWindowSize: 30
       smoothFromNumDen: false

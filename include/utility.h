@@ -109,6 +109,7 @@ struct ComplementaryOdomParameters
     double minDeltaTime = 0.1;
     bool scaleEstimationEnabled = true;
     double scaleMinNonDegenerateSpeed = 0.2; // m/s, observability gate for scale estimation
+    int scaleBaselineFrameLag = 1; // fixed lidar-frame lag for complementary-odom pairing
     int scaleSmoothingWindowSize = 20;
     int fallbackScaleSmoothingWindowSize = 30;
     bool smoothFromNumDen = false; // if true, smooth numerator/denominator then divide
@@ -478,6 +479,11 @@ public:
 
         declare_parameter<double>("complementaryOdom.scaleMinNonDegenerateSpeed", 0.2);
         get_parameter("complementaryOdom.scaleMinNonDegenerateSpeed", complementaryOdom.scaleMinNonDegenerateSpeed);
+
+        declare_parameter<int>("complementaryOdom.scaleBaselineFrameLag", 1);
+        get_parameter("complementaryOdom.scaleBaselineFrameLag", complementaryOdom.scaleBaselineFrameLag);
+        if (complementaryOdom.scaleBaselineFrameLag < 1)
+            complementaryOdom.scaleBaselineFrameLag = 1;
 
         declare_parameter<int>("complementaryOdom.scaleSmoothingWindowSize", 20);
         get_parameter("complementaryOdom.scaleSmoothingWindowSize", complementaryOdom.scaleSmoothingWindowSize);

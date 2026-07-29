@@ -125,7 +125,11 @@ LiorfDiagnostics::LiorfDiagnostics(
             << ",complementary_odom_scale/speed/complementary_nondeg_mps"
             << ",complementary_odom_scale/speed/lidar_proj_scale1_mps"
             << ",complementary_odom_scale/speed/lidar_after_scale_mps"
-            << ",complementary_odom_scale/dt/scan_s\n";
+            << ",complementary_odom_scale/dt/scan_s"
+            << ",complementary_odom_scale/dt/scale_odom_interval_s"
+            << ",complementary_odom_scale/dt/scale_lidar_pair_interval_s"
+            << ",complementary_odom_scale/dt/scale_odom_pair_interval_s"
+            << ",complementary_odom_scale/dt/immediate_odom_pair_interval_s\n";
     }
     if (complementary_odom_twist_csv_.is_open())
     {
@@ -338,7 +342,11 @@ void LiorfDiagnostics::recordComplementaryOdomScaleCsv(const ComplementaryOdomSc
                                    << sample.complementary_odom_lin_speed_nondeg_mps << ","
                                    << sample.lidar_lin_speed_proj_scale1_mps << ","
                                    << sample.lidar_lin_speed_after_scale_mps << ","
-                                   << sample.dt_scan_s << "\n";
+                                   << sample.dt_scan_s << ","
+                                   << sample.dt_scale_odom_interval_s << ","
+                                   << sample.dt_scale_lidar_interval_s << ","
+                                   << sample.dt_scale_odom_pair_interval_s << ","
+                                   << sample.dt_immediate_odom_pair_interval_s << "\n";
 }
 
 void LiorfDiagnostics::recordComplementaryOdomTwistCsv(const ComplementaryOdomTwistDebugSample &sample)

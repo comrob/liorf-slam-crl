@@ -371,15 +371,7 @@ public:
     // mapOptimization_publish.cpp).
     std::deque<nav_msgs::msg::Odometry> complementaryOdomQueue;
     std::mutex complementaryOdomMutex;
-
-    std::deque<float> complementaryOdomScaleHistory;
-    float complementaryOdomScaleHistorySum = 0.0f;
-    std::deque<float> complementaryOdomScaleNumeratorHistory;
-    float complementaryOdomScaleNumeratorHistorySum = 0.0f;
-    std::deque<float> complementaryOdomScaleDenominatorHistory;
-    float complementaryOdomScaleDenominatorHistorySum = 0.0f;
-    std::deque<float> complementaryOdomFallbackScaleHistory;
-    float complementaryOdomFallbackScaleHistorySum = 0.0f;
+    std::deque<std::pair<double, Eigen::Affine3f>> complementaryOdomLidarPoseBuffer;
 
     bool complementaryOdomTfResolved = false;
     Eigen::Matrix4f T_complementary_to_lidar = Eigen::Matrix4f::Identity();
@@ -401,10 +393,9 @@ public:
     bool prepareDegeneracyOrthoBasis(std::vector<TwistVector> &orthoBasis);
     bool inferComplementaryOdomTwist(double dt_scan,
                                      TwistVector &xi_complementary_lidar,
-                                     ComplementaryOdomMatchInfo *match_info = nullptr);
-    float smoothComplementaryOdomScale(float scaleInstant);
-    float smoothComplementaryOdomScaleFromNumDen(float numerator, float denominator, bool pushSample);
-    float smoothComplementaryOdomFallbackScale(float scaleInstant);
+                                     ComplementaryOdomMatchInfo *match_info = nullptr,
+                                     double lidar_prev_stamp_override_s = std::numeric_limits<double>::quiet_NaN(),
+                                     double lidar_curr_stamp_override_s = std::numeric_limits<double>::quiet_NaN());
     Eigen::Affine3f buildScaledComplementaryPrediction(const Eigen::Affine3f &T_previous,
                                                        const Eigen::Affine3f &T_optimized,
                                                        const std::vector<TwistVector> &orthoBasis,

@@ -26,6 +26,50 @@ change SLAM/logging functionality.
 
 ---
 
+## 2026-07-28 - Rework complementary-odom with unit scale and lagged visualization
+
+### Files changed
+
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Removed complementary-odometry scale-estimator state/history and helper
+	functions from map-optimization degeneracy handling.
+- Complementary odometry translation is always applied with scale `1.0` when
+	generating the prediction used for degenerate-direction correction.
+- Added a fixed-size LiDAR baseline buffer (size =
+	`complementaryOdom.scaleBaselineFrameLag + 1`) and switched baseline
+	selection to `oldest` (lagged) and `newest` (current) LiDAR poses for
+	visualization only.
+- Added explicit size capping for the complementary-odometry message buffer.
+- Baseline displacement vectors (LiDAR and complementary odometry) are now
+	computed from lagged-to-current local-frame deltas and visualized from the
+	lagged LiDAR anchor pose.
+- Published lag-pair timing diagnostics for the selected displacement pair on
+	the complementary-odom scale debug topic:
+	`dt_scale_lidar_interval_s` and `dt_scale_odom_pair_interval_s` now report
+	the selected lagged LiDAR and matched additional-odometry intervals.
+- Disabled immediate-pair complementary-odom dt debug publishing to avoid
+	mixed-interval values on the same debug topic.
+- Complementary-odometry lagged displacement debug vectors now publish
+	regardless of degeneracy status; only state correction remains degeneracy
+	gated.
+- Added throttled terminal warnings on complementary-odom match failures that
+	report closest timestamp gaps and queue state.
+- Restored core degenerate-state correction to use the immediate frame baseline
+	(with unit scale), preventing lagged-baseline coupling from affecting SLAM
+	state updates.
+- Scale debug outputs remain published for compatibility and report unit-scale
+	behavior (estimator disabled, applied scale fixed to `1.0`).
+
+### Migration/runtime risk notes
+
+- Low-medium. Lagged baseline data is now debug-only; SLAM correction path is
+	no longer gated by lag-buffer fill state.
+
 ## 2026-07-28 - Add shadow-mode complementary-odom scale estimation
 
 ### Files changed
@@ -35,6 +79,10 @@ change SLAM/logging functionality.
 - [msg/ComplementaryOdomScaleDebug.msg](msg/ComplementaryOdomScaleDebug.msg)
 - [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
 - [src/liorf_diagnostics.cpp](src/liorf_diagnostics.cpp)
+- [include/utility.h](include/utility.h)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [config/anymal.yaml](config/anymal.yaml)
+- [config/docker_override.yaml](config/docker_override.yaml)
 - [CHANGELOG.md](CHANGELOG.md)
 
 ### Behavior impact
@@ -50,6 +98,24 @@ change SLAM/logging functionality.
 	and CSV logs.
 - Legacy scale smoother now updates from newly observable samples only; when
 	gate is closed it reuses history/fallback instead of pushing new samples.
+- Added fixed (non-adaptive) baseline pairing parameter
+	`complementaryOdom.scaleBaselineFrameLag` (clamped to minimum `1`) to
+	control how many LiDAR frame intervals back the "previous" timestamp is
+	selected for complementary-odometry matching.
+- Kept existing observability gate definition and existing scalar smoothing
+	(`smoothFromNumDen`) behavior unchanged.
+- Implemented LiDAR-first fixed-lag baseline ownership (Option C): LiDAR
+	displacement for scale estimation is now always computed from LiDAR poses
+	separated by `complementaryOdom.scaleBaselineFrameLag` processed frames, and
+	complementary odometry is matched to those LiDAR timestamps.
+- Added complementary-odom scale debug field
+	`dt_scale_odom_interval_s` to explicitly expose the scale-estimation
+	interval that corresponds to the same matched baseline as `dt_odom_s`.
+- Added explicit debug/CSV interval telemetry for all three relevant pairs:
+	`dt_scale_lidar_interval_s` (LiDAR pair used for scale estimation),
+	`dt_scale_odom_pair_interval_s` (odometry pair used for scale estimation),
+	and `dt_immediate_odom_pair_interval_s` (immediate odometry pair used for
+	scaled projection/correction).
 
 ### Migration/runtime risk notes
 
