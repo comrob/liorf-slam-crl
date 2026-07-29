@@ -510,6 +510,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
     Eigen::Vector3f t_complementary_scaled_map = Eigen::Vector3f::Zero();
     Eigen::Affine3f T_complementary_unscaled_abs = T_previous;
     Eigen::Affine3f T_complementary_scaled_abs = T_previous;
+    bool hasLagVectorVisualizationData = false;
     ComplementaryOdomMatchInfo match_info;
     const bool estimatorModeActive = degeneracyDetected;
     const bool scaleAppliedToState = estimatorModeActive && hasDegeneracyBasis;
@@ -645,6 +646,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
             t_complementary_uncorrected_map = R_lag * t_complementary_lag;
             t_complementary_raw_map = R_lag * t_complementary_lag_effective;
             t_complementary_scaled_map = t_complementary_raw_map;
+            hasLagVectorVisualizationData = true;
 
             if (pubComplementaryOdomScaleDebug)
             {
@@ -669,7 +671,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
         }
     }
 
-    if (estimatorModeActive && hasDegeneracyBasis)
+    if (hasLagVectorVisualizationData)
     {
         publishComplementaryOdomDisplacementDebug(hasLagVisualizationPair ? T_lidar_lagged : T_previous,
                                                     T_complementary_unscaled_abs,

@@ -88,6 +88,10 @@ change SLAM/logging functionality.
 - Added a dedicated uncorrected lagged complementary-displacement arrow to the
 	complementary-odom correction-direction marker stream for side-by-side
 	comparison against the drift-compensated vector.
+- Enabled lagged displacement-vector marker publication regardless of
+	degeneracy status (when lagged LiDAR/odom matching succeeds), so LiDAR,
+	uncorrected complementary, and drift-compensated complementary vectors are
+	always visualized.
 - Scale debug outputs remain published for compatibility and report unit-scale
 	behavior (estimator disabled, applied scale fixed to `1.0`).
 
