@@ -224,7 +224,9 @@ void mapOptimization::scan2MapOptimization()
         auto alignOverrideConfig = mappingBackend->getAlignmentConfig();
         alignOverrideConfig.compute_jacobian_degeneracy = degeneracyDetection.jacobianBased.compute;
         alignOverrideConfig.jacobian_degeneracy_threshold = degeneracyDetection.jacobianBased.threshold;
+
         lio::AlignmentMetrics metrics = mappingBackend->align(laserCloudSurfLastDS, transformTobeMapped, alignOverrideConfig);
+        
         this->isDegenerate = metrics.is_degenerate;
 
         if (degeneracyDetection.jacobianBased.log && diagnostics)

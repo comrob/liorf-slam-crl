@@ -387,6 +387,7 @@ public:
         const Eigen::Vector3f &t_complementary_nondeg_map,
         const Eigen::Vector3f &t_lidar_nondeg_map,
         const Eigen::Vector3f &t_lidar_nondeg_proj_on_complementary_map,
+        const Eigen::Vector3f &t_complementary_uncorrected_map,
         const Eigen::Vector3f &t_complementary_raw_map,
         const Eigen::Vector3f &t_complementary_scaled_map);
     void runDegeneracyDetectionAndCompensation();

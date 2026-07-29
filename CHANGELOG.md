@@ -62,6 +62,32 @@ change SLAM/logging functionality.
 - Restored core degenerate-state correction to use the immediate frame baseline
 	(with unit scale), preventing lagged-baseline coupling from affecting SLAM
 	state updates.
+- Finalized immediate-vs-lagged separation in code flow:
+	immediate LiDAR/odom pair drives correction; lagged LiDAR/odom pair drives
+	visualization only.
+- Immediate-pair matching now uses the literal previous LiDAR timestamp from
+	class state (`timeLastProcessing`) when valid, with only dt-based startup
+	fallback (`prev = cur - dt_scan`); buffer fallback was removed.
+- Fixed ordering in degeneracy override so lag-buffer size cap is defined
+	before use while still inflating the lag buffer before potential early
+	returns.
+- Removed redundant early write of `timeLastProcessing` in the LiDAR callback
+	processing branch; only final post-processing update remains.
+- Changed lag-buffer insertion order to store only the final effective LiDAR
+	pose for the frame (corrected when active, otherwise optimized), instead of
+	pre-inserting an optimized pose before correction.
+- Added per-step lagged complementary-odometry translational speed publication
+	to the scale-debug topic via a dedicated field
+	`lagged_complementary_lin_speed_mps`.
+- Added lagged orientation-drift compensation for complementary-odometry
+	visualization vectors by comparing lagged LiDAR and complementary rotation
+	increments and inverse-rotating the complementary translation by the
+	estimated drift.
+- Added publication of lagged relative yaw drift (degrees) on the
+	complementary-odom scale debug topic.
+- Added a dedicated uncorrected lagged complementary-displacement arrow to the
+	complementary-odom correction-direction marker stream for side-by-side
+	comparison against the drift-compensated vector.
 - Scale debug outputs remain published for compatibility and report unit-scale
 	behavior (estimator disabled, applied scale fixed to `1.0`).
 

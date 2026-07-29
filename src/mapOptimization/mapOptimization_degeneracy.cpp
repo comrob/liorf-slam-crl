@@ -11,7 +11,7 @@ void mapOptimization::complementaryOdomHandler(const nav_msgs::msg::Odometry::Sh
     complementaryOdomQueue.push_back(*msg);
 
     const size_t odomBufferSizeCap = static_cast<size_t>(
-        std::max(200, 100 * std::max(1, complementaryOdom.scaleBaselineFrameLag)));
+        std::max(5000, 100 * std::max(1, complementaryOdom.scaleBaselineFrameLag)));
     while (complementaryOdomQueue.size() > odomBufferSizeCap)
     {
         complementaryOdomQueue.pop_front();
@@ -484,6 +484,10 @@ void mapOptimization::writeAffineToTransformTobeMapped(const Eigen::Affine3f &T_
 
 void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degeneracyDetected)
 {
+    const Eigen::Affine3f T_optimized = trans2Affine3f(transformTobeMapped);
+    const int baselineFrameLag = std::max(1, complementaryOdom.scaleBaselineFrameLag);
+    const size_t lidarBufferSizeCap = static_cast<size_t>(baselineFrameLag + 1);
+
     if (degeneracyDetection.compensation_source == "none" || dt_scan <= 1e-5)
         return;
 
@@ -492,10 +496,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
     if (!hasDegeneracyBasis)
         orthoBasis.clear();
 
-    const Eigen::Affine3f T_optimized = trans2Affine3f(transformTobeMapped);
     const Eigen::Affine3f T_previous = incrementalOdometryAffineFront;
-    const int baselineFrameLag = std::max(1, complementaryOdom.scaleBaselineFrameLag);
-    const size_t lidarBufferSizeCap = static_cast<size_t>(baselineFrameLag + 1);
 
     Eigen::Affine3f T_complementary_odom = T_previous;
     Eigen::Affine3f T_lidar_lagged = T_previous;
@@ -504,6 +505,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
     Eigen::Vector3f t_lidar_nondeg_map = Eigen::Vector3f::Zero();
     Eigen::Vector3f t_complementary_nondeg_map = Eigen::Vector3f::Zero();
     Eigen::Vector3f t_lidar_nondeg_proj_on_complementary_map = Eigen::Vector3f::Zero();
+    Eigen::Vector3f t_complementary_uncorrected_map = Eigen::Vector3f::Zero();
     Eigen::Vector3f t_complementary_raw_map = Eigen::Vector3f::Zero();
     Eigen::Vector3f t_complementary_scaled_map = Eigen::Vector3f::Zero();
     Eigen::Affine3f T_complementary_unscaled_abs = T_previous;
@@ -512,26 +514,15 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
     const bool estimatorModeActive = degeneracyDetected;
     const bool scaleAppliedToState = estimatorModeActive && hasDegeneracyBasis;
 
-    complementaryOdomLidarPoseBuffer.emplace_back(timeLaserInfoCur, T_optimized);
-    while (complementaryOdomLidarPoseBuffer.size() > lidarBufferSizeCap)
-    {
-        complementaryOdomLidarPoseBuffer.pop_front();
-    }
-
-    double lidar_lagged_stamp_s = std::numeric_limits<double>::quiet_NaN();
-    double lidar_current_stamp_s = std::numeric_limits<double>::quiet_NaN();
-    if (complementaryOdomLidarPoseBuffer.size() >= lidarBufferSizeCap)
-    {
-        T_lidar_lagged = complementaryOdomLidarPoseBuffer.front().second;
-        T_lidar_current = complementaryOdomLidarPoseBuffer.back().second;
-        lidar_lagged_stamp_s = complementaryOdomLidarPoseBuffer.front().first;
-        lidar_current_stamp_s = complementaryOdomLidarPoseBuffer.back().first;
-        hasLagVisualizationPair = std::isfinite(lidar_lagged_stamp_s) && std::isfinite(lidar_current_stamp_s);
-    }
-
-    // Core correction uses immediate baseline only.
+    // Core correction uses immediate LiDAR pair only.
+    // Prefer the previous processed LiDAR timestamp from class state.
+    // Fall back to dt-based synthesis only when the class state is invalid.
     TwistVector xi_complementary_lidar = TwistVector::Zero();
-    const double lidar_prev_stamp_s = timeLaserInfoCur - dt_scan;
+    double lidar_prev_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    if (std::isfinite(timeLastProcessing) && timeLastProcessing < timeLaserInfoCur)
+    {
+        lidar_prev_stamp_s = timeLastProcessing;
+    }
     const bool hasComplementaryPrediction = inferComplementaryOdomTwist(
         dt_scan,
         xi_complementary_lidar,
@@ -558,7 +549,35 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
             T_complementary_scaled_abs);
     }
 
-    // Lagged oldest/newest pair is used only to build visualization vectors.
+    Eigen::Affine3f T_corrected_no_scale = T_optimized;
+    Eigen::Affine3f T_corrected = T_optimized;
+    if (estimatorModeActive && hasDegeneracyBasis)
+    {
+        T_corrected_no_scale = projectDegenerateCorrection(T_optimized, T_complementary_unscaled_abs, orthoBasis);
+        T_corrected = projectDegenerateCorrection(T_optimized, T_complementary_odom, orthoBasis);
+    }
+
+    // Insert only the final effective LiDAR pose for this frame.
+    const Eigen::Affine3f T_effective_current =
+        (estimatorModeActive && hasDegeneracyBasis) ? T_corrected : T_optimized;
+    complementaryOdomLidarPoseBuffer.emplace_back(timeLaserInfoCur, T_effective_current);
+    while (complementaryOdomLidarPoseBuffer.size() > lidarBufferSizeCap)
+    {
+        complementaryOdomLidarPoseBuffer.pop_front();
+    }
+
+    double lidar_lagged_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double lidar_current_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    if (complementaryOdomLidarPoseBuffer.size() >= 2)
+    {
+        T_lidar_lagged = complementaryOdomLidarPoseBuffer.front().second;
+        T_lidar_current = complementaryOdomLidarPoseBuffer.back().second;
+        lidar_lagged_stamp_s = complementaryOdomLidarPoseBuffer.front().first;
+        lidar_current_stamp_s = complementaryOdomLidarPoseBuffer.back().first;
+        hasLagVisualizationPair = std::isfinite(lidar_lagged_stamp_s) && std::isfinite(lidar_current_stamp_s);
+    }
+
+    // Lagged oldest/newest pair is used only for visualization vectors.
     if (hasLagVisualizationPair)
     {
         TwistVector xi_complementary_lidar_lag = TwistVector::Zero();
@@ -581,6 +600,19 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
             Eigen::Vector3f t_lidar_lag =
                 (T_lidar_lagged.matrix().inverse() * T_lidar_current.matrix()).block<3, 1>(0, 3);
             Eigen::Vector3f t_complementary_lag = T_lidar_complementary_predicted_lag.block<3, 1>(0, 3);
+            const Eigen::Matrix3f R_lidar_inc =
+                (T_lidar_lagged.matrix().inverse() * T_lidar_current.matrix()).block<3, 3>(0, 0);
+            const Eigen::Matrix3f R_complementary_inc =
+                T_lidar_complementary_predicted_lag.block<3, 3>(0, 0);
+            const Eigen::Matrix3f R_orientation_drift = R_complementary_inc * R_lidar_inc.transpose();
+            const Eigen::Vector3f t_complementary_lag_drift_compensated =
+                R_orientation_drift.transpose() * t_complementary_lag;
+            const double lagged_relative_yaw_drift_deg =
+                std::atan2(static_cast<double>(R_orientation_drift(1, 0)),
+                           static_cast<double>(R_orientation_drift(0, 0))) *
+                (180.0 / M_PI);
+            const double lagged_complementary_lin_speed_mps =
+                static_cast<double>(t_complementary_lag.norm()) / std::max(1e-5, dt_prediction_lag);
 
             if (complementaryOdom.ignore_dz)
             {
@@ -588,8 +620,15 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
                 t_complementary_lag.z() = 0.0f;
             }
 
+            Eigen::Vector3f t_complementary_lag_effective = t_complementary_lag_drift_compensated;
+            if (complementaryOdom.ignore_dz)
+            {
+                t_complementary_lag_effective.z() = 0.0f;
+            }
+
             const Eigen::Vector3f t_lidar_lag_nondeg = t_lidar_lag - projectOntoBasisTranslation(t_lidar_lag, orthoBasis);
-            const Eigen::Vector3f t_complementary_lag_nondeg = t_complementary_lag - projectOntoBasisTranslation(t_complementary_lag, orthoBasis);
+            const Eigen::Vector3f t_complementary_lag_nondeg =
+                t_complementary_lag_effective - projectOntoBasisTranslation(t_complementary_lag_effective, orthoBasis);
 
             Eigen::Vector3f t_complementary_lag_nondeg_unit = Eigen::Vector3f::Zero();
             const float complementaryLagNondegNorm = t_complementary_lag_nondeg.norm();
@@ -603,7 +642,8 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
             t_lidar_nondeg_map = R_lag * t_lidar_lag_nondeg;
             t_complementary_nondeg_map = R_lag * t_complementary_lag_nondeg;
             t_lidar_nondeg_proj_on_complementary_map = R_lag * t_lidar_lag_nondeg_proj;
-            t_complementary_raw_map = R_lag * t_complementary_lag;
+            t_complementary_uncorrected_map = R_lag * t_complementary_lag;
+            t_complementary_raw_map = R_lag * t_complementary_lag_effective;
             t_complementary_scaled_map = t_complementary_raw_map;
 
             if (pubComplementaryOdomScaleDebug)
@@ -622,29 +662,29 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
                     match_info_lag.lidar_curr_stamp_s - match_info_lag.lidar_prev_stamp_s;
                 msg.dt_scale_odom_pair_interval_s = match_info_lag.dt_complementary_s;
                 msg.dt_immediate_odom_pair_interval_s = match_info_lag.dt_complementary_s;
+                msg.lagged_complementary_lin_speed_mps = lagged_complementary_lin_speed_mps;
+                msg.lagged_relative_yaw_drift_deg = lagged_relative_yaw_drift_deg;
                 pubComplementaryOdomScaleDebug->publish(msg);
             }
         }
     }
 
-    Eigen::Affine3f T_corrected_no_scale = T_optimized;
-    Eigen::Affine3f T_corrected = T_optimized;
     if (estimatorModeActive && hasDegeneracyBasis)
     {
-        T_corrected_no_scale = projectDegenerateCorrection(T_optimized, T_complementary_unscaled_abs, orthoBasis);
-        T_corrected = projectDegenerateCorrection(T_optimized, T_complementary_odom, orthoBasis);
+        publishComplementaryOdomDisplacementDebug(hasLagVisualizationPair ? T_lidar_lagged : T_previous,
+                                                    T_complementary_unscaled_abs,
+                                                    T_complementary_scaled_abs,
+                                                    T_corrected_no_scale,
+                                                    T_corrected,
+                                                    t_complementary_nondeg_map,
+                                                    t_lidar_nondeg_map,
+                                                    t_lidar_nondeg_proj_on_complementary_map,
+                                                    t_complementary_uncorrected_map,
+                                                    t_complementary_raw_map,
+                                                    t_complementary_scaled_map);
     }
 
-    publishComplementaryOdomDisplacementDebug(hasLagVisualizationPair ? T_lidar_lagged : T_previous,
-                                              T_complementary_unscaled_abs,
-                                              T_complementary_scaled_abs,
-                                              T_corrected_no_scale,
-                                              T_corrected,
-                                              t_complementary_nondeg_map,
-                                              t_lidar_nondeg_map,
-                                              t_lidar_nondeg_proj_on_complementary_map,
-                                              t_complementary_raw_map,
-                                              t_complementary_scaled_map);
+    
 
     if (!estimatorModeActive || !hasDegeneracyBasis)
         return;

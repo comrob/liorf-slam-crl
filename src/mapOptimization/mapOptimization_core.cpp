@@ -253,8 +253,6 @@ void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedP
     {
         if (diagnostics)
             diagnostics->recordTimeDelta(curTimeDiff);
-
-        timeLastProcessing = timeLaserInfoCur;
         poseBeforePredictionLocal = trans2Affine3f(transformTobeMapped);
 
         TicToc t_updateInitialGuess;

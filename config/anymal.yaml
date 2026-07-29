@@ -44,7 +44,7 @@
       scaleSmoothingWindowSize: 1            # Moving-average window for applied complementary-odom scale
       fallbackScaleSmoothingWindowSize: 30    # Moving-average window for fallback scale when observability gate is closed
       smoothFromNumDen: true                  # If true, smooth numerator+denominator, then divide (ratio-of-sums)
-      ignore_dz: TRUE                        # If true, force dz=0 for scale-determination vectors only
+      ignore_dz: true                        # If true, force dz=0 for scale-determination vectors only
       autoLookupLidarToTf: false
       frame: ""                               # Inferred from message if empty
       extrinsicTrans: [0.0, 0.0, 0.0]

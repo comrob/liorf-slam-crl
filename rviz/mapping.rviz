@@ -10,8 +10,11 @@ Panels:
         - /Complementary Odom Debug1
         - /Complementary Odom Debug1/Scale Applied Plot1/Y Axis1
         - /Complementary Odom Debug1/Scale Applied Plot1/Right Y Axis1
-        - /Complementary Odom Debug1/dt1
         - /Complementary Odom Debug1/dt1/Series1
+        - /Complementary Odom Debug1/velocities1/Series1
+        - /Complementary Odom Debug1/velocities1/Series1/Series 21
+        - /Complementary Odom Debug1/velocities1/Layout1
+        - /Complementary Odom Debug1/Complementary1
         - /Complementary Odom Debug1/Complementary1/Namespaces1
       Splitter Ratio: 0.6505139470100403
     Tree Height: 903
@@ -233,7 +236,7 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: false
-        - Angle Tolerance: 0.10000000149011612
+        - Angle Tolerance: 0.009999999776482582
           Class: rviz_default_plugins/Odometry
           Covariance:
             Orientation:
@@ -249,15 +252,15 @@ Visualization Manager:
               Color: 204; 51; 204
               Scale: 1
               Value: true
-            Value: true
+            Value: false
           Enabled: true
-          Keep: 1
+          Keep: 10000
           Name: LIO
-          Position Tolerance: 0.10000000149011612
+          Position Tolerance: 0.009999999776482582
           Shape:
             Alpha: 1
-            Axes Length: 0.5
-            Axes Radius: 0.009999999776482582
+            Axes Length: 0.10000000149011612
+            Axes Radius: 0.004999999888241291
             Color: 255; 25; 0
             Head Length: 0.30000001192092896
             Head Radius: 0.10000000149011612
@@ -986,17 +989,119 @@ Visualization Manager:
             Auto Scale: true
             Y Max: 1.2000000476837158
             Y Min: 0.800000011920929
+        - Class: rviz_2d_plot_plugin/Plot2D
+          Clear History: false
+          Enabled: true
+          Grid:
+            Major Grid: true
+            Minor Divisions: 1
+            Minor Grid: true
+            X Major Ticks: 6
+            Y Major Ticks: 5
+          Layout:
+            Height: 320
+            Horizontal Alignment: Left
+            Vertical Alignment: Bottom
+            Width: 560
+            X Offset: 10
+            Y Offset: 10
+          Legend:
+            Enabled: true
+            Field Name Only: true
+            Position: Top Left
+            Right Legend:
+              Enabled: true
+              Merge With Left: false
+              Position: Top Right
+              Show Values: true
+              X Offset: 4
+              Y Offset: 4
+            Show Values: true
+            X Offset: 4
+            Y Offset: 4
+          Name: velocities
+          Pause Plot: false
+          Plot Mode: Time Series
+          QoS:
+            Depth: 10
+            Durability: Volatile
+            Reliability: Reliable
+          References:
+            Preset: None
+            Preset Tolerance: 0.10000000149011612
+            Preset Value: 0
+            Reference Count: 0
+          Right Y Axis:
+            Auto Scale: true
+            Y Max: 1.100000023841858
+            Y Min: -0.10000000149011612
+          Series:
+            Series 1:
+              Axis: Left
+              Color: 80; 170; 255
+              Field: lagged_complementary_lin_speed_mps
+              Label: ""
+              Line Alpha: 1
+              Line Style: Solid
+              Line Width: 2
+              Plot Style: Line
+              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Unit: ""
+              Value: true
+              Value Offset: 0
+              Value Scale: 1
+              X Field: ""
+              Y Field: ""
+            Series 2:
+              Axis: Right
+              Color: 80; 220; 130
+              Field: lagged_relative_yaw_drift_deg
+              Label: ""
+              Line Alpha: 1
+              Line Style: Solid
+              Line Width: 2
+              Plot Style: Line
+              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Unit: ""
+              Value: true
+              Value Offset: 0
+              Value Scale: 1
+              X Field: ""
+              Y Field: ""
+            Series Count: 2
+          Style:
+            Axis Color: 230; 230; 230
+            Background Alpha: 0.7450980544090271
+            Background Color: 0; 0; 0
+            Font Size: 8
+            Grid Color: 130; 130; 130
+            Text Color: 245; 245; 245
+          Time:
+            Refresh Rate: 20
+            Time Source: Message Header Stamp
+            Window Seconds: 30
+            XY History Mode: Rolling Time Window
+          Value: true
+          X Axis:
+            Auto Scale: true
+            Axis Scale: Independent
+            X Max: 1
+            X Min: -1
+          Y Axis:
+            Auto Scale: true
+            Y Max: 1.2000000476837158
+            Y Min: 0.800000011920929
         - Class: rviz_default_plugins/MarkerArray
           Enabled: true
           Name: Complementary
           Namespaces:
             complementary_odom_original: true
-            complementary_odom_projected_on_nondeg: false
+            complementary_odom_projected_on_nondeg: true
             complementary_odom_scaled: false
             lidar_corrected_with_complementary_no_scale: true
             lidar_corrected_with_complementary_scaled: false
             lidar_nondeg_projected_on_complementary: false
-            lidar_projected_on_nondeg: false
+            lidar_projected_on_nondeg: true
           Topic:
             Depth: 5
             Durability Policy: Volatile
@@ -1049,25 +1154,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.2147462368011475
+      Distance: 43.964019775390625
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.4372495710849762
-        Y: 0.3714418411254883
-        Z: 0.06537024676799774
+        X: -0.31056419014930725
+        Y: -0.41545456647872925
+        Z: 0.04381471127271652
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.5697963237762451
+      Pitch: 1.5647963285446167
       Target Frame: lidar_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.812793731689453
+      Yaw: 3.527806282043457
     Saved: ~
 Window Geometry:
   Displays:

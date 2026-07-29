@@ -1184,6 +1184,7 @@ void mapOptimization::publishComplementaryOdomDisplacementDebug(
     const Eigen::Vector3f &t_complementary_nondeg_map,
     const Eigen::Vector3f &t_lidar_nondeg_map,
     const Eigen::Vector3f &t_lidar_nondeg_proj_on_complementary_map,
+    const Eigen::Vector3f &t_complementary_uncorrected_map,
     const Eigen::Vector3f &t_complementary_raw_map,
     const Eigen::Vector3f &t_complementary_scaled_map)
 {
@@ -1277,6 +1278,8 @@ void mapOptimization::publishComplementaryOdomDisplacementDebug(
             5, "complementary_odom_original", t_complementary_raw_map, 0.95f, 0.95f, 0.95f));
         markers.markers.push_back(makeArrowFromVector(
             6, "complementary_odom_scaled", t_complementary_scaled_map, 0.0f, 0.6f, 1.0f));
+        markers.markers.push_back(makeArrowFromVector(
+            7, "complementary_odom_uncorrected", t_complementary_uncorrected_map, 1.0f, 0.2f, 0.2f));
 
         pubComplementaryOdomCorrectionDirection->publish(markers);
     }

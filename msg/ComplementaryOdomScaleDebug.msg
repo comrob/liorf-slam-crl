@@ -21,3 +21,5 @@ float64 dt_scale_odom_interval_s
 float64 dt_scale_lidar_interval_s
 float64 dt_scale_odom_pair_interval_s
 float64 dt_immediate_odom_pair_interval_s
+float64 lagged_complementary_lin_speed_mps
+float64 lagged_relative_yaw_drift_deg
