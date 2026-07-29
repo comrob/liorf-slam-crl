@@ -92,6 +92,12 @@ change SLAM/logging functionality.
 	degeneracy status (when lagged LiDAR/odom matching succeeds), so LiDAR,
 	uncorrected complementary, and drift-compensated complementary vectors are
 	always visualized.
+- Added lag-window path-arrow debug visualization with per-LiDAR-frame
+	matching against complementary odometry and three anchored paths on a
+	dedicated topic: LiDAR path, original complementary path, and reconstructed
+	forward-only path (LiDAR heading + complementary speed), using signed LiDAR
+	`+x/-x` reconstruction direction selected from the actual LiDAR step-motion
+	projection.
 - Scale debug outputs remain published for compatibility and report unit-scale
 	behavior (estimator disabled, applied scale fixed to `1.0`).
 

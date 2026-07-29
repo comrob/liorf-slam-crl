@@ -174,6 +174,7 @@ public:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyDisplacements;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyOptimizationPaths;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubComplementaryOdomCorrectionDirection;
+    rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubComplementaryOdomLaggedPaths;
     rclcpp::Publisher<liorf::msg::ComplementaryOdomScaleDebug>::SharedPtr pubComplementaryOdomScaleDebug;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
@@ -390,6 +391,10 @@ public:
         const Eigen::Vector3f &t_complementary_uncorrected_map,
         const Eigen::Vector3f &t_complementary_raw_map,
         const Eigen::Vector3f &t_complementary_scaled_map);
+    void publishComplementaryOdomLaggedPathsDebug(
+        const std::vector<Eigen::Vector3f> &lidar_path_map,
+        const std::vector<Eigen::Vector3f> &complementary_original_path_map,
+        const std::vector<Eigen::Vector3f> &reconstructed_path_map);
     void runDegeneracyDetectionAndCompensation();
     bool prepareDegeneracyOrthoBasis(std::vector<TwistVector> &orthoBasis);
     bool inferComplementaryOdomTwist(double dt_scan,

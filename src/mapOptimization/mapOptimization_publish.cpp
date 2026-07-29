@@ -1284,3 +1284,70 @@ void mapOptimization::publishComplementaryOdomDisplacementDebug(
         pubComplementaryOdomCorrectionDirection->publish(markers);
     }
 }
+
+void mapOptimization::publishComplementaryOdomLaggedPathsDebug(
+    const std::vector<Eigen::Vector3f> &lidar_path_map,
+    const std::vector<Eigen::Vector3f> &complementary_original_path_map,
+    const std::vector<Eigen::Vector3f> &reconstructed_path_map)
+{
+    if (!pubComplementaryOdomLaggedPaths)
+        return;
+
+    if (pubComplementaryOdomLaggedPaths->get_subscription_count() == 0)
+        return;
+
+    visualization_msgs::msg::MarkerArray markers;
+    visualization_msgs::msg::Marker delete_all;
+    delete_all.action = visualization_msgs::msg::Marker::DELETEALL;
+    markers.markers.push_back(delete_all);
+
+    const auto stamp = timeLaserInfoStamp;
+
+    const auto appendPathArrows = [&](const std::vector<Eigen::Vector3f> &path,
+                                      const char *ns_name,
+                                      int id_offset,
+                                      float r,
+                                      float g,
+                                      float b)
+    {
+        if (path.size() < 2)
+            return;
+
+        for (size_t i = 1; i < path.size(); ++i)
+        {
+            visualization_msgs::msg::Marker arrow;
+            arrow.header.frame_id = mapFrameLocal;
+            arrow.header.stamp = stamp;
+            arrow.ns = ns_name;
+            arrow.id = id_offset + static_cast<int>(i - 1);
+            arrow.type = visualization_msgs::msg::Marker::ARROW;
+            arrow.action = visualization_msgs::msg::Marker::ADD;
+            arrow.scale.x = 0.01;
+            arrow.scale.y = 0.02;
+            arrow.scale.z = 0.02;
+            arrow.color.r = r;
+            arrow.color.g = g;
+            arrow.color.b = b;
+            arrow.color.a = 0.95f;
+
+            geometry_msgs::msg::Point p0;
+            p0.x = path[i - 1].x();
+            p0.y = path[i - 1].y();
+            p0.z = path[i - 1].z();
+            geometry_msgs::msg::Point p1;
+            p1.x = path[i].x();
+            p1.y = path[i].y();
+            p1.z = path[i].z();
+
+            arrow.points.push_back(p0);
+            arrow.points.push_back(p1);
+            markers.markers.push_back(arrow);
+        }
+    };
+
+    appendPathArrows(lidar_path_map, "lagged_path_lidar", 0, 0.2f, 1.0f, 0.2f);
+    appendPathArrows(complementary_original_path_map, "lagged_path_complementary_original", 1000, 1.0f, 0.2f, 0.2f);
+    appendPathArrows(reconstructed_path_map, "lagged_path_reconstructed", 2000, 0.1f, 0.8f, 1.0f);
+
+    pubComplementaryOdomLaggedPaths->publish(markers);
+}

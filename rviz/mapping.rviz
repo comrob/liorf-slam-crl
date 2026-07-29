@@ -11,7 +11,7 @@ Panels:
         - /Complementary Odom Debug1/Scale Applied Plot1
         - /Complementary Odom Debug1/velocities1/Series1
         - /Complementary Odom Debug1/velocities1/Layout1
-        - /Complementary Odom Debug1/Complementary1/Namespaces1
+        - /Complementary Odom Debug1/paths1/Namespaces1
       Splitter Ratio: 0.4793028235435486
     Tree Height: 355
   - Class: rviz_common/Views
@@ -1094,20 +1094,25 @@ Visualization Manager:
           Enabled: true
           Name: Complementary
           Namespaces:
-            complementary_odom_original: true
-            complementary_odom_projected_on_nondeg: false
-            complementary_odom_scaled: false
-            complementary_odom_uncorrected: false
-            lidar_corrected_with_complementary_no_scale: true
-            lidar_corrected_with_complementary_scaled: false
-            lidar_nondeg_projected_on_complementary: false
-            lidar_projected_on_nondeg: false
+            {}
           Topic:
             Depth: 5
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /liorf/mapping/complementary_odom/correction_direction
+          Value: true
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: paths
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /liorf/mapping/complementary_odom/lagged_paths
           Value: true
       Enabled: true
       Name: Complementary Odom Debug

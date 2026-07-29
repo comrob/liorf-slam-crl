@@ -502,6 +502,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
     Eigen::Affine3f T_lidar_lagged = T_previous;
     Eigen::Affine3f T_lidar_current = T_optimized;
     bool hasLagVisualizationPair = false;
+    bool hasLagPathVisualizationData = false;
     Eigen::Vector3f t_lidar_nondeg_map = Eigen::Vector3f::Zero();
     Eigen::Vector3f t_complementary_nondeg_map = Eigen::Vector3f::Zero();
     Eigen::Vector3f t_lidar_nondeg_proj_on_complementary_map = Eigen::Vector3f::Zero();
@@ -510,6 +511,9 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
     Eigen::Vector3f t_complementary_scaled_map = Eigen::Vector3f::Zero();
     Eigen::Affine3f T_complementary_unscaled_abs = T_previous;
     Eigen::Affine3f T_complementary_scaled_abs = T_previous;
+    std::vector<Eigen::Vector3f> lagged_lidar_path_map;
+    std::vector<Eigen::Vector3f> lagged_complementary_original_path_map;
+    std::vector<Eigen::Vector3f> lagged_reconstructed_path_map;
     bool hasLagVectorVisualizationData = false;
     ComplementaryOdomMatchInfo match_info;
     const bool estimatorModeActive = degeneracyDetected;
@@ -581,6 +585,166 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
     // Lagged oldest/newest pair is used only for visualization vectors.
     if (hasLagVisualizationPair)
     {
+        std::deque<nav_msgs::msg::Odometry> complementaryOdomQueueSnapshot;
+        {
+            std::lock_guard<std::mutex> lock(complementaryOdomMutex);
+            complementaryOdomQueueSnapshot = complementaryOdomQueue;
+        }
+
+        if (complementaryOdomQueueSnapshot.size() >= 2 && complementaryOdomLidarPoseBuffer.size() >= 2)
+        {
+            struct LaggedPairSample
+            {
+                double lidar_stamp_s = std::numeric_limits<double>::quiet_NaN();
+                double odom_stamp_s = std::numeric_limits<double>::quiet_NaN();
+                Eigen::Affine3f lidar_pose = Eigen::Affine3f::Identity();
+                Eigen::Matrix4f odom_pose = Eigen::Matrix4f::Identity();
+            };
+
+            const auto closestOdomIdx = [&complementaryOdomQueueSnapshot](double target_time_s,
+                                                                            int min_idx,
+                                                                            double *best_abs_dt_s) -> int
+            {
+                int best_idx = -1;
+                double best_abs_dt = std::numeric_limits<double>::infinity();
+                for (int i = std::max(0, min_idx); i < static_cast<int>(complementaryOdomQueueSnapshot.size()); ++i)
+                {
+                    const double msg_time = ROS_TIME(complementaryOdomQueueSnapshot[i].header.stamp);
+                    const double abs_dt = std::abs(msg_time - target_time_s);
+                    if (abs_dt < best_abs_dt)
+                    {
+                        best_abs_dt = abs_dt;
+                        best_idx = i;
+                    }
+                }
+                if (best_abs_dt_s)
+                    *best_abs_dt_s = best_abs_dt;
+                return best_idx;
+            };
+
+            std::vector<LaggedPairSample> lagged_pairs;
+            lagged_pairs.reserve(complementaryOdomLidarPoseBuffer.size());
+            int min_search_idx = 0;
+            for (const auto &lidar_sample : complementaryOdomLidarPoseBuffer)
+            {
+                double best_abs_dt_s = std::numeric_limits<double>::infinity();
+                const int odom_idx = closestOdomIdx(lidar_sample.first, min_search_idx, &best_abs_dt_s);
+                if (odom_idx < 0 || best_abs_dt_s > 0.25)
+                    continue;
+
+                Eigen::Isometry3d iso_odom;
+                tf2::fromMsg(complementaryOdomQueueSnapshot[odom_idx].pose.pose, iso_odom);
+
+                LaggedPairSample sample;
+                sample.lidar_stamp_s = lidar_sample.first;
+                sample.odom_stamp_s = ROS_TIME(complementaryOdomQueueSnapshot[odom_idx].header.stamp);
+                sample.lidar_pose = lidar_sample.second;
+                sample.odom_pose = iso_odom.matrix().cast<float>();
+                lagged_pairs.push_back(sample);
+                min_search_idx = odom_idx;
+            }
+
+            if (lagged_pairs.size() >= 2)
+            {
+                if (!resolveComplementaryOdomExtrinsics(complementaryOdomQueueSnapshot.back().header.frame_id))
+                {
+                    RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+                                         "[COMPLEMENTARY_ODOM_LAGGED_PATH] extrinsics unresolved, skipping lagged path debug");
+                }
+                else
+                {
+                    const Eigen::Affine3f T_lidar_anchor = lagged_pairs.front().lidar_pose;
+                    const Eigen::Matrix3f R_lidar_anchor = T_lidar_anchor.rotation();
+                    const Eigen::Vector3f p_anchor = T_lidar_anchor.translation();
+
+                    const Eigen::Matrix4f T_odom_to_lidar = T_complementary_to_lidar;
+                    const Eigen::Matrix4f T_lidar_to_odom = T_complementary_to_lidar.inverse();
+                    const Eigen::Matrix4f T_comp0_lidar = T_odom_to_lidar * lagged_pairs.front().odom_pose * T_lidar_to_odom;
+
+                    lagged_lidar_path_map.clear();
+                    lagged_complementary_original_path_map.clear();
+                    lagged_reconstructed_path_map.clear();
+                    lagged_lidar_path_map.reserve(lagged_pairs.size());
+                    lagged_complementary_original_path_map.reserve(lagged_pairs.size());
+                    lagged_reconstructed_path_map.reserve(lagged_pairs.size());
+
+                    Eigen::Vector3f reconstructed_point = p_anchor;
+                    int reconstructed_direction_sign = -1;
+                    lagged_reconstructed_path_map.push_back(reconstructed_point);
+
+                    for (size_t i = 0; i < lagged_pairs.size(); ++i)
+                    {
+                        const Eigen::Affine3f &T_lidar_i = lagged_pairs[i].lidar_pose;
+                        const Eigen::Matrix4f T_lidar_rel = T_lidar_anchor.matrix().inverse() * T_lidar_i.matrix();
+                        const Eigen::Vector3f t_lidar_rel = T_lidar_rel.block<3, 1>(0, 3);
+                        lagged_lidar_path_map.push_back(p_anchor + R_lidar_anchor * t_lidar_rel);
+
+                        const Eigen::Matrix4f T_comp_i_lidar = T_odom_to_lidar * lagged_pairs[i].odom_pose * T_lidar_to_odom;
+                        const Eigen::Matrix4f T_comp_rel = T_comp0_lidar.inverse() * T_comp_i_lidar;
+                        const Eigen::Vector3f t_comp_rel = T_comp_rel.block<3, 1>(0, 3);
+                        lagged_complementary_original_path_map.push_back(p_anchor + R_lidar_anchor * t_comp_rel);
+
+                        if (i == 0)
+                            continue;
+
+                        const Eigen::Matrix4f T_comp_prev_lidar =
+                            T_odom_to_lidar * lagged_pairs[i - 1].odom_pose * T_lidar_to_odom;
+                        const Eigen::Matrix4f T_comp_delta = T_comp_prev_lidar.inverse() * T_comp_i_lidar;
+                        Eigen::Vector3f t_comp_delta = T_comp_delta.block<3, 1>(0, 3);
+
+                        if (complementaryOdom.ignore_dz)
+                            t_comp_delta.z() = 0.0f;
+
+                        const double dt_odom = std::max(1e-5, lagged_pairs[i].odom_stamp_s - lagged_pairs[i - 1].odom_stamp_s);
+                        const double dt_lidar = std::max(1e-5, lagged_pairs[i].lidar_stamp_s - lagged_pairs[i - 1].lidar_stamp_s);
+                        const double complementary_speed_mps = static_cast<double>(t_comp_delta.norm()) / dt_odom;
+                        double forward_distance = complementary_speed_mps * dt_lidar;
+
+                        Eigen::Vector3f forward_axis = lagged_pairs[i - 1].lidar_pose.rotation().col(0);
+                        Eigen::Vector3f lidar_step =
+                            lagged_pairs[i].lidar_pose.translation() - lagged_pairs[i - 1].lidar_pose.translation();
+                        if (complementaryOdom.ignore_dz)
+                        {
+                            forward_axis.z() = 0.0f;
+                            lidar_step.z() = 0.0f;
+                        }
+
+                        const float forward_axis_norm = forward_axis.norm();
+                        if (forward_axis_norm > 1e-6f)
+                            forward_axis /= forward_axis_norm;
+                        else
+                            forward_distance = 0.0;
+
+                        const float lidar_step_signed_forward = lidar_step.dot(forward_axis);
+                        constexpr float kForwardDirectionDeadbandM = 1e-4f;
+                        if (lidar_step_signed_forward > kForwardDirectionDeadbandM)
+                            reconstructed_direction_sign = 1;
+                        else if (lidar_step_signed_forward < -kForwardDirectionDeadbandM)
+                            reconstructed_direction_sign = -1;
+
+                        Eigen::Vector3f forward_dir =
+                            static_cast<float>(reconstructed_direction_sign) * forward_axis;
+                        if (complementaryOdom.ignore_dz)
+                        {
+                            forward_dir.z() = 0.0f;
+                            const float forward_norm = forward_dir.norm();
+                            if (forward_norm > 1e-6f)
+                                forward_dir /= forward_norm;
+                            else
+                                forward_distance = 0.0;
+                        }
+
+                        reconstructed_point += static_cast<float>(forward_distance) * forward_dir;
+                        lagged_reconstructed_path_map.push_back(reconstructed_point);
+                    }
+
+                    hasLagPathVisualizationData = lagged_lidar_path_map.size() >= 2 &&
+                                                  lagged_complementary_original_path_map.size() == lagged_lidar_path_map.size() &&
+                                                  lagged_reconstructed_path_map.size() == lagged_lidar_path_map.size();
+                }
+            }
+        }
+
         TwistVector xi_complementary_lidar_lag = TwistVector::Zero();
         ComplementaryOdomMatchInfo match_info_lag;
         const bool hasLagComplementaryPrediction = inferComplementaryOdomTwist(
@@ -684,6 +848,14 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
                                                     t_complementary_uncorrected_map,
                                                     t_complementary_raw_map,
                                                     t_complementary_scaled_map);
+    }
+
+    if (hasLagPathVisualizationData)
+    {
+        publishComplementaryOdomLaggedPathsDebug(
+            lagged_lidar_path_map,
+            lagged_complementary_original_path_map,
+            lagged_reconstructed_path_map);
     }
 
     

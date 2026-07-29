@@ -104,6 +104,7 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     pubDegeneracyDisplacements = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy/displacements", QosPolicy(history_policy, reliability_policy));
     pubDegeneracyOptimizationPaths = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy/optimization_paths", QosPolicy(history_policy, reliability_policy));
     pubComplementaryOdomCorrectionDirection = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/complementary_odom/correction_direction", QosPolicy(history_policy, reliability_policy));
+    pubComplementaryOdomLaggedPaths = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/complementary_odom/lagged_paths", QosPolicy(history_policy, reliability_policy));
     pubComplementaryOdomScaleDebug = create_publisher<liorf::msg::ComplementaryOdomScaleDebug>("liorf/mapping/complementary_odom/scale_debug", QosPolicy(history_policy, reliability_policy));
 
     pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
