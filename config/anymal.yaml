@@ -40,7 +40,7 @@
       minDeltaTime: 0.05
       scaleEstimationEnabled: true            # Scale complementary-odom translation by non-degenerate LiDAR/complementary-odom displacement ratio
       scaleMinNonDegenerateSpeed: 0.5         # m/s; min non-degenerate speed (both displacements) to estimate the scale
-      scaleBaselineFrameLag: 10                # Fixed lidar-frame lag for odometry pairing used by scale estimation
+      scaleBaselineFrameLag: 30                # Fixed lidar-frame lag for odometry pairing used by scale estimation
       scaleSmoothingWindowSize: 1            # Moving-average window for applied complementary-odom scale
       fallbackScaleSmoothingWindowSize: 30    # Moving-average window for fallback scale when observability gate is closed
       smoothFromNumDen: true                  # If true, smooth numerator+denominator, then divide (ratio-of-sums)

@@ -9,8 +9,12 @@ Panels:
         - /Mapping1/LIO1/Shape1
         - /Complementary Odom Debug1
         - /Complementary Odom Debug1/Scale Applied Plot1
+        - /Complementary Odom Debug1/Scale Applied Plot1/Series1
+        - /Complementary Odom Debug1/Scale Applied Plot1/Series1/Series 11
         - /Complementary Odom Debug1/velocities1/Series1
         - /Complementary Odom Debug1/velocities1/Layout1
+        - /Complementary Odom Debug1/Complementary1
+        - /Complementary Odom Debug1/Complementary1/Namespaces1
         - /Complementary Odom Debug1/paths1/Namespaces1
       Splitter Ratio: 0.4793028235435486
     Tree Height: 355
@@ -768,7 +772,7 @@ Visualization Manager:
             Series 1:
               Axis: Left
               Color: 80; 170; 255
-              Field: scale_instant_raw_safe
+              Field: scale_instant_raw
               Label: ""
               Line Alpha: 1
               Line Style: Solid
@@ -1094,7 +1098,14 @@ Visualization Manager:
           Enabled: true
           Name: Complementary
           Namespaces:
-            {}
+            complementary_odom_drift_corrected: false
+            complementary_odom_original: true
+            complementary_odom_projected_on_nondeg: true
+            complementary_odom_scaled: false
+            lidar_corrected_with_complementary_no_scale: true
+            lidar_corrected_with_complementary_scaled: false
+            lidar_nondeg_projected_on_complementary: false
+            lidar_projected_on_nondeg: true
           Topic:
             Depth: 5
             Durability Policy: Volatile
@@ -1106,7 +1117,9 @@ Visualization Manager:
           Enabled: true
           Name: paths
           Namespaces:
-            {}
+            lagged_path_complementary_original: true
+            lagged_path_lidar: true
+            lagged_path_reconstructed: true
           Topic:
             Depth: 5
             Durability Policy: Volatile
@@ -1159,25 +1172,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 1.4874656200408936
+      Distance: 42.244422912597656
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.06783968955278397
-        Y: -0.34066686034202576
-        Z: -0.10030035674571991
+        X: -0.19772078096866608
+        Y: 0.08530247956514359
+        Z: -0.08923967182636261
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 1.3447965383529663
+      Pitch: 1.5697963237762451
       Target Frame: lidar_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.919653415679932
+      Yaw: 4.444648742675781
     Saved: ~
 Window Geometry:
   Displays:

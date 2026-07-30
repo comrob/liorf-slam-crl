@@ -1275,11 +1275,11 @@ void mapOptimization::publishComplementaryOdomDisplacementDebug(
             4, "lidar_corrected_with_complementary_scaled", T_corrected_scaled_abs, 0.0f, 0.95f, 0.95f));
 
         markers.markers.push_back(makeArrowFromVector(
-            5, "complementary_odom_original", t_complementary_raw_map, 0.95f, 0.95f, 0.95f));
+            5, "complementary_odom_drift_corrected", t_complementary_raw_map, 0.95f, 0.95f, 0.95f));
         markers.markers.push_back(makeArrowFromVector(
             6, "complementary_odom_scaled", t_complementary_scaled_map, 0.0f, 0.6f, 1.0f));
         markers.markers.push_back(makeArrowFromVector(
-            7, "complementary_odom_uncorrected", t_complementary_uncorrected_map, 1.0f, 0.2f, 0.2f));
+            7, "complementary_odom_original", t_complementary_uncorrected_map, 1.0f, 0.2f, 0.2f));
 
         pubComplementaryOdomCorrectionDirection->publish(markers);
     }

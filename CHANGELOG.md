@@ -98,6 +98,25 @@ change SLAM/logging functionality.
 	forward-only path (LiDAR heading + complementary speed), using signed LiDAR
 	`+x/-x` reconstruction direction selected from the actual LiDAR step-motion
 	projection.
+- Added lagged projected-scale debug publication
+	(via `scale_instant_raw`) computed as the ratio between the projected
+	LiDAR non-degenerate translation norm and the complementary non-degenerate
+	translation norm used in lagged visualization.
+- Fixed complementary displacement marker/path mismatch by forcing both
+	uncorrected and drift-corrected displacement arrows to use the same lagged
+	matched anchor and endpoint pair as the lagged complementary path.
+- Updated marker naming so `complementary_odom_original` corresponds to the
+	uncorrected vector and `complementary_odom_drift_corrected` corresponds to
+	the drift-corrected vector.
+- Fixed lagged projection inconsistency by recomputing non-degenerate
+	projection vectors from the same lagged path-aligned endpoints used by the
+	complementary displacement arrows and path, and publishing
+	`scale_instant_raw` from that path-aligned projection when available.
+- Updated lagged projection basis to use the latest-pose frame (consistent
+	with degeneracy basis definition), then re-express projected vectors on the
+	lagged anchor frame for visualization.
+- Corrected projected-vector visualization to preserve latest-pose orientation
+	and only substitute lagged-pose translation for marker anchoring.
 - Scale debug outputs remain published for compatibility and report unit-scale
 	behavior (estimator disabled, applied scale fixed to `1.0`).
 
