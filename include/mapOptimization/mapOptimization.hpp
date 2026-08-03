@@ -106,6 +106,30 @@ public:
         int odom_samples_between = 0;
     };
 
+    struct AdditionalOdomFusionResult
+    {
+        bool valid = false;
+        Eigen::Affine3f T_anchor = Eigen::Affine3f::Identity();
+        Eigen::Affine3f T_latest = Eigen::Affine3f::Identity();
+
+        // Endpoint displacement vectors in map frame (anchor -> latest)
+        Eigen::Vector3f t_complementary_uncorrected_map = Eigen::Vector3f::Zero();
+        Eigen::Vector3f t_complementary_corrected_map = Eigen::Vector3f::Zero();
+
+        // Projected vectors computed in latest-pose frame, represented in map frame
+        Eigen::Vector3f t_lidar_nondeg_map = Eigen::Vector3f::Zero();
+        Eigen::Vector3f t_complementary_nondeg_map = Eigen::Vector3f::Zero();
+        Eigen::Vector3f t_lidar_nondeg_proj_on_complementary_map = Eigen::Vector3f::Zero();
+
+        Eigen::Matrix3f R_orientation_drift = Eigen::Matrix3f::Identity();
+        double scale_instant_raw = std::numeric_limits<double>::quiet_NaN();
+        double scale_filtered = std::numeric_limits<double>::quiet_NaN();
+        double scale_smooth = std::numeric_limits<double>::quiet_NaN();
+        double gate_observable = 0.0;
+        double lagged_complementary_lin_speed_mps = std::numeric_limits<double>::quiet_NaN();
+        double lagged_relative_yaw_drift_deg = std::numeric_limits<double>::quiet_NaN();
+    };
+
     MapExporter map_exporter_;
     std::shared_ptr<lio::IMappingBackend> mappingBackend;
     std::shared_ptr<DegeneracyDetector> degeneracyDetector;
@@ -373,6 +397,7 @@ public:
     std::deque<nav_msgs::msg::Odometry> complementaryOdomQueue;
     std::mutex complementaryOdomMutex;
     std::deque<std::pair<double, Eigen::Affine3f>> complementaryOdomLidarPoseBuffer;
+    std::deque<double> laggedScaleFilteredHistory;
 
     bool complementaryOdomTfResolved = false;
     Eigen::Matrix4f T_complementary_to_lidar = Eigen::Matrix4f::Identity();
@@ -410,6 +435,7 @@ public:
                                                        bool estimator_mode_active,
                                                        bool scale_applied_to_state,
                                                        double dt_scan,
+                                                       double scale_applied,
                                                        Eigen::Vector3f &t_lidar_nondeg_map,
                                                        Eigen::Vector3f &t_complementary_nondeg_map,
                                                        Eigen::Vector3f &t_lidar_nondeg_proj_on_complementary_map,
@@ -422,4 +448,12 @@ public:
                                                 const std::vector<TwistVector> &orthoBasis);
     void writeAffineToTransformTobeMapped(const Eigen::Affine3f &T_pose);
     void applyDegeneracyStateOverride(double dt_scan, bool degeneracyDetected);
+    AdditionalOdomFusionResult buildAdditionalOdomCorrectionResult(
+        const Eigen::Affine3f &T_anchor,
+        const Eigen::Affine3f &T_latest,
+        const Eigen::Matrix4f &T_lidar_rel,
+        const Eigen::Matrix4f &T_complementary_rel,
+        const std::vector<TwistVector> &orthoBasis,
+        bool ignore_dz,
+        double dt_complementary_s);
 };

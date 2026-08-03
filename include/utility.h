@@ -108,6 +108,7 @@ struct ComplementaryOdomParameters
 {
     double minDeltaTime = 0.1;
     bool scaleEstimationEnabled = true;
+    bool scaleEstimationApply = true;
     double scaleMinNonDegenerateSpeed = 0.2; // m/s, observability gate for scale estimation
     int scaleBaselineFrameLag = 1; // fixed lidar-frame lag for complementary-odom pairing
     int scaleSmoothingWindowSize = 20;
@@ -476,6 +477,9 @@ public:
 
         declare_parameter<bool>("complementaryOdom.scaleEstimationEnabled", true);
         get_parameter("complementaryOdom.scaleEstimationEnabled", complementaryOdom.scaleEstimationEnabled);
+
+        declare_parameter<bool>("complementaryOdom.scaleEstimationApply", true);
+        get_parameter("complementaryOdom.scaleEstimationApply", complementaryOdom.scaleEstimationApply);
 
         declare_parameter<double>("complementaryOdom.scaleMinNonDegenerateSpeed", 0.2);
         get_parameter("complementaryOdom.scaleMinNonDegenerateSpeed", complementaryOdom.scaleMinNonDegenerateSpeed);

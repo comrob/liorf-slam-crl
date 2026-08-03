@@ -5,19 +5,16 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Mapping1
-        - /Mapping1/LIO1
         - /Mapping1/LIO1/Shape1
         - /Complementary Odom Debug1
         - /Complementary Odom Debug1/Scale Applied Plot1
         - /Complementary Odom Debug1/Scale Applied Plot1/Series1
-        - /Complementary Odom Debug1/Scale Applied Plot1/Series1/Series 11
         - /Complementary Odom Debug1/velocities1/Series1
         - /Complementary Odom Debug1/velocities1/Layout1
-        - /Complementary Odom Debug1/Complementary1
         - /Complementary Odom Debug1/Complementary1/Namespaces1
         - /Complementary Odom Debug1/paths1/Namespaces1
       Splitter Ratio: 0.4793028235435486
-    Tree Height: 355
+    Tree Height: 301
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -236,7 +233,7 @@ Visualization Manager:
           Use Fixed Frame: true
           Use rainbow: true
           Value: false
-        - Angle Tolerance: 0.009999999776482582
+        - Angle Tolerance: 0.10000000149011612
           Class: rviz_default_plugins/Odometry
           Covariance:
             Orientation:
@@ -254,9 +251,9 @@ Visualization Manager:
               Value: true
             Value: false
           Enabled: true
-          Keep: 10000
+          Keep: 1000
           Name: LIO
-          Position Tolerance: 0.009999999776482582
+          Position Tolerance: 0.10000000149011612
           Shape:
             Alpha: 1
             Axes Length: 0.10000000149011612
@@ -771,7 +768,7 @@ Visualization Manager:
           Series:
             Series 1:
               Axis: Left
-              Color: 80; 170; 255
+              Color: 119; 118; 123
               Field: scale_instant_raw
               Label: ""
               Line Alpha: 1
@@ -788,7 +785,7 @@ Visualization Manager:
             Series 2:
               Axis: Left
               Color: 80; 220; 130
-              Field: scale_smooth
+              Field: scale_filtered
               Label: ""
               Line Alpha: 1
               Line Style: Solid
@@ -804,7 +801,7 @@ Visualization Manager:
             Series 3:
               Axis: Left
               Color: 255; 170; 60
-              Field: scale_fallback_history
+              Field: scale_smooth
               Label: ""
               Line Alpha: 1
               Line Style: Solid
@@ -1114,19 +1111,17 @@ Visualization Manager:
             Value: /liorf/mapping/complementary_odom/correction_direction
           Value: true
         - Class: rviz_default_plugins/MarkerArray
-          Enabled: true
+          Enabled: false
           Name: paths
           Namespaces:
-            lagged_path_complementary_original: true
-            lagged_path_lidar: true
-            lagged_path_reconstructed: true
+            {}
           Topic:
             Depth: 5
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /liorf/mapping/complementary_odom/lagged_paths
-          Value: true
+          Value: false
       Enabled: true
       Name: Complementary Odom Debug
   Enabled: true
@@ -1172,16 +1167,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 42.244422912597656
+      Distance: 10.089170455932617
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.19772078096866608
-        Y: 0.08530247956514359
-        Z: -0.08923967182636261
+        X: 0.0419149324297905
+        Y: -0.00036361487582325935
+        Z: -0.08917484432458878
       Focal Shape Fixed Size: false
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -1190,22 +1185,22 @@ Visualization Manager:
       Pitch: 1.5697963237762451
       Target Frame: lidar_link
       Value: Orbit (rviz_default_plugins)
-      Yaw: 4.444648742675781
+      Yaw: 5.3164777755737305
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 1131
+  Height: 1043
   Hide Left Dock: false
   Hide Right Dock: true
-  QMainWindow State: 000000ff00000000fd0000000200000000000002bf0000040dfc0200000004fb000000100044006900730070006c006100790073010000003f000001e9000000cc00fffffffb00000024005300630061006c00650020004100700070006c00690065006400200050006c006f0074010000022e000000e40000006700fffffffb00000004006400740100000318000000790000006700fffffffb0000001400760065006c006f0063006900740069006500730100000397000000b50000006700ffffff00000001000001cb0000040dfc0200000001fb0000000a00560069006500770073000000003f0000040d000000a900ffffff000004790000040d00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd0000000200000000000002bf000003b5fc0200000004fb000000100044006900730070006c006100790073010000003f000001b3000000cc00fffffffb00000024005300630061006c00650020004100700070006c00690065006400200050006c006f007401000001f8000000cb0000006700fffffffb000000040064007401000002c9000000840000006700fffffffb0000001400760065006c006f0063006900740069006500730100000353000000a10000006700ffffff00000001000001cb0000040dfc0200000001fb0000000a00560069006500770073000000003f0000040d000000a900ffffff000004bb000003b500000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Scale Applied Plot:
     collapsed: false
   Views:
     collapsed: true
-  Width: 1854
-  X: 66
-  Y: 32
+  Width: 1920
+  X: 1920
+  Y: 0
   dt:
     collapsed: false
   velocities:

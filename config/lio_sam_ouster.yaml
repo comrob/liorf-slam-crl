@@ -41,6 +41,7 @@
     complementaryOdom:
       minDeltaTime: 0.1
       scaleEstimationEnabled: true
+      scaleEstimationApply: true
       scaleMinNonDegenerateSpeed: 0.2
       scaleBaselineFrameLag: 1
       scaleSmoothingWindowSize: 20

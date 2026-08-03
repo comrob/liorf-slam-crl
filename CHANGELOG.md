@@ -26,6 +26,44 @@ change SLAM/logging functionality.
 
 ---
 
+## 2026-07-31 - Add explicit scale observability outputs for lagged complementary odom
+
+### Files changed
+
+- [msg/ComplementaryOdomScaleDebug.msg](msg/ComplementaryOdomScaleDebug.msg)
+- [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
+- [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
+- [rviz/mapping.rviz](rviz/mapping.rviz)
+- [CHANGELOG.md](CHANGELOG.md)
+
+### Behavior impact
+
+- Added `scale_filtered` to complementary-odom scale debug message semantics:
+	`scale_filtered` now carries the lagged projected scale when observable and
+	`NaN` when unobservable.
+- Kept `gate_observable` as a dedicated observability indicator:
+	`1.0` when observable, `0.0` when unobservable.
+- Observability is computed from projected non-degenerate speed using the ROS
+	parameter `complementaryOdom.scaleMinNonDegenerateSpeed` as threshold:
+	`||t_lidar_nondeg_proj|| / dt_complementary_s`.
+- Added moving-average smoothing of `scale_filtered` using
+	`complementaryOdom.scaleSmoothingWindowSize`; the smoothed value is
+	published in `scale_smooth`.
+- The smoothed filtered scale is now applied to the complementary-odometry
+	translation before degenerate-direction correction is computed.
+- Added `complementaryOdom.scaleEstimationApply` to independently control
+	whether estimated smoothed scale is applied to state correction.
+- Scale observability/filtering and scale application are now gated by
+	`complementaryOdom.scaleEstimationEnabled`; when disabled, scale defaults
+	to `1.0` (no translational scaling applied).
+- `scale_instant_raw` remains the ungated raw projected scale value for
+	debugging/reference.
+
+### Migration/runtime risk notes
+
+- Low. Debug interface expanded by one message field (`scale_filtered`) and
+	`gate_observable` semantics are now strictly indicator-valued.
+
 ## 2026-07-28 - Rework complementary-odom with unit scale and lagged visualization
 
 ### Files changed
@@ -117,6 +155,16 @@ change SLAM/logging functionality.
 	lagged anchor frame for visualization.
 - Corrected projected-vector visualization to preserve latest-pose orientation
 	and only substitute lagged-pose translation for marker anchoring.
+- Enforced strict path-anchor consistency for path-endpoint projection vectors
+	and made `scale_instant_raw` prefer the same path-aligned projection source
+	when available.
+- Introduced a single authoritative additional-odometry fusion result
+	structure and centralized builder helper, then rewired lagged path and
+	lag-pair branches to consume the same computed corrected/uncorrected,
+	non-degenerate, projected, speed, yaw-drift, and scale fields.
+- Removed duplicated lagged projection/scale recomputation from visualization
+	branches so debug messages and displacement markers now consume a shared
+	fusion output object.
 - Scale debug outputs remain published for compatibility and report unit-scale
 	behavior (estimator disabled, applied scale fixed to `1.0`).
 

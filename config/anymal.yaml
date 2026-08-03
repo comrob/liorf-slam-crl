@@ -20,6 +20,7 @@
     imuTopic: "/sensors/imu"                         # IMU data
     gpsTopic: "/gnss/septentrio/fix"                # GPS odometry topic
     complementaryOdomTopic: "/legged_odometry/odom"  # Complementary odometry topic
+    # complementaryOdomTopic: "/t265/odom/sample"  # Complementary odometry topic
 
     degeneracyDetection:
       enable: true
@@ -39,18 +40,22 @@
     complementaryOdom:
       minDeltaTime: 0.05
       scaleEstimationEnabled: true            # Scale complementary-odom translation by non-degenerate LiDAR/complementary-odom displacement ratio
-      scaleMinNonDegenerateSpeed: 0.5         # m/s; min non-degenerate speed (both displacements) to estimate the scale
-      scaleBaselineFrameLag: 30                # Fixed lidar-frame lag for odometry pairing used by scale estimation
-      scaleSmoothingWindowSize: 1            # Moving-average window for applied complementary-odom scale
-      fallbackScaleSmoothingWindowSize: 30    # Moving-average window for fallback scale when observability gate is closed
+      scaleEstimationApply: true              # If true, apply the estimated smoothed scale to complementary-odom translation in state correction
+      scaleMinNonDegenerateSpeed: 0.2         # m/s; min non-degenerate speed (both displacements) to estimate the scale
+      scaleBaselineFrameLag: 10                # Fixed lidar-frame lag for odometry pairing used by scale estimation
+      scaleSmoothingWindowSize: 1000            # Moving-average window for applied complementary-odom scale
+      fallbackScaleSmoothingWindowSize: 10    # Moving-average window for fallback scale when observability gate is closed
       smoothFromNumDen: true                  # If true, smooth numerator+denominator, then divide (ratio-of-sums)
       ignore_dz: true                        # If true, force dz=0 for scale-determination vectors only
       autoLookupLidarToTf: false
       frame: ""                               # Inferred from message if empty
-      extrinsicTrans: [0.0, 0.0, 0.0]
+      extrinsicTrans: [-0.310, 0.0, 0.159]
       extrinsicRot: [-1.0, 0.0, 0.0,
                      0.0, -1.0, 0.0,
                      0.0, 0.0, 1.0]
+      # extrinsicRot: [1.0, 0.0, 0.0,
+      #                0.0, 1.0, 0.0,
+      #                0.0, 0.0, 1.0]
 
 
     translationPredictionSource: constant_velocity
@@ -116,12 +121,12 @@
     imuGravity: 9.80511
     imuRPYWeight: 0.01
 
-    autoLookupLidarToImuTf: true
+    autoLookupLidarToImuTf: false
     # Extrinsics: T_lb (lidar -> imu)
     extrinsicTrans: [0.0, 0.0, 0.0]
-    extrinsicRot: [-1.0, 0.0, 0.0,
+    extrinsicRot: [1.0, 0.0, 0.0,
                     0.0, -1.0, 0.0,
-                    0.0, 0.0, 1.0]
+                    0.0, 0.0, -1.0]
 
     extrinsicRPY: [1.0, 0.0, 0.0,
                     0.0, 1.0, 0.0,

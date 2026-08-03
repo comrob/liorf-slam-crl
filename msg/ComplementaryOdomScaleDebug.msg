@@ -1,5 +1,6 @@
 std_msgs/Header header
 float64 scale_instant_raw
+float64 scale_filtered
 float64 scale_instant_raw_clamped
 float64 scale_instant_raw_safe
 float64 scale_fallback_history
