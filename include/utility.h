@@ -106,15 +106,12 @@ struct DegeneracyDetectionParameters
 
 struct ComplementaryOdomParameters
 {
-    double minDeltaTime = 0.1;
     double translationScale = 1.0;
     bool scaleEstimationEnabled = true;
     bool scaleEstimationApply = true;
     double scaleMinNonDegenerateSpeed = 0.2; // m/s, observability gate for scale estimation
     int scaleBaselineFrameLag = 1; // fixed lidar-frame lag for complementary-odom pairing
     int scaleSmoothingWindowSize = 20;
-    int fallbackScaleSmoothingWindowSize = 30;
-    bool smoothFromNumDen = false; // if true, smooth numerator/denominator then divide
     bool ignore_dz = false; // if true, force dz=0 for scale-determination vectors only
     bool autoLookupLidarToTf = true;
     string frame;
@@ -477,9 +474,6 @@ public:
         get_parameter("degeneracyDetection.perturbationBased.verbose", degeneracyDetection.perturbationBased.verbose);
 
         // complementary odometry parameters
-        declare_parameter<double>("complementaryOdom.minDeltaTime", 0.1);
-        get_parameter("complementaryOdom.minDeltaTime", complementaryOdom.minDeltaTime);
-
         declare_parameter<double>("complementaryOdom.translationScale", 1.0);
         get_parameter("complementaryOdom.translationScale", complementaryOdom.translationScale);
         if (!std::isfinite(complementaryOdom.translationScale) ||
@@ -506,14 +500,6 @@ public:
         get_parameter("complementaryOdom.scaleSmoothingWindowSize", complementaryOdom.scaleSmoothingWindowSize);
         if (complementaryOdom.scaleSmoothingWindowSize < 1)
             complementaryOdom.scaleSmoothingWindowSize = 1;
-
-        declare_parameter<int>("complementaryOdom.fallbackScaleSmoothingWindowSize", 30);
-        get_parameter("complementaryOdom.fallbackScaleSmoothingWindowSize", complementaryOdom.fallbackScaleSmoothingWindowSize);
-        if (complementaryOdom.fallbackScaleSmoothingWindowSize < 1)
-            complementaryOdom.fallbackScaleSmoothingWindowSize = 1;
-
-        declare_parameter<bool>("complementaryOdom.smoothFromNumDen", false);
-        get_parameter("complementaryOdom.smoothFromNumDen", complementaryOdom.smoothFromNumDen);
 
         declare_parameter<bool>("complementaryOdom.ignore_dz", false);
         get_parameter("complementaryOdom.ignore_dz", complementaryOdom.ignore_dz);

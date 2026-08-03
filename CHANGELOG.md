@@ -37,6 +37,7 @@ change SLAM/logging functionality.
 - [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
 - [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
 - [config/anymal.yaml](config/anymal.yaml)
+- [config/docker_override.yaml](config/docker_override.yaml)
 - [scripts/replay_scale_trajectory.py](scripts/replay_scale_trajectory.py)
 - [scripts/pyproject.toml](scripts/pyproject.toml)
 
@@ -64,7 +65,23 @@ change SLAM/logging functionality.
   C++ SE(3) exp/log and `projectOntoBasis`/`projectDegenerateCorrection` math so
   replayed geometry matches the online pipeline. Supports `--validate` (replay
   with the recorded per-frame scale and report drift vs recorded effective
-  trajectory) and `--no-correction` (LiDAR-only baseline).
+	trajectory) and `--no-correction` (LiDAR-only baseline). Replay outputs are
+	now written into an auto-created subfolder `replay_trajectories` under the
+	selected output base directory (configurable via `--output-subdir`). The
+	tool now also supports C++-style online scale-estimation replay
+	(`--scale-mode estimated`) and can parse ROS YAML via
+	`--ros-params-yaml` for a minimal replay parameter contract:
+	`translationScale`, `scaleEstimationApply`,
+	`scaleMinNonDegenerateSpeed`, `scaleBaselineFrameLag`,
+	`scaleSmoothingWindowSize`, and `ignore_dz`.
+	In estimated mode, replay always estimates scale and gates only application
+	through `scaleEstimationApply`; estimator trace is exported to
+	`scale_replay_estimator_trace.csv`.
+- Removed obsolete complementary-odometry ROS parameters from runtime config
+	loading and primary YAMLs:
+	`complementaryOdom.minDeltaTime`,
+	`complementaryOdom.fallbackScaleSmoothingWindowSize`, and
+	`complementaryOdom.smoothFromNumDen`.
 - Purpose: replay the complementary-odom scaling/projection math offline with
   different parameters without re-running SLAM (reference run recorded once
   with scale estimation not applied).

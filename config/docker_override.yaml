@@ -41,13 +41,11 @@
         verbose: false
 
     complementaryOdom:
-      minDeltaTime: 0.1
       translationScale: 1.0                 # Constant multiplier applied to incoming complementary-odometry coordinates
       scaleEstimationEnabled: true            # Scale complementary-odom translation by non-degenerate LiDAR/complementary-odom displacement ratio
       scaleEstimationApply: true              # If true, apply the estimated smoothed scale to complementary-odometry translation in state correction
       scaleMinNonDegenerateSpeed: 0.2         # m/s; min non-degenerate speed (both displacements) to estimate the scale
       scaleBaselineFrameLag: 1                # Fixed lidar-frame lag for odometry pairing used by scale estimation
-      fallbackScaleSmoothingWindowSize: 30    # Moving-average window for fallback scale when observability gate is closed
       autoLookupLidarToTf: false
       frame: ""                               # Inferred from message if empty
       extrinsicTrans: [0.0, 0.0, 0.0]

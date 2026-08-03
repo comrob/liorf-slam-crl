@@ -40,15 +40,12 @@
         verbose: false
 
     complementaryOdom:
-      minDeltaTime: 0.1
       translationScale: 1.0
       scaleEstimationEnabled: true
       scaleEstimationApply: true
       scaleMinNonDegenerateSpeed: 0.2
       scaleBaselineFrameLag: 1
       scaleSmoothingWindowSize: 20
-      fallbackScaleSmoothingWindowSize: 30
-      smoothFromNumDen: false
       ignore_dz: false
       autoLookupLidarToTf: true
       frame: ""

@@ -11,6 +11,7 @@ python = ">=3.10,<3.13"
 numpy = "^1.26.0"
 folium = "^0.16.0"
 matplotlib = "^3.8.0"
+pyyaml = "^6.0"
 
 [tool.poetry.scripts]
 visualize-saved-map-satellite = "visualize_saved_map_satellite:main"
