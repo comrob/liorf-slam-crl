@@ -20,6 +20,7 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     diagnosticsOutputPolicy.write_telemetry = logOutput.enable_telemetry;
     diagnosticsOutputPolicy.write_time_deltas = logOutput.enable_time_deltas;
     diagnosticsOutputPolicy.write_frame_metrics = logOutput.enable_frame_metrics;
+    diagnosticsOutputPolicy.write_scale_replay_frames = logOutput.enable_scale_replay;
 
     TrajectoryOutputPolicy trajectoryOutputPolicy;
     trajectoryOutputPolicy.write_odom_trajectory_tum = logOutput.odom_enabled;

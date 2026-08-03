@@ -136,6 +136,7 @@ struct LogOutputConfig
     bool enable_telemetry = true;
     bool enable_time_deltas = true;
     bool enable_frame_metrics = true;
+    bool enable_scale_replay = false;
 
     bool odom_enabled = false;
 };
@@ -327,6 +328,9 @@ public:
         get_parameter("log.diagnostics.enable_time_deltas", logOutput.enable_time_deltas);
         declare_parameter<bool>("log.diagnostics.enable_frame_metrics", logOutput.enable_frame_metrics);
         get_parameter("log.diagnostics.enable_frame_metrics", logOutput.enable_frame_metrics);
+
+        declare_parameter<bool>("log.diagnostics.enable_scale_replay", logOutput.enable_scale_replay);
+        get_parameter("log.diagnostics.enable_scale_replay", logOutput.enable_scale_replay);
 
         declare_parameter<bool>("log.trajectory.odom.enabled", logOutput.odom_enabled);
         get_parameter("log.trajectory.odom.enabled", logOutput.odom_enabled);

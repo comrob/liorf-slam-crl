@@ -989,7 +989,57 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
             lagged_reconstructed_path_map);
     }
 
-    
+    // Per-frame replay record: everything the scaling logic consumes, so that
+    // odometry-scaling experiments can be replayed offline without re-running SLAM.
+    if (diagnostics)
+    {
+        ScaleReplayFrameSample replay;
+        replay.stamp_sec = timeLaserInfoCur;
+        replay.lidar_prev_stamp_s = lidar_prev_stamp_s;
+        replay.dt_scan_s = dt_scan;
+        replay.degeneracy_detected = degeneracyDetected;
+        replay.has_degeneracy_basis = hasDegeneracyBasis;
+        replay.has_complementary_twist = hasComplementaryPrediction;
+        replay.override_applied_to_state = estimatorModeActive && hasDegeneracyBasis;
+        replay.scale_applied = (scaleApplyEnabled && std::isfinite(smoothedScaleForApply))
+                                   ? smoothedScaleForApply
+                                   : 1.0;
+
+        replay.basis_size = static_cast<int>(std::min<size_t>(orthoBasis.size(), 3));
+        for (size_t i = 0; i < 3; ++i)
+            for (size_t j = 0; j < 6; ++j)
+                replay.basis_twists[i][j] = (i < orthoBasis.size())
+                                                ? static_cast<double>(orthoBasis[i][j])
+                                                : std::numeric_limits<double>::quiet_NaN();
+
+        const TwistVector xi_lidar_increment =
+            matrixToTwist(T_previous.matrix().inverse() * T_optimized.matrix());
+        for (size_t j = 0; j < 6; ++j)
+        {
+            replay.lidar_increment_twist[j] = static_cast<double>(xi_lidar_increment[j]);
+            replay.complementary_twist[j] = hasComplementaryPrediction
+                                                ? static_cast<double>(xi_complementary_lidar[j])
+                                                : std::numeric_limits<double>::quiet_NaN();
+        }
+
+        replay.dt_complementary_s = match_info.dt_complementary_s;
+        replay.odom_prev_stamp_s = match_info.odom_prev_stamp_s;
+        replay.odom_curr_stamp_s = match_info.odom_curr_stamp_s;
+
+        const auto fillPose = [](const Eigen::Affine3f &T, std::array<double, 7> &out)
+        {
+            const Eigen::Vector3f t = T.translation();
+            const Eigen::Quaternionf q(T.rotation());
+            out = {static_cast<double>(t.x()), static_cast<double>(t.y()), static_cast<double>(t.z()),
+                   static_cast<double>(q.x()), static_cast<double>(q.y()), static_cast<double>(q.z()),
+                   static_cast<double>(q.w())};
+        };
+        fillPose(T_previous, replay.pose_prev);
+        fillPose(T_optimized, replay.pose_optimized);
+        fillPose(T_effective_current, replay.pose_effective);
+
+        diagnostics->recordScaleReplayFrameCsv(replay);
+    }
 
     if (!estimatorModeActive || !hasDegeneracyBasis)
         return;

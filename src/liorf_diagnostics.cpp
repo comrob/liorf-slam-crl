@@ -43,6 +43,8 @@ LiorfDiagnostics::LiorfDiagnostics(
         complementary_odom_scale_csv_.open((run_dir_ / "complementary_odom_scale.csv").string(), std::ios::out);
         complementary_odom_twist_csv_.open((run_dir_ / "complementary_odom_twist.csv").string(), std::ios::out);
     }
+    if (diagnostics_files_enabled && diagnostics_output_policy_.write_scale_replay_frames)
+        scale_replay_frames_csv_.open((run_dir_ / "scale_replay_frames.csv").string(), std::ios::out);
 
     // Odom trajectory TUM export is controlled independently from diagnostics file gating.
     if (odom_trajectory_export_enabled)
@@ -147,6 +149,39 @@ LiorfDiagnostics::LiorfDiagnostics(
             << ",complementary_odom_twist/norm/lin"
             << ",complementary_odom_twist/norm/ang\n";
     }
+    if (scale_replay_frames_csv_.is_open())
+    {
+        static const char *kTwistAxes[6] = {"vx", "vy", "vz", "wx", "wy", "wz"};
+        static const char *kPoseAxes[7] = {"tx", "ty", "tz", "qx", "qy", "qz", "qw"};
+        scale_replay_frames_csv_
+            << "time"
+            << ",scale_replay/stamp/lidar_prev_s"
+            << ",scale_replay/dt/scan_s"
+            << ",scale_replay/flags/degeneracy_detected"
+            << ",scale_replay/flags/has_degeneracy_basis"
+            << ",scale_replay/flags/has_complementary_twist"
+            << ",scale_replay/flags/override_applied_to_state"
+            << ",scale_replay/scale/applied"
+            << ",scale_replay/basis/size";
+        for (int i = 0; i < 3; ++i)
+            for (int j = 0; j < 6; ++j)
+                scale_replay_frames_csv_ << ",scale_replay/basis/" << i << "/" << kTwistAxes[j];
+        for (int j = 0; j < 6; ++j)
+            scale_replay_frames_csv_ << ",scale_replay/lidar_increment/" << kTwistAxes[j];
+        for (int j = 0; j < 6; ++j)
+            scale_replay_frames_csv_ << ",scale_replay/complementary_twist/" << kTwistAxes[j];
+        scale_replay_frames_csv_
+            << ",scale_replay/complementary/dt_s"
+            << ",scale_replay/complementary/odom_prev_stamp_s"
+            << ",scale_replay/complementary/odom_curr_stamp_s";
+        for (int j = 0; j < 7; ++j)
+            scale_replay_frames_csv_ << ",scale_replay/pose_prev/" << kPoseAxes[j];
+        for (int j = 0; j < 7; ++j)
+            scale_replay_frames_csv_ << ",scale_replay/pose_optimized/" << kPoseAxes[j];
+        for (int j = 0; j < 7; ++j)
+            scale_replay_frames_csv_ << ",scale_replay/pose_effective/" << kPoseAxes[j];
+        scale_replay_frames_csv_ << "\n";
+    }
 
     dumpActiveParameters();
 
@@ -187,6 +222,8 @@ LiorfDiagnostics::~LiorfDiagnostics()
         complementary_odom_scale_csv_.flush();
     if (diagnostics_files_enabled && complementary_odom_twist_csv_.is_open())
         complementary_odom_twist_csv_.flush();
+    if (diagnostics_files_enabled && scale_replay_frames_csv_.is_open())
+        scale_replay_frames_csv_.flush();
     if (odom_trajectory_tum_.is_open())
         odom_trajectory_tum_.flush();
     if (diagnostics_files_enabled && jacobian_degeneracy_metrics_csv_.is_open())
@@ -368,6 +405,41 @@ void LiorfDiagnostics::recordComplementaryOdomTwistCsv(const ComplementaryOdomTw
                                    << sample.curr_match_abs_dt_s << ","
                                    << sample.lin_norm << ","
                                    << sample.ang_norm << "\n";
+}
+
+void LiorfDiagnostics::recordScaleReplayFrameCsv(const ScaleReplayFrameSample &sample)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!scale_replay_frames_csv_.is_open())
+        return;
+
+    scale_replay_frames_csv_ << std::fixed << std::setprecision(9)
+                             << sample.stamp_sec << ","
+                             << sample.lidar_prev_stamp_s << ","
+                             << sample.dt_scan_s << ","
+                             << (sample.degeneracy_detected ? 1 : 0) << ","
+                             << (sample.has_degeneracy_basis ? 1 : 0) << ","
+                             << (sample.has_complementary_twist ? 1 : 0) << ","
+                             << (sample.override_applied_to_state ? 1 : 0) << ","
+                             << sample.scale_applied << ","
+                             << sample.basis_size;
+    for (const auto &twist : sample.basis_twists)
+        for (const double v : twist)
+            scale_replay_frames_csv_ << "," << v;
+    for (const double v : sample.lidar_increment_twist)
+        scale_replay_frames_csv_ << "," << v;
+    for (const double v : sample.complementary_twist)
+        scale_replay_frames_csv_ << "," << v;
+    scale_replay_frames_csv_ << "," << sample.dt_complementary_s
+                             << "," << sample.odom_prev_stamp_s
+                             << "," << sample.odom_curr_stamp_s;
+    for (const double v : sample.pose_prev)
+        scale_replay_frames_csv_ << "," << v;
+    for (const double v : sample.pose_optimized)
+        scale_replay_frames_csv_ << "," << v;
+    for (const double v : sample.pose_effective)
+        scale_replay_frames_csv_ << "," << v;
+    scale_replay_frames_csv_ << "\n";
 }
 
 void LiorfDiagnostics::publishWarning(const std::string &message)

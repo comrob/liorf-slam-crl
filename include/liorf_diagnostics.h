@@ -16,6 +16,7 @@
 #include <ctime>
 #include <functional>
 #include <algorithm>
+#include <array>
 #include <vector>
 #include <limits>
 
@@ -43,6 +44,7 @@ struct DiagnosticsOutputPolicy
     bool write_telemetry = true;
     bool write_time_deltas = true;
     bool write_frame_metrics = true;
+    bool write_scale_replay_frames = false;
 };
 
 struct TrajectoryOutputPolicy
@@ -126,6 +128,35 @@ struct ComplementaryOdomScaleDebugSample
     double dt_immediate_odom_pair_interval_s = std::numeric_limits<double>::quiet_NaN();
 };
 
+// Per-frame record of everything the complementary-odom scaling logic consumes,
+// intended for offline replay of the scaling math with different parameters.
+// All twists/basis vectors are expressed in the body frame of the optimized pose.
+struct ScaleReplayFrameSample
+{
+    double stamp_sec = 0.0;
+    double lidar_prev_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double dt_scan_s = std::numeric_limits<double>::quiet_NaN();
+    bool degeneracy_detected = false;
+    bool has_degeneracy_basis = false;
+    bool has_complementary_twist = false;
+    bool override_applied_to_state = false;
+    double scale_applied = std::numeric_limits<double>::quiet_NaN();
+    int basis_size = 0;
+    // Orthonormal degeneracy basis twists (vx vy vz wx wy wz); NaN beyond basis_size.
+    std::array<std::array<double, 6>, 3> basis_twists{};
+    // Displacement twist of T_prev^-1 * T_optimized (pre-override LiDAR increment).
+    std::array<double, 6> lidar_increment_twist{};
+    // Unscaled complementary odometry velocity twist in the LiDAR frame.
+    std::array<double, 6> complementary_twist{};
+    double dt_complementary_s = std::numeric_limits<double>::quiet_NaN();
+    double odom_prev_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    double odom_curr_stamp_s = std::numeric_limits<double>::quiet_NaN();
+    // Absolute map-frame poses: tx ty tz qx qy qz qw.
+    std::array<double, 7> pose_prev{};
+    std::array<double, 7> pose_optimized{};
+    std::array<double, 7> pose_effective{};
+};
+
 class LiorfDiagnostics
 {
 public:
@@ -176,6 +207,7 @@ public:
         const std::string &fail_reason);
     void recordComplementaryOdomScaleCsv(const ComplementaryOdomScaleDebugSample &sample);
     void recordComplementaryOdomTwistCsv(const ComplementaryOdomTwistDebugSample &sample);
+    void recordScaleReplayFrameCsv(const ScaleReplayFrameSample &sample);
     void recordOdomTrajectoryTum(const TumPoseSample &sample);
     double getLastPredictionDelta() const;
     std::filesystem::path runDirectory() const { return run_dir_; }
@@ -203,6 +235,7 @@ private:
     std::ofstream perturbation_degeneracy_metrics_csv_;
     std::ofstream complementary_odom_scale_csv_;
     std::ofstream complementary_odom_twist_csv_;
+    std::ofstream scale_replay_frames_csv_;
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr telemetry_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr timing_stats_pub_;

@@ -13,6 +13,7 @@
         enable_telemetry: true
         enable_time_deltas: true
         enable_frame_metrics: true
+        enable_scale_replay: false
       trajectory:
         odom:
           enabled: false

@@ -26,6 +26,58 @@ change SLAM/logging functionality.
 
 ---
 
+## 2026-08-03 - Add per-frame scale-replay CSV log for offline odometry-scaling experiments
+
+### Files changed
+
+- [include/liorf_diagnostics.h](include/liorf_diagnostics.h)
+- [src/liorf_diagnostics.cpp](src/liorf_diagnostics.cpp)
+- [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
+- [include/utility.h](include/utility.h)
+- [src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [config/anymal.yaml](config/anymal.yaml)
+- [scripts/replay_scale_trajectory.py](scripts/replay_scale_trajectory.py)
+- [scripts/pyproject.toml](scripts/pyproject.toml)
+
+### Behavior impact
+
+- New diagnostics file `scale_replay_frames.csv` (in the run directory, gated by
+  the existing diagnostics master switch) records, once per LiDAR frame at the
+  end of `applyDegeneracyStateOverride()`:
+  - orthonormal degeneracy basis twists (body frame of the optimized pose),
+  - pre-override LiDAR increment twist `log(T_prev^-1 * T_optimized)`,
+  - unscaled complementary-odometry velocity twist in the LiDAR frame with its
+    odom pair timestamps and span,
+  - absolute previous/optimized/effective map-frame poses (t + quaternion),
+  - flags: degeneracy detected, basis present, twist present, override applied,
+    and the scale value applied to state.
+- New ROS parameter `log.diagnostics.enable_scale_replay` (default `false`)
+  gates whether `scale_replay_frames.csv` is opened/written; plumbed via
+  `LogOutputConfig::enable_scale_replay` and
+  `DiagnosticsOutputPolicy::write_scale_replay_frames`.
+- New offline replay tool `scripts/replay_scale_trajectory.py`
+  (`replay-scale-trajectory` poetry entry): reads `scale_replay_frames.csv`,
+  chains poses from the trustworthy LiDAR increments, and re-applies the
+  degenerate-direction override with the scaled complementary prediction for
+  one or more chosen translation scales, emitting TUM trajectories. Ports the
+  C++ SE(3) exp/log and `projectOntoBasis`/`projectDegenerateCorrection` math so
+  replayed geometry matches the online pipeline. Supports `--validate` (replay
+  with the recorded per-frame scale and report drift vs recorded effective
+  trajectory) and `--no-correction` (LiDAR-only baseline).
+- Purpose: replay the complementary-odom scaling/projection math offline with
+  different parameters without re-running SLAM (reference run recorded once
+  with scale estimation not applied).
+- No algorithmic change to the SLAM pipeline; recording plus offline tooling.
+
+### Migration/runtime risk notes
+
+- Rows are only written when `degeneracyDetection.compensation_source != "none"`
+  (the state-override function returns early otherwise); reference runs must
+  keep complementary odometry compensation configured to obtain a full log.
+
+---
+
 ## 2026-07-31 - Add explicit scale observability outputs for lagged complementary odom
 
 ### Files changed

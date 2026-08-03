@@ -16,6 +16,7 @@ matplotlib = "^3.8.0"
 visualize-saved-map-satellite = "visualize_saved_map_satellite:main"
 plot-jacobian-perturbation-degeneracy = "plot_jacobian_perturbation_degeneracy:main"
 plot-complementary-odom-scale-diagnostics = "plot_complementary_odom_scale_diagnostics:main"
+replay-scale-trajectory = "replay_scale_trajectory:main"
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

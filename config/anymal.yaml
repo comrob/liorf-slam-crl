@@ -11,6 +11,7 @@
         enable_telemetry: true
         enable_time_deltas: true
         enable_frame_metrics: true
+        enable_scale_replay: true
       trajectory:
         odom:
           enabled: true
@@ -39,9 +40,9 @@
 
     complementaryOdom:
       minDeltaTime: 0.05
-      translationScale: 1.2                 # Constant multiplier applied to incoming complementary-odometry coordinates
+      translationScale: 1.0                 # Constant multiplier applied to incoming complementary-odometry coordinates
       scaleEstimationEnabled: true            # Scale complementary-odom translation by non-degenerate LiDAR/complementary-odom displacement ratio
-      scaleEstimationApply: true              # If true, apply the estimated smoothed scale to complementary-odom translation in state correction
+      scaleEstimationApply: false              # If true, apply the estimated smoothed scale to complementary-odom translation in state correction
       scaleMinNonDegenerateSpeed: 0.2         # m/s; min non-degenerate speed (both displacements) to estimate the scale
       scaleBaselineFrameLag: 10                # Fixed lidar-frame lag for odometry pairing used by scale estimation
       scaleSmoothingWindowSize: 1000            # Moving-average window for applied complementary-odom scale
