@@ -107,6 +107,7 @@ struct DegeneracyDetectionParameters
 struct ComplementaryOdomParameters
 {
     double minDeltaTime = 0.1;
+    double translationScale = 1.0;
     bool scaleEstimationEnabled = true;
     bool scaleEstimationApply = true;
     double scaleMinNonDegenerateSpeed = 0.2; // m/s, observability gate for scale estimation
@@ -474,6 +475,14 @@ public:
         // complementary odometry parameters
         declare_parameter<double>("complementaryOdom.minDeltaTime", 0.1);
         get_parameter("complementaryOdom.minDeltaTime", complementaryOdom.minDeltaTime);
+
+        declare_parameter<double>("complementaryOdom.translationScale", 1.0);
+        get_parameter("complementaryOdom.translationScale", complementaryOdom.translationScale);
+        if (!std::isfinite(complementaryOdom.translationScale) ||
+            complementaryOdom.translationScale <= 0.0)
+        {
+            complementaryOdom.translationScale = 1.0;
+        }
 
         declare_parameter<bool>("complementaryOdom.scaleEstimationEnabled", true);
         get_parameter("complementaryOdom.scaleEstimationEnabled", complementaryOdom.scaleEstimationEnabled);

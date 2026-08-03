@@ -40,6 +40,7 @@
 
     complementaryOdom:
       minDeltaTime: 0.1
+      translationScale: 1.0
       scaleEstimationEnabled: true
       scaleEstimationApply: true
       scaleMinNonDegenerateSpeed: 0.2

@@ -33,6 +33,10 @@ change SLAM/logging functionality.
 - [msg/ComplementaryOdomScaleDebug.msg](msg/ComplementaryOdomScaleDebug.msg)
 - [include/mapOptimization/mapOptimization.hpp](include/mapOptimization/mapOptimization.hpp)
 - [src/mapOptimization/mapOptimization_degeneracy.cpp](src/mapOptimization/mapOptimization_degeneracy.cpp)
+- [include/utility.h](include/utility.h)
+- [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- [config/anymal.yaml](config/anymal.yaml)
+- [config/docker_override.yaml](config/docker_override.yaml)
 - [rviz/mapping.rviz](rviz/mapping.rviz)
 - [CHANGELOG.md](CHANGELOG.md)
 
@@ -53,6 +57,12 @@ change SLAM/logging functionality.
 	translation before degenerate-direction correction is computed.
 - Added `complementaryOdom.scaleEstimationApply` to independently control
 	whether estimated smoothed scale is applied to state correction.
+- Added `complementaryOdom.translationScale` (default `1.0`) as a constant
+	multiplier for incoming complementary-odometry translation coordinates.
+- Complementary-odometry messages are now pre-scaled at ingress
+	(`complementaryOdomHandler`) by applying `translationScale` directly to
+	position coordinates before queueing/matching, which also scales derived
+	relative translational increments by the same constant factor.
 - Scale observability/filtering and scale application are now gated by
 	`complementaryOdom.scaleEstimationEnabled`; when disabled, scale defaults
 	to `1.0` (no translational scaling applied).

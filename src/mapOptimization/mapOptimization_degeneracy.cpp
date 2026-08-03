@@ -8,7 +8,11 @@
 void mapOptimization::complementaryOdomHandler(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
     std::lock_guard<std::mutex> lock(complementaryOdomMutex);
-    complementaryOdomQueue.push_back(*msg);
+    nav_msgs::msg::Odometry scaled_msg = *msg;
+    scaled_msg.pose.pose.position.x *= complementaryOdom.translationScale;
+    scaled_msg.pose.pose.position.y *= complementaryOdom.translationScale;
+    scaled_msg.pose.pose.position.z *= complementaryOdom.translationScale;
+    complementaryOdomQueue.push_back(scaled_msg);
 
     const size_t odomBufferSizeCap = static_cast<size_t>(
         std::max(5000, 100 * std::max(1, complementaryOdom.scaleBaselineFrameLag)));
