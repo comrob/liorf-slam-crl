@@ -1,0 +1,27 @@
+/**:
+  ros__parameters:
+    complementaryOdom:
+
+      # Whether to apply the estimated scale to the complementary odometry.
+      # If false, scale is still estimated and logged but not applied.
+      scaleEstimationApply: true
+
+      # Minimum non-degenerate speed [m/s] required for a scale sample to
+      # be considered observable. Samples below this threshold are discarded.
+      scaleMinNonDegenerateSpeed: 0.2
+
+      # Number of frames to lag the anchor pose for scale estimation.
+      # Larger values reduce sensitivity to per-frame noise at the cost of latency.
+      scaleBaselineFrameLag: 10
+
+      # Number of recent observable samples to average for the applied scale.
+      scaleSmoothingWindowSize: 1000
+
+      # If true, the Z component of translations is zeroed before scale
+      # estimation (useful for ground-vehicle / planar-motion datasets).
+      ignore_dz: true
+
+      # Additional multiplier applied to complementary odometry translation.
+      # The recorded twists already include the online run's translationScale;
+      # this is an extra replay-time factor on top of that.
+      translationScale: 1.0
