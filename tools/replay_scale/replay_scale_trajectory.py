@@ -20,9 +20,11 @@ import sys
 from .replay_io import (
     load_frames,
     load_replay_params_from_ros_yaml,
+    load_replay_tool_settings,
     position_drift,
     recorded_effective_trajectory,
     write_scale_trace_csv,
+    write_scale_vector_csv,
     write_tum,
 )
 from .scale_estimator import reconstruct_fixed, reconstruct_with_estimator
@@ -63,13 +65,6 @@ def _resolve_csv(input_path, latest, base_dir):
     return csv_path
 
 
-def _parse_scales(text):
-    values = [float(s) for s in text.split(",") if s.strip()]
-    if not values:
-        raise ValueError("--scales must contain at least one value")
-    return values
-
-
 def _print_replay_params(params):
     print("  estimator params:")
     print(f"    translationScale: {params.translation_scale}")
@@ -89,21 +84,13 @@ def main(argv=None):
                         help="Use the newest run under --base-dir.")
     parser.add_argument("--base-dir", default="~/.ros/liorf_logs",
                         help="Base directory holding run_* folders (default: %(default)s).")
-    parser.add_argument("--scale-mode", choices=("fixed", "recorded", "estimated"), default="estimated",
-                        help="Scale source: fixed values, recorded per-frame scales, or online-style estimated scales.")
-    parser.add_argument("--scales", default="1.0",
-                        help="Comma-separated translation scales for --scale-mode fixed (default: %(default)s).")
     parser.add_argument("--ros-params-yaml", default=_DEFAULT_CONFIG,
-                        help="ROS YAML with complementaryOdom parameters (default: bundled config/default.yaml).")
-    parser.add_argument("--output-dir", default="",
-                        help="Base directory for output files (default: alongside the CSV).")
-    parser.add_argument("--output-subdir", default="replay_trajectories",
-                        help="Subfolder under --output-dir for outputs (default: %(default)s).")
-    parser.add_argument("--no-correction", action="store_true",
-                        help="Also emit the LiDAR-only trajectory (no degeneracy override).")
-    parser.add_argument("--validate", action="store_true",
-                        help="Replay with the recorded per-frame scale and report drift vs recorded effective.")
+                        help="YAML config with complementaryOdom and replay_scale_tool settings "
+                             "(default: bundled config/default.yaml).")
     args = parser.parse_args(argv)
+
+    config_path = _expand(args.ros_params_yaml)
+    settings = load_replay_tool_settings(config_path)
 
     csv_path = _resolve_csv(args.input, args.latest, args.base_dir)
     frames = load_frames(csv_path)
@@ -111,25 +98,28 @@ def main(argv=None):
         print(f"No frames found in {csv_path}", file=sys.stderr)
         return 1
 
-    base_out_dir = _expand(args.output_dir) if args.output_dir else os.path.dirname(csv_path)
-    out_dir = os.path.join(base_out_dir, args.output_subdir)
-    os.makedirs(out_dir, exist_ok=True)
+    base_out_dir = _expand(settings.output_dir) if settings.output_dir else os.path.dirname(csv_path)
+    out_dir = os.path.join(base_out_dir, settings.output_subdir)
+    traj_dir = os.path.join(out_dir, "trajectories")
+    log_dir = os.path.join(out_dir, "log")
+    os.makedirs(traj_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
 
     n_deg = sum(1 for f in frames if f.degeneracy_detected and f.has_basis)
     print(f"Loaded {len(frames)} frames from {csv_path}")
     print(f"  frames with degeneracy override: {n_deg}")
     print(f"  output directory: {out_dir}")
-    print(f"  scale mode: {args.scale_mode}")
+    print(f"  scale mode: {settings.scale_mode}")
 
     recorded = recorded_effective_trajectory(frames)
-    rec_path = os.path.join(out_dir, "trajectory_recorded_effective.tum")
+    rec_path = os.path.join(traj_dir, "trajectory_recorded_effective.tum")
     write_tum(rec_path, recorded)
     print(f"  wrote {rec_path}")
 
-    if args.validate:
+    if settings.validate:
         traj_val = reconstruct_fixed(frames, lambda f: f.scale_applied, apply_correction=True)
         drift = position_drift(traj_val, recorded)
-        val_path = os.path.join(out_dir, "trajectory_replay_validate.tum")
+        val_path = os.path.join(traj_dir, "trajectory_replay_validate.tum")
         write_tum(val_path, traj_val)
         print(f"  wrote {val_path}")
         if drift.size:
@@ -137,34 +127,37 @@ def main(argv=None):
                   f"mean={drift.mean():.6f} m  max={drift.max():.6f} m  "
                   f"rms={(float((drift ** 2).mean()) ** 0.5):.6f} m")
 
-    if args.scale_mode == "fixed":
-        for scale in _parse_scales(args.scales):
+    if settings.scale_mode == "fixed":
+        for scale in settings.scales:
             traj = reconstruct_fixed(frames, lambda f, s=scale: s, apply_correction=True)
-            path = os.path.join(out_dir, f"trajectory_replay_scale_{scale:g}.tum")
+            path = os.path.join(traj_dir, f"trajectory_replay_scale_{scale:g}.tum")
             write_tum(path, traj)
             print(f"  wrote {path}  (scale={scale:g})")
 
-    elif args.scale_mode == "recorded":
+    elif settings.scale_mode == "recorded":
         traj = reconstruct_fixed(frames, lambda f: f.scale_applied, apply_correction=True)
-        path = os.path.join(out_dir, "trajectory_replay_recorded_scale.tum")
+        path = os.path.join(traj_dir, "trajectory_replay_recorded_scale.tum")
         write_tum(path, traj)
         print(f"  wrote {path}")
 
-    elif args.scale_mode == "estimated":
-        params = load_replay_params_from_ros_yaml(_expand(args.ros_params_yaml))
+    elif settings.scale_mode == "estimated":
+        params = load_replay_params_from_ros_yaml(config_path)
         _print_replay_params(params)
 
-        traj, scale_trace = reconstruct_with_estimator(frames, params)
-        traj_path = os.path.join(out_dir, "trajectory_replay_estimated_scale.tum")
-        trace_path = os.path.join(out_dir, "scale_replay_estimator_trace.csv")
+        traj, scale_trace, vector_trace = reconstruct_with_estimator(frames, params, collect_vectors=True)
+        traj_path = os.path.join(traj_dir, "trajectory_replay_estimated_scale.tum")
+        trace_path = os.path.join(log_dir, "scale_replay_estimator_trace.csv")
+        vector_path = os.path.join(log_dir, "scale_replay_vectors.csv")
         write_tum(traj_path, traj)
         write_scale_trace_csv(trace_path, scale_trace)
+        write_scale_vector_csv(vector_path, vector_trace)
         print(f"  wrote {traj_path}")
         print(f"  wrote {trace_path}")
+        print(f"  wrote {vector_path}")
 
-    if args.no_correction:
+    if settings.no_correction:
         traj = reconstruct_fixed(frames, lambda f: 1.0, apply_correction=False)
-        path = os.path.join(out_dir, "trajectory_replay_lidar_only.tum")
+        path = os.path.join(traj_dir, "trajectory_replay_lidar_only.tum")
         write_tum(path, traj)
         print(f"  wrote {path}")
 

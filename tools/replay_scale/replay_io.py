@@ -1,6 +1,7 @@
 """CSV/YAML input and TUM/CSV output helpers."""
 
 import csv
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -9,8 +10,20 @@ try:
 except ImportError:  # Optional dependency until used.
     yaml = None
 
-from .scale_estimator import Frame, ReplayParams, ScaleEstimateFrame
+from .scale_estimator import Frame, ReplayParams, ScaleEstimateFrame, ScaleVectorFrame
 from .se3_math import matrix_to_quat, quat_to_matrix
+
+_SCALE_MODES = ("fixed", "recorded", "estimated")
+
+
+@dataclass
+class ReplayToolSettings:
+    scale_mode: str = "estimated"
+    scales: list = field(default_factory=lambda: [1.0])
+    output_dir: str = ""
+    output_subdir: str = "replay"
+    no_correction: bool = False
+    validate: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +120,32 @@ def load_replay_params_from_ros_yaml(yaml_path):
     return params
 
 
+def load_replay_tool_settings(yaml_path):
+    """Load the replay_scale_tool section (sibling of the ROS ros__parameters tree)."""
+    if yaml is None:
+        raise RuntimeError("PyYAML is required to load replay tool settings. Install pyyaml.")
+
+    with open(yaml_path, "r", encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh)
+
+    section = raw.get("replay_scale_tool", {}) if isinstance(raw, dict) else {}
+    settings = ReplayToolSettings()
+    if isinstance(section, dict):
+        settings.scale_mode = str(section.get("scale_mode", settings.scale_mode))
+        settings.scales = [float(s) for s in section.get("scales", settings.scales)]
+        settings.output_dir = str(section.get("output_dir", settings.output_dir))
+        settings.output_subdir = str(section.get("output_subdir", settings.output_subdir))
+        settings.no_correction = bool(section.get("no_correction", settings.no_correction))
+        settings.validate = bool(section.get("validate", settings.validate))
+
+    if settings.scale_mode not in _SCALE_MODES:
+        raise ValueError(
+            f"replay_scale_tool.scale_mode must be one of {_SCALE_MODES}, got {settings.scale_mode!r}")
+    if not settings.scales:
+        raise ValueError("replay_scale_tool.scales must contain at least one value")
+    return settings
+
+
 # ---------------------------------------------------------------------------
 # Output writers
 # ---------------------------------------------------------------------------
@@ -153,3 +192,45 @@ def position_drift(traj_a, traj_b):
     diffs = np.array([np.linalg.norm(traj_a[i][1][:3, 3] - traj_b[i][1][:3, 3])
                       for i in range(n)], dtype=float)
     return diffs
+
+
+def write_scale_vector_csv(path, vector_trace):
+    if not vector_trace:
+        return
+
+    _vec_fields = (
+        ("anchor_pos",              "anchor"),
+        ("latest_pos",              "latest"),
+        ("t_lidar_map",             "t_lidar_map"),
+        ("t_comp_map",              "t_comp_map"),
+        ("t_lidar_nondeg_map",      "t_lidar_nondeg_map"),
+        ("t_comp_nondeg_map",       "t_comp_nondeg_map"),
+        ("t_lidar_nondeg_proj_map", "t_lidar_nondeg_proj_map"),
+        ("nondeg_axis_map",         "nondeg_axis_map"),
+    )
+    header = ["frame_idx", "time", "degeneracy_detected", "gate_observable"]
+    for _, col in _vec_fields:
+        for ax in ("x", "y", "z"):
+            header.append(f"{col}/{ax}")
+    header += ["scale_instant_raw", "scale_smooth", "scale_applied"]
+
+    def _fs(x):
+        return f"{float(x):.9f}" if np.isfinite(x) else "nan"
+
+    def _fv(v):
+        return [_fs(c) for c in v]
+
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh)
+        writer.writerow(header)
+        for vf in vector_trace:
+            row = [
+                vf.frame_idx,
+                f"{vf.time:.9f}",
+                1 if vf.degeneracy_detected else 0,
+                1 if vf.gate_observable else 0,
+            ]
+            for attr, _ in _vec_fields:
+                row.extend(_fv(getattr(vf, attr)))
+            row += [_fs(vf.scale_instant_raw), _fs(vf.scale_smooth), _fs(vf.scale_applied)]
+            writer.writerow(row)

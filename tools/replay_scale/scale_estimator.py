@@ -51,6 +51,17 @@ class ScaleEstimateFrame:
     scale_applied: float
 
 
+class ScaleVectorFrame:
+    __slots__ = (
+        "frame_idx", "time", "degeneracy_detected", "gate_observable",
+        "anchor_pos", "latest_pos",
+        "t_lidar_map", "t_comp_map",
+        "t_lidar_nondeg_map", "t_comp_nondeg_map",
+        "t_lidar_nondeg_proj_map", "nondeg_axis_map",
+        "scale_instant_raw", "scale_smooth", "scale_applied",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Trajectory reconstruction
 # ---------------------------------------------------------------------------
@@ -96,6 +107,7 @@ def build_additional_odom_scale_sample(
     ignore_dz,
     dt_complementary_s,
     min_nondegenerate_speed,
+    debug=False,
 ):
     """Port of mapOptimization::buildAdditionalOdomCorrectionResult for scaling."""
     t_lidar_rel_anchor = T_lidar_rel[:3, 3].copy()
@@ -145,15 +157,27 @@ def build_additional_odom_scale_sample(
         and projected_nondeg_speed >= max(0.0, min_nondegenerate_speed)
     )
 
-    return {
+    result = {
         "valid": True,
         "gate_observable": bool(gate_observable),
         "scale_instant_raw": float(scale_instant_raw),
         "scale_filtered": float(scale_instant_raw) if gate_observable else np.nan,
     }
+    if debug:
+        result["debug"] = {
+            "anchor_pos": T_anchor[:3, 3].copy(),
+            "latest_pos": T_latest[:3, 3].copy(),
+            "t_lidar_map": t_lidar_map.copy(),
+            "t_comp_map": t_comp_corrected_map.copy(),
+            "t_lidar_nondeg_map": R_latest @ t_lidar_nondeg,
+            "t_comp_nondeg_map": R_latest @ t_comp_nondeg,
+            "t_lidar_nondeg_proj_map": R_latest @ t_lidar_nondeg_proj,
+            "nondeg_axis_map": R_latest @ comp_unit,
+        }
+    return result
 
 
-def reconstruct_with_estimator(frames, params):
+def reconstruct_with_estimator(frames, params, collect_vectors=False):
     """Replay with online-style lagged scale estimation and application.
 
     Notes about parity with C++:
@@ -164,11 +188,12 @@ def reconstruct_with_estimator(frames, params):
       ``scaleEstimationApply``.
     """
     if not frames:
-        return [], []
+        return [], [], []
 
     T_prev = frames[0].pose_prev.copy()
     out = []
     scale_trace = []
+    vector_trace = []
 
     baseline_lag = max(1, int(params.scale_baseline_frame_lag))
     lidar_pose_buffer = deque()  # tuples: (frame_idx, stamp, T_effective)
@@ -226,6 +251,7 @@ def reconstruct_with_estimator(frames, params):
         gate_observable = False
         scale_instant_raw = np.nan
         scale_filtered = np.nan
+        debug_vecs = None
 
         # Port of lagged scale update path: if buffer has anchor/current pair,
         # estimate lagged scale sample and append to filtered history when observable.
@@ -254,10 +280,13 @@ def reconstruct_with_estimator(frames, params):
                     bool(params.ignore_dz),
                     dt_comp_window,
                     float(params.scale_min_nondegenerate_speed),
+                    debug=collect_vectors,
                 )
                 gate_observable = sample["gate_observable"]
                 scale_instant_raw = sample["scale_instant_raw"]
                 scale_filtered = sample["scale_filtered"]
+                if collect_vectors:
+                    debug_vecs = sample.get("debug")
 
                 if np.isfinite(scale_filtered):
                     lagged_scale_filtered_history.append(float(scale_filtered))
@@ -274,7 +303,32 @@ def reconstruct_with_estimator(frames, params):
             scale_smooth=float(scale_smooth),
             scale_applied=float(scale_applied),
         ))
+        if collect_vectors:
+            _nan3 = np.full(3, np.nan)
+            vf = ScaleVectorFrame()
+            vf.frame_idx = k
+            vf.time = float(f.time)
+            vf.degeneracy_detected = bool(estimator_mode_active)
+            vf.gate_observable = bool(gate_observable)
+            if debug_vecs is not None:
+                vf.anchor_pos = debug_vecs["anchor_pos"]
+                vf.latest_pos = debug_vecs["latest_pos"]
+                vf.t_lidar_map = debug_vecs["t_lidar_map"]
+                vf.t_comp_map = debug_vecs["t_comp_map"]
+                vf.t_lidar_nondeg_map = debug_vecs["t_lidar_nondeg_map"]
+                vf.t_comp_nondeg_map = debug_vecs["t_comp_nondeg_map"]
+                vf.t_lidar_nondeg_proj_map = debug_vecs["t_lidar_nondeg_proj_map"]
+                vf.nondeg_axis_map = debug_vecs["nondeg_axis_map"]
+            else:
+                for _attr in ("anchor_pos", "latest_pos", "t_lidar_map", "t_comp_map",
+                              "t_lidar_nondeg_map", "t_comp_nondeg_map",
+                              "t_lidar_nondeg_proj_map", "nondeg_axis_map"):
+                    setattr(vf, _attr, _nan3.copy())
+            vf.scale_instant_raw = float(scale_instant_raw)
+            vf.scale_smooth = float(scale_smooth)
+            vf.scale_applied = float(scale_applied)
+            vector_trace.append(vf)
 
         T_prev = T_effective
 
-    return out, scale_trace
+    return out, scale_trace, vector_trace
