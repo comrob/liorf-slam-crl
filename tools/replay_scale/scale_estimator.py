@@ -98,6 +98,31 @@ def reconstruct_fixed(frames, scale_of_frame, apply_correction=True, translation
     return out
 
 
+def reconstruct_complementary_only(frames, translation_scale_multiplier=1.0):
+    """Chain a trajectory purely from complementary (additional) odometry twists.
+
+    No LiDAR fusion or estimated-scale correction is applied; only the
+    replay-time translationScale multiplier is used, so this shows the raw
+    additional-odometry sensor's own drift/shape for comparison.
+    """
+    if not frames:
+        return []
+
+    T_prev = frames[0].pose_prev.copy()
+    out = []
+    for f in frames:
+        if f.has_complementary and np.all(np.isfinite(f.complementary_twist)):
+            dt = f.dt_complementary if f.dt_complementary > 1e-5 else f.dt_scan
+            xi_comp = f.complementary_twist.copy()
+            xi_comp[:3] *= translation_scale_multiplier
+            T_next = T_prev @ exp_map(xi_comp, dt)
+        else:
+            T_next = T_prev.copy()
+        out.append((f.time, T_next))
+        T_prev = T_next
+    return out
+
+
 def build_additional_odom_scale_sample(
     T_anchor,
     T_latest,

@@ -1,6 +1,8 @@
 """CSV/YAML input and TUM/CSV output helpers."""
 
 import csv
+import glob
+import os
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -10,10 +12,20 @@ try:
 except ImportError:  # Optional dependency until used.
     yaml = None
 
-from .scale_estimator import Frame, ReplayParams, ScaleEstimateFrame, ScaleVectorFrame
+from .scale_estimator import (
+    Frame,
+    ReplayParams,
+    ScaleEstimateFrame,
+    ScaleVectorFrame,
+    reconstruct_fixed,
+    reconstruct_with_estimator,
+)
 from .se3_math import matrix_to_quat, quat_to_matrix
 
 _SCALE_MODES = ("fixed", "recorded", "estimated")
+
+CSV_NAME = "scale_replay_frames.csv"
+DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config", "default.yaml")
 
 
 @dataclass
@@ -24,6 +36,73 @@ class ReplayToolSettings:
     output_subdir: str = "replay"
     no_correction: bool = False
     validate: bool = False
+
+
+# ---------------------------------------------------------------------------
+# CLI / path helpers shared by replay_scale_trajectory.py and plot_trajectories.py
+# ---------------------------------------------------------------------------
+
+def expand_path(path):
+    return os.path.expanduser(path)
+
+
+def latest_run_dir(base_dir):
+    expanded = expand_path(base_dir)
+    latest = os.path.join(expanded, "latest")
+    if os.path.isdir(latest):
+        return latest
+    candidates = [d for d in glob.glob(os.path.join(expanded, "run_*")) if os.path.isdir(d)]
+    if not candidates:
+        raise FileNotFoundError(f"No run directories found under: {base_dir}")
+    candidates.sort(key=os.path.getmtime, reverse=True)
+    return candidates[0]
+
+
+def resolve_csv_path(input_path, latest, base_dir):
+    if latest or not input_path:
+        run_dir = latest_run_dir(base_dir)
+        csv_path = os.path.join(run_dir, CSV_NAME)
+    else:
+        expanded = expand_path(input_path)
+        csv_path = os.path.join(expanded, CSV_NAME) if os.path.isdir(expanded) else expanded
+    if not os.path.isfile(csv_path):
+        raise FileNotFoundError(f"{CSV_NAME} not found: {csv_path}")
+    return csv_path
+
+
+def resolve_output_dirs(csv_path, settings):
+    """Return (out_dir, trajectories_dir, log_dir) for the given settings."""
+    base_out_dir = expand_path(settings.output_dir) if settings.output_dir else os.path.dirname(csv_path)
+    out_dir = os.path.join(base_out_dir, settings.output_subdir)
+    traj_dir = os.path.join(out_dir, "trajectories")
+    log_dir = os.path.join(out_dir, "log")
+    return out_dir, traj_dir, log_dir
+
+
+def reconstruct_replay_trajectories(frames, settings, params, collect_traces=False):
+    """Build the trajectory/trajectories selected by settings.scale_mode.
+
+    Returns (results, scale_trace, vector_trace) where results is a list of
+    (tag, trajectory) pairs; scale_trace/vector_trace are only populated for
+    scale_mode "estimated" (and only when collect_traces is True).
+    """
+    if settings.scale_mode == "fixed":
+        results = []
+        for scale in settings.scales:
+            traj = reconstruct_fixed(frames, lambda f, s=scale: s, apply_correction=True)
+            results.append((f"scale_{scale:g}", traj))
+        return results, [], []
+
+    if settings.scale_mode == "recorded":
+        traj = reconstruct_fixed(frames, lambda f: f.scale_applied, apply_correction=True)
+        return [("recorded_scale", traj)], [], []
+
+    if settings.scale_mode == "estimated":
+        traj, scale_trace, vector_trace = reconstruct_with_estimator(
+            frames, params, collect_vectors=collect_traces)
+        return [("estimated_scale", traj)], scale_trace, vector_trace
+
+    raise ValueError(f"Unknown replay_scale_tool.scale_mode: {settings.scale_mode!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +235,18 @@ def write_tum(path, trajectory):
             tx, ty, tz, qx, qy, qz, qw = matrix_to_quat(T)
             fh.write(f"{stamp:.9f} {tx:.9f} {ty:.9f} {tz:.9f} "
                      f"{qx:.9f} {qy:.9f} {qz:.9f} {qw:.9f}\n")
+
+
+def load_tum(path):
+    trajectory = []
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            stamp, tx, ty, tz, qx, qy, qz, qw = (float(v) for v in line.split()[:8])
+            trajectory.append((stamp, quat_to_matrix(tx, ty, tz, qx, qy, qz, qw)))
+    return trajectory
 
 
 def write_scale_trace_csv(path, scale_trace):

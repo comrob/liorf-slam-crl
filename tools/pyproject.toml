@@ -15,6 +15,7 @@ visualize-saved-map-satellite = "scripts.visualize_saved_map_satellite:main"
 plot-jacobian-perturbation-degeneracy = "scripts.plot_jacobian_perturbation_degeneracy:main"
 plot-time-slicing-stats = "scripts.plot_time_slicing_stats:main"
 replay-scale-trajectory = "replay_scale.replay_scale_trajectory:main"
+replay-scale-plot-trajectories = "replay_scale.plot_trajectories:main"
 
 [build-system]
 requires = ["hatchling"]
