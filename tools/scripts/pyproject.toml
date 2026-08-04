@@ -5,6 +5,7 @@ description = "Utility tools for LIORF saved-map export and visualization"
 authors = ["LIORF contributors"]
 readme = "../README.md"
 package-mode = false
+packages = [{include = "replay_scale_trajectory.py", from = "../replay_scale"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
@@ -16,7 +17,7 @@ pyyaml = "^6.0"
 [tool.poetry.scripts]
 visualize-saved-map-satellite = "visualize_saved_map_satellite:main"
 plot-jacobian-perturbation-degeneracy = "plot_jacobian_perturbation_degeneracy:main"
-plot-complementary-odom-scale-diagnostics = "plot_complementary_odom_scale_diagnostics:main"
+plot-time-slicing-stats = "plot_time_slicing_stats:main"
 replay-scale-trajectory = "replay_scale_trajectory:main"
 
 [build-system]
