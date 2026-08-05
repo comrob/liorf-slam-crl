@@ -1,6 +1,6 @@
-# Docker Infrastructure for LIORF SLAM
+# Docker Infrastructure for LILI-SAM
 
-A complete containerized development environment for the **LIORF SLAM** package, optimized for LiDAR data processing with Zenoh middleware.
+A complete containerized development environment for the **LILI-SAM** package, optimized for LiDAR data processing with Zenoh middleware.
 
 **Key Features:**
 - 🚀 **Two deployment modes** - PC-based bagfile testing OR live robot driver integration
@@ -48,7 +48,7 @@ which nvidia-smi       # GPU support (optional)
 ### Setup
 
 ```bash
-cd /home/seva/repos/liorf-orig-2/docker
+cd /home/seva/repos/lili-sam/docker
 
 # Copy template and edit
 cp .env.example .env
@@ -74,13 +74,13 @@ USER_GID=1000    # run: id -g
 
 **Terminal 1:**
 ```bash
-cd /home/seva/repos/liorf-orig-2
+cd /home/seva/repos/lili-sam
 make slam
 ```
 
 **Terminal 2:**
 ```bash
-cd /home/seva/repos/liorf-orig-2
+cd /home/seva/repos/lili-sam
 make play
 ```
 
@@ -100,7 +100,7 @@ sudo apt-get install ros-jazzy-rmw-zenoh-cpp
 
 # Copy the optimized config from the repository (optional)
 mkdir -p ~/.ros
-cp /path/to/liorf-slam-crl/docker/zenoh.json5 ~/.zenoh.json5
+cp /path/to/lili-sam/docker/zenoh.json5 ~/.zenoh.json5
 ```
 
 **Note:** The repository includes an optimized `docker/zenoh.json5` configured for LiDAR performance. Use this for both host and container if you need custom tuning.
@@ -183,7 +183,7 @@ make shell
 ### Change Sensor Configuration
 
 ```bash
-nano config/lio_sam_ouster.yaml
+nano config/lili_ouster.yaml
 # Edit: N_SCAN, Horizon_SCAN, etc.
 # No rebuild needed - applies on restart
 ```
@@ -211,7 +211,7 @@ rviz2
 │  ┌─────────────────────────────────────┐  │
 │  │ Host Machine (ROS 2)                │  │
 │  │                                     │  │
-│  │  Ouster Driver (liorf repo)        │  │
+│  │  Ouster Driver (lili repo)        │  │
 │  │  └─ Publishes: /os1/points, /os1/imu
   │  │  └─ Zenoh enabled                  │  │
 │  │                                     │  │
@@ -220,10 +220,10 @@ rviz2
 │  ┌─────────────────────────────────────┐  │
 │  │ Docker Container (Same Repo)        │  │
 │  │                                     │  │
-│  │  SLAM (liorf)                       │  │
+│  │  SLAM (lili)                        │  │
 │  │  ├─ imageProjection                │  │
 │  │  ├─ imuPreintegration              │  │
-│  │  ├─ mapOptmization                 │  │
+│  │  ├─ mapOptimization                │  │
 │  └─ Zenoh (host-container link)    │  │
 │  │                                     │  │
 │  │  Subscribes: /os1/points, /os1/imu│  │
@@ -249,8 +249,8 @@ sudo usermod -aG docker $USER  # Run docker without sudo
 
 ```bash
 # Clone to your robot
-git clone https://github.com/comrob/liorf-orig-2.git
-cd liorf-orig-2
+git clone https://github.com/comrob/lili-sam.git
+cd lili-sam
 ```
 
 ### Step 2: Create Shared Zenoh Configuration (Optional)
@@ -258,7 +258,7 @@ cd liorf-orig-2
 ```bash
 # Copy the optimized config from the cloned repository to host (optional)
 mkdir -p ~/.ros
-cp liorf-slam-crl/docker/zenoh.json5 ~/.zenoh.json5
+cp lili-sam/docker/zenoh.json5 ~/.zenoh.json5
 ```
 
 Both host and container will use Zenoh for communication. Using an identical config is optional but recommended for tuning.
@@ -299,7 +299,7 @@ source ~/.bashrc
 
 ```bash
 # In the cloned repository
-cd liorf-orig-2/docker
+cd lili-sam/docker
 
 # Copy environment file
 cp .env.example .env
@@ -321,7 +321,7 @@ USER_GID=1000
 
 ```bash
 # From repository root
-cd /path/to/liorf-orig-2
+cd /path/to/lili-sam
 make image
 ```
 
@@ -346,7 +346,7 @@ ros2 launch ouster_ros driver.launch.py
 
 ```bash
 # From the repository root
-cd /path/to/liorf-orig-2
+cd /path/to/lili-sam
 make slam
 
 # Output:
@@ -419,7 +419,7 @@ ros2 topic list | grep os1
 
 # 2. Check RMW on both sides
 echo "Host: $RMW_IMPLEMENTATION"
-docker exec $(docker ps -q -f ancestor=liorf_jazzy_dev) sh -c "echo Container: \$RMW_IMPLEMENTATION"
+docker exec $(docker ps -q -f ancestor=lili_jazzy_dev) sh -c "echo Container: \$RMW_IMPLEMENTATION"
 # Both should be: rmw_zenoh_cpp
 
 # 3. Verify Zenoh is working
@@ -477,7 +477,7 @@ sudo chown -R $USER:$USER cache/
 **Solution:** Check config matches sensor:
 ```bash
 # Verify your sensor type and parameters
-cat config/lio_sam_ouster.yaml | grep -E "sensor:|N_SCAN:|Horizon_SCAN:"
+cat config/lili_ouster.yaml | grep -E "sensor:|N_SCAN:|Horizon_SCAN:"
 
 # For Ouster OS1:
 # sensor: ouster
@@ -538,12 +538,12 @@ ls -lh /bag_data/
 
 | Service | Image | Purpose | Mount Mode |
 |---------|-------|---------|-----------|
-| **liorf_dev** | `liorf_jazzy_dev` | Live development | Source mounted from host |
-| **liorf_run** | `liorf_jazzy_prod` | Pre-built production | Code baked in image |
-| **bag_player** | `liorf_jazzy_dev` | Bagfile playback | Data mounted from host |
-| **run_slam** | `liorf_jazzy_prod` | Benchmark testing (opt-in) | Profile for framework compatibility validation |
+| **lili_dev** | `lili_jazzy_dev` | Live development | Source mounted from host |
+| **lili_run** | `lili_jazzy_prod` | Pre-built production | Code baked in image |
+| **bag_player** | `lili_jazzy_dev` | Bagfile playback | Data mounted from host |
+| **run_slam** | `lili_jazzy_prod` | Benchmark testing (opt-in) | Profile for framework compatibility validation |
 
-**Note on run_slam service:** This optional service (activated with `--profile run_slam`) is designed for **local testing only** to validate compatibility with external SLAM evaluation frameworks. Production benchmarks use their own docker-compose orchestration and only consume the built `liorf_jazzy_prod` image. The run_slam profile mounts framework-compatible paths (`/config/docker_override.yaml`) and sets required environment variables (`ROS_LOCALHOST_ONLY=1`) for compatibility validation.
+**Note on run_slam service:** This optional service (activated with `--profile run_slam`) is designed for **local testing only** to validate compatibility with external SLAM evaluation frameworks. Production benchmarks use their own docker-compose orchestration and only consume the built `lili_jazzy_prod` image. The run_slam profile mounts framework-compatible paths (`/config/docker_override.yaml`) and sets required environment variables (`ROS_LOCALHOST_ONLY=1`) for compatibility validation.
 
 ### Networking & IPC
 
@@ -556,9 +556,9 @@ ls -lh /bag_data/
 
 ```
 Host Machine              Docker Container
-├── src/                  /home/dev/ros2_ws/src/liorf
-├── config/               /home/dev/ros2_ws/src/liorf/config
-├── launch/               /home/dev/ros2_ws/src/liorf/launch
+├── src/                  /home/dev/ros2_ws/src/lili
+├── config/               /home/dev/ros2_ws/src/lili/config
+├── launch/               /home/dev/ros2_ws/src/lili/launch
 └── docker/cache/
     ├── build/       ←→   /home/dev/ros2_ws/build
     ├── install/     ←→   /home/dev/ros2_ws/install
@@ -619,7 +619,7 @@ colcon build -j$(nproc)
 
 ### Optimize Pointcloud Processing
 ```yaml
-# In config/lio_sam_ouster.yaml
+# In config/lili_ouster.yaml
 mappingSurfLeafSize: 0.4      # Larger = faster but less detailed
 point_filter_num: 5           # Skip points (1 = use all)
 downsampleRate: 1             # Downsample scan
@@ -646,7 +646,7 @@ A: No, just edit `.yaml` and restart `make slam`.
 A: Edit `docker/mk/dev.mk` line for `slam` target:
 ```makefile
 slam: up
-	ros2 launch liorf run_kitti.launch.py  # Change here
+	ros2 launch lili run_kitti.launch.py  # Change here
 ```
 
 **Q: What if I want to run on GPU?**  

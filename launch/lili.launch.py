@@ -36,7 +36,7 @@ def _build_node_parameters(context, *parameter_sources):
 
 
 def generate_launch_description():
-    share_dir = get_package_share_directory('liorf')
+    share_dir = get_package_share_directory('lili')
     default_rviz_config = default_rviz_config_path(share_dir)
 
     params_file = LaunchConfiguration('params_file')
@@ -47,7 +47,7 @@ def generate_launch_description():
 
     params_declare = DeclareLaunchArgument(
         'params_file',
-        default_value=os.path.join(share_dir, 'config', 'lio_sam_ouster.yaml'),
+        default_value=os.path.join(share_dir, 'config', 'lili_ouster.yaml'),
         description='Path to the ROS 2 parameters file.'
     )
 
@@ -83,23 +83,23 @@ def generate_launch_description():
 
         return [
             Node(
-                package='liorf',
-                executable='liorf_imuPreintegration',
-                name='liorf_imuPreintegration',
+                package='lili',
+                executable='lili_imuPreintegration',
+                name='lili_imuPreintegration',
                 parameters=node_parameters,
                 output='screen'
             ),
             Node(
-                package='liorf',
-                executable='liorf_imageProjection',
-                name='liorf_imageProjection',
+                package='lili',
+                executable='lili_imageProjection',
+                name='lili_imageProjection',
                 parameters=node_parameters,
                 output='screen'
             ),
             Node(
-                package='liorf',
-                executable='liorf_mapOptmization',
-                name='liorf_mapOptmization',
+                package='lili',
+                executable='lili_mapOptimization',
+                name='lili_mapOptimization',
                 parameters=node_parameters,
                 output='screen',
             ),

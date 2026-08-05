@@ -8,11 +8,11 @@ from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, Opaqu
 from launch.substitutions import LaunchConfiguration
 
 
-DEFAULT_SAVE_MAP_RESOLUTION = os.environ.get('LIORF_SAVE_MAP_DEFAULT_RESOLUTION', '0.2')
+DEFAULT_SAVE_MAP_RESOLUTION = os.environ.get('LILI_SAVE_MAP_DEFAULT_RESOLUTION', '0.2')
 
 
 def _build_actions(context, *args, **kwargs):
-    share_dir = get_package_share_directory('liorf')
+    share_dir = get_package_share_directory('lili')
     save_map_script = os.path.join(share_dir, 'scripts', 'save_map.sh')
 
     service_name = LaunchConfiguration('service_name').perform(context).strip()
@@ -84,7 +84,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'service_name',
-            default_value='liorf/save_map',
+            default_value='lili/save_map',
             description='SaveMap service name.',
         ),
         DeclareLaunchArgument(

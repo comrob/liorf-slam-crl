@@ -2,13 +2,13 @@
 
 set -euo pipefail
 
-SERVICE_NAME="liorf/save_map"
-SERVICE_TYPE="liorf/srv/SaveMap"
-MAP_NODE_NAME="/liorf_mapOptimization"
+SERVICE_NAME="lili/save_map"
+SERVICE_TYPE="lili/srv/SaveMap"
+MAP_NODE_NAME="/lili_mapOptimization"
 
 # Script-level defaults (can be overridden via environment variables).
-DEFAULT_RESOLUTION="${LIORF_SAVE_MAP_DEFAULT_RESOLUTION:-0.2}"
-DEFAULT_DESTINATION="${LIORF_SAVE_MAP_DEFAULT_DESTINATION:-}"
+DEFAULT_RESOLUTION="${LILI_SAVE_MAP_DEFAULT_RESOLUTION:-0.2}"
+DEFAULT_DESTINATION="${LILI_SAVE_MAP_DEFAULT_DESTINATION:-}"
 
 get_save_pcd_directory() {
   local param_out
@@ -66,7 +66,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/save_map.sh [-r RESOLUTION] [-d DESTINATION]
 
-Calls the liorf map saving service.
+Calls the lili map saving service.
 
 Options:
   -r, --resolution   Map voxel resolution (float). Use 0 to save without downsampling.
@@ -79,18 +79,18 @@ Options:
   -h, --help         Show this help.
 
 Defaults:
-  resolution: ${LIORF_SAVE_MAP_DEFAULT_RESOLUTION:-0.2}
-  destination: ${LIORF_SAVE_MAP_DEFAULT_DESTINATION:-<empty, use node savePCDDirectory>}
+  resolution: ${LILI_SAVE_MAP_DEFAULT_RESOLUTION:-0.2}
+  destination: ${LILI_SAVE_MAP_DEFAULT_DESTINATION:-<empty, use node savePCDDirectory>}
 
 Environment overrides:
-  LIORF_SAVE_MAP_DEFAULT_RESOLUTION
-  LIORF_SAVE_MAP_DEFAULT_DESTINATION
+  LILI_SAVE_MAP_DEFAULT_RESOLUTION
+  LILI_SAVE_MAP_DEFAULT_DESTINATION
 
 Examples:
   scripts/save_map.sh
   scripts/save_map.sh -r 0.2
-  scripts/save_map.sh -r 0.2 -d /tmp/liorf_map
-  scripts/save_map.sh -a /tmp/liorf_map
+  scripts/save_map.sh -r 0.2 -d /tmp/lili_map
+  scripts/save_map.sh -a /tmp/lili_map
   scripts/save_map.sh --destination ~/Downloads/LOAM
 EOF
 }

@@ -94,8 +94,8 @@ void mapOptimization::updateRollingMap()
     logLocalMapStats("updateRollingMap");
 }
 
-bool mapOptimization::saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req,
-                            std::shared_ptr<liorf::srv::SaveMap::Response> res)
+bool mapOptimization::saveMapService(const std::shared_ptr<lili::srv::SaveMap::Request> req,
+                            std::shared_ptr<lili::srv::SaveMap::Response> res)
 {
   sensor_msgs::msg::NavSatFix originSnapshot;
   bool hasOrigin = false;
@@ -149,8 +149,8 @@ void mapOptimization::visualizeGlobalMapThread()
     if (savePCD == false)
         return;
 
-    std::shared_ptr<liorf::srv::SaveMap::Request> req = std::make_unique<liorf::srv::SaveMap::Request>();
-    std::shared_ptr<liorf::srv::SaveMap::Response> res = std::make_unique<liorf::srv::SaveMap::Response>();
+    std::shared_ptr<lili::srv::SaveMap::Request> req = std::make_unique<lili::srv::SaveMap::Request>();
+    std::shared_ptr<lili::srv::SaveMap::Response> res = std::make_unique<lili::srv::SaveMap::Response>();
 
     if(!saveMapService(req, res)){
         cout << "Fail to save map" << endl;

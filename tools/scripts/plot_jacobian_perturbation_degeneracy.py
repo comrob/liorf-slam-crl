@@ -138,7 +138,7 @@ def main() -> int:
     parser.add_argument("--run-dir", default="", help="Path to diagnostics run directory")
     parser.add_argument("--latest", action="store_true", help="Use latest run under --base-dir")
     parser.add_argument(
-        "--base-dir", default="~/.ros/liorf_logs", help="Diagnostics base directory"
+        "--base-dir", default="~/.ros/lili_logs", help="Diagnostics base directory"
     )
     parser.add_argument(
         "--backend",

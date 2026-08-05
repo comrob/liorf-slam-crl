@@ -1,7 +1,7 @@
 #pragma once
 
 #include "export/map_types.hpp"
-#include "liorf/srv/save_map.hpp"
+#include "lili/srv/save_map.hpp"
 
 #include <gtsam/geometry/Pose3.h>
 
@@ -20,8 +20,8 @@ class MapExporter
 {
 public:
     bool executeSave(
-        const liorf::srv::SaveMap::Request &req,
-        liorf::srv::SaveMap::Response &res,
+        const lili::srv::SaveMap::Request &req,
+        lili::srv::SaveMap::Response &res,
         const std::string &savePCDDirectory,
         float mappingSurfLeafSize,
         bool saveDenseGpsTrajectory,

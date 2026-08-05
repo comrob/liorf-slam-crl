@@ -28,7 +28,7 @@ WGS84_EP2 = (WGS84_A * WGS84_A - WGS84_B * WGS84_B) / (WGS84_B * WGS84_B)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Visualize saved LIORF map over satellite imagery (HTML map)."
+        description="Visualize saved LILI map over satellite imagery (HTML map)."
     )
     parser.add_argument(
         "--map-dir",
@@ -72,7 +72,7 @@ def resolve_map_directory(cli_map_dir: Path | None):
         raise FileNotFoundError(f"Provided --map-dir does not exist or is not a directory: {path}")
 
     home = Path.home()
-    last_saved_file = home / ".liorf_last_saved_map_path"
+    last_saved_file = home / ".lili_last_saved_map_path"
     if last_saved_file.exists():
         content = last_saved_file.read_text(encoding="utf-8").strip()
         if content:

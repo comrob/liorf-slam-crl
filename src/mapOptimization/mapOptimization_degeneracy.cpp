@@ -970,7 +970,7 @@ void mapOptimization::applyDegeneracyStateOverride(double dt_scan, bool degenera
 
             if (pubComplementaryOdomScaleDebug)
             {
-                liorf::msg::ComplementaryOdomScaleDebug msg;
+                lili::msg::ComplementaryOdomScaleDebug msg;
                 msg.header.stamp = timeLaserInfoStamp;
                 msg.header.frame_id = lidarFrame;
                 const bool hasAppliedScale = scaleApplyEnabled && std::isfinite(smoothedScaleForApply);

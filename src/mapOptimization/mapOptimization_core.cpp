@@ -5,7 +5,7 @@
 using gtsam::ISAM2;
 using gtsam::ISAM2Params;
 
-mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("liorf_mapOptimization", options)
+mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamServer("lili_mapOptimization", options)
 {
     ISAM2Params parameters;
     parameters.relinearizeThreshold = 0.1;
@@ -25,14 +25,14 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     TrajectoryOutputPolicy trajectoryOutputPolicy;
     trajectoryOutputPolicy.write_odom_trajectory_tum = logOutput.odom_enabled;
 
-    diagnostics = std::make_shared<LiorfDiagnostics>(
+    diagnostics = std::make_shared<LiliDiagnostics>(
         this,
         QosPolicy(history_policy, reliability_policy),
         history_policy,
         reliability_policy,
         logOutput.base_dir,
         logOutput.run_suffix.empty() ? backend_type : logOutput.run_suffix,
-        "/liorf/debug/telemetry",
+        "/lili/debug/telemetry",
         1.0,
         diagnosticsOutputPolicy,
         trajectoryOutputPolicy);
@@ -40,7 +40,7 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
     auto cloudInfoQos = QosPolicy(history_policy, reliability_policy);
     cloudInfoQos.keep_last(std::max(1, cloud_info_queue_depth));
 
-    subCloud = create_subscription<liorf::msg::CloudInfo>("liorf/deskew/cloud_info", cloudInfoQos,
+    subCloud = create_subscription<lili::msg::CloudInfo>("lili/deskew/cloud_info", cloudInfoQos,
                 std::bind(&mapOptimization::laserCloudInfoHandler, this, std::placeholders::_1));
     subGPS = create_subscription<sensor_msgs::msg::NavSatFix>(gpsTopic, QosPolicy(history_policy, reliability_policy),
                 std::bind(&mapOptimization::gpsHandler, this, std::placeholders::_1));
@@ -53,65 +53,65 @@ mapOptimization::mapOptimization(const rclcpp::NodeOptions & options) : ParamSer
             std::bind(&mapOptimization::complementaryOdomHandler, this, std::placeholders::_1));
     }
 
-    pubKeyPoses = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/trajectory", QosPolicy(history_policy, reliability_policy));
-    pubLaserCloudSurround = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/map_global", QosPolicy(history_policy, reliability_policy));
-    pubLaserOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/odometry", QosPolicy(history_policy, reliability_policy));
-    pubLaserOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy));
-    pubBaselinkOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_odometry", QosPolicy(history_policy, reliability_policy));
-    pubBaselinkOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_odometry_incremental", QosPolicy(history_policy, reliability_policy));
-    pubPath = create_publisher<nav_msgs::msg::Path>("liorf/mapping/path", QosPolicy(history_policy, reliability_policy));
-    pubHistoryKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/icp_loop_closure_history_cloud", QosPolicy(history_policy, reliability_policy));
-    pubIcpKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/icp_loop_closure_corrected_cloud", QosPolicy(history_policy, reliability_policy));
-    pubLoopConstraintEdge = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf/mapping/loop_closure_constraints", QosPolicy(history_policy, reliability_policy));
-    pubGpsConstraintViz = create_publisher<visualization_msgs::msg::MarkerArray>("/liorf/mapping/gps_constraints", QosPolicy(history_policy, reliability_policy));
-    pubLocalMapCloud = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/map_local", QosPolicy(history_policy, reliability_policy));
-    pubRegisteredCloud = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
-    pubCloudPreviousPose = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/debug/cloud_previous_pose", QosPolicy(history_policy, reliability_policy));
-    pubCloudPredictedPose = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/debug/cloud_predicted_pose", QosPolicy(history_policy, reliability_policy));
-    pubKeyframeDeskewedDownsampled = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/keyframes/cloud_deskewed_downsampled", QosPolicy(history_policy, reliability_policy));
-    pubKeyframeDeskewedDownsampledDebug = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/keyframes/cloud_deskewed_downsampled_debug", QosPolicy(history_policy, reliability_policy));
-    pubMatchedSurfFeatures = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/matched_surface_features", QosPolicy(history_policy, reliability_policy));
-    pubKdTreePlanePoints = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/kdtree_plane_points", QosPolicy(history_policy, reliability_policy));
-    pubKdTreePlaneNormals = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/kdtree_plane_normals", QosPolicy(history_policy, reliability_policy));
-    pubKdTreePlaneResiduals = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/kdtree_plane_residuals", QosPolicy(history_policy, reliability_policy));
-    pubSurfDebugColored = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/surf_debug_colored", QosPolicy(history_policy, reliability_policy));
-    pubSurfDebugLegend = create_publisher<std_msgs::msg::String>("liorf/mapping/surf_debug_legend", QosPolicy(history_policy, reliability_policy));
-    pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
-    pubSLAMInfo = create_publisher<liorf::msg::CloudInfo>("liorf/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
-    pubGpsOdom = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/gps_odom", QosPolicy(history_policy, reliability_policy));
-    pubGlobalOffset = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("liorf/enu_to_local_offset", QosPolicy(history_policy, reliability_policy));
-    pubLidarGpsFix = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/mapping/lidar_gps_fix", QosPolicy(history_policy, reliability_policy));
-    pubLidarGpsEnuPose = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/lidar_gps_enu_pose", QosPolicy(history_policy, reliability_policy));
-    pubLidarGpsNedPose = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/lidar_gps_ned_pose", QosPolicy(history_policy, reliability_policy));
-    pubBaselinkGpsEnuOdometry = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_gps_enu_odometry", QosPolicy(history_policy, reliability_policy));
-    pubBaselinkGpsNedOdometry = create_publisher<nav_msgs::msg::Odometry>("liorf/mapping/baselink_gps_ned_odometry", QosPolicy(history_policy, reliability_policy));
+    pubKeyPoses = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/trajectory", QosPolicy(history_policy, reliability_policy));
+    pubLaserCloudSurround = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/map_global", QosPolicy(history_policy, reliability_policy));
+    pubLaserOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("lili/mapping/odometry", QosPolicy(history_policy, reliability_policy));
+    pubLaserOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>("lili/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy));
+    pubBaselinkOdometryGlobal = create_publisher<nav_msgs::msg::Odometry>("lili/mapping/baselink_odometry", QosPolicy(history_policy, reliability_policy));
+    pubBaselinkOdometryIncremental = create_publisher<nav_msgs::msg::Odometry>("lili/mapping/baselink_odometry_incremental", QosPolicy(history_policy, reliability_policy));
+    pubPath = create_publisher<nav_msgs::msg::Path>("lili/mapping/path", QosPolicy(history_policy, reliability_policy));
+    pubHistoryKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/icp_loop_closure_history_cloud", QosPolicy(history_policy, reliability_policy));
+    pubIcpKeyFrames = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/icp_loop_closure_corrected_cloud", QosPolicy(history_policy, reliability_policy));
+    pubLoopConstraintEdge = create_publisher<visualization_msgs::msg::MarkerArray>("/lili/mapping/loop_closure_constraints", QosPolicy(history_policy, reliability_policy));
+    pubGpsConstraintViz = create_publisher<visualization_msgs::msg::MarkerArray>("/lili/mapping/gps_constraints", QosPolicy(history_policy, reliability_policy));
+    pubLocalMapCloud = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/map_local", QosPolicy(history_policy, reliability_policy));
+    pubRegisteredCloud = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/cloud_registered", QosPolicy(history_policy, reliability_policy));
+    pubCloudPreviousPose = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/debug/cloud_previous_pose", QosPolicy(history_policy, reliability_policy));
+    pubCloudPredictedPose = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/debug/cloud_predicted_pose", QosPolicy(history_policy, reliability_policy));
+    pubKeyframeDeskewedDownsampled = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/keyframes/cloud_deskewed_downsampled", QosPolicy(history_policy, reliability_policy));
+    pubKeyframeDeskewedDownsampledDebug = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/keyframes/cloud_deskewed_downsampled_debug", QosPolicy(history_policy, reliability_policy));
+    pubMatchedSurfFeatures = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/matched_surface_features", QosPolicy(history_policy, reliability_policy));
+    pubKdTreePlanePoints = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/kdtree_plane_points", QosPolicy(history_policy, reliability_policy));
+    pubKdTreePlaneNormals = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/kdtree_plane_normals", QosPolicy(history_policy, reliability_policy));
+    pubKdTreePlaneResiduals = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/kdtree_plane_residuals", QosPolicy(history_policy, reliability_policy));
+    pubSurfDebugColored = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/surf_debug_colored", QosPolicy(history_policy, reliability_policy));
+    pubSurfDebugLegend = create_publisher<std_msgs::msg::String>("lili/mapping/surf_debug_legend", QosPolicy(history_policy, reliability_policy));
+    pubCloudRegisteredRaw = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/cloud_registered_raw", QosPolicy(history_policy, reliability_policy));
+    pubSLAMInfo = create_publisher<lili::msg::CloudInfo>("lili/mapping/slam_info", QosPolicy(history_policy, reliability_policy));
+    pubGpsOdom = create_publisher<nav_msgs::msg::Odometry>("lili/mapping/gps_odom", QosPolicy(history_policy, reliability_policy));
+    pubGlobalOffset = create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>("lili/enu_to_local_offset", QosPolicy(history_policy, reliability_policy));
+    pubLidarGpsFix = create_publisher<sensor_msgs::msg::NavSatFix>("lili/mapping/lidar_gps_fix", QosPolicy(history_policy, reliability_policy));
+    pubLidarGpsEnuPose = create_publisher<geometry_msgs::msg::PoseStamped>("lili/mapping/lidar_gps_enu_pose", QosPolicy(history_policy, reliability_policy));
+    pubLidarGpsNedPose = create_publisher<geometry_msgs::msg::PoseStamped>("lili/mapping/lidar_gps_ned_pose", QosPolicy(history_policy, reliability_policy));
+    pubBaselinkGpsEnuOdometry = create_publisher<nav_msgs::msg::Odometry>("lili/mapping/baselink_gps_enu_odometry", QosPolicy(history_policy, reliability_policy));
+    pubBaselinkGpsNedOdometry = create_publisher<nav_msgs::msg::Odometry>("lili/mapping/baselink_gps_ned_odometry", QosPolicy(history_policy, reliability_policy));
 
-    pubDegeneracyRaw = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_raw", 1);
-    pubDegeneracyPCA = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_pca", 1);
-    pubDegeneracyBasis = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_basis", 1);
-    pubDegeneracyPaths = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy_paths", 1);
-    pubDegeneracyPerturbedScan0 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/perturbed_scan_0", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyPerturbedScan1 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/perturbed_scan_1", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyPerturbedScan2 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/perturbed_scan_2", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyAlignedScan0 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/aligned_scan_0", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyAlignedScan1 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/aligned_scan_1", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyAlignedScan2 = create_publisher<sensor_msgs::msg::PointCloud2>("liorf/mapping/degeneracy/aligned_scan_2", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyPerturbedPose0 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/perturbed_pose_0", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyPerturbedPose1 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/perturbed_pose_1", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyPerturbedPose2 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/perturbed_pose_2", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyAlignedPose0 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/aligned_pose_0", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyAlignedPose1 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/aligned_pose_1", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyAlignedPose2 = create_publisher<geometry_msgs::msg::PoseStamped>("liorf/mapping/degeneracy/aligned_pose_2", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyDisplacements = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy/displacements", QosPolicy(history_policy, reliability_policy));
-    pubDegeneracyOptimizationPaths = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/degeneracy/optimization_paths", QosPolicy(history_policy, reliability_policy));
-    pubComplementaryOdomCorrectionDirection = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/complementary_odom/correction_direction", QosPolicy(history_policy, reliability_policy));
-    pubComplementaryOdomLaggedPaths = create_publisher<visualization_msgs::msg::MarkerArray>("liorf/mapping/complementary_odom/lagged_paths", QosPolicy(history_policy, reliability_policy));
-    pubComplementaryOdomScaleDebug = create_publisher<liorf::msg::ComplementaryOdomScaleDebug>("liorf/mapping/complementary_odom/scale_debug", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyRaw = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/degeneracy_raw", 1);
+    pubDegeneracyPCA = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/degeneracy_pca", 1);
+    pubDegeneracyBasis = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/degeneracy_basis", 1);
+    pubDegeneracyPaths = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/degeneracy_paths", 1);
+    pubDegeneracyPerturbedScan0 = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/degeneracy/perturbed_scan_0", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedScan1 = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/degeneracy/perturbed_scan_1", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedScan2 = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/degeneracy/perturbed_scan_2", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedScan0 = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/degeneracy/aligned_scan_0", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedScan1 = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/degeneracy/aligned_scan_1", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedScan2 = create_publisher<sensor_msgs::msg::PointCloud2>("lili/mapping/degeneracy/aligned_scan_2", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedPose0 = create_publisher<geometry_msgs::msg::PoseStamped>("lili/mapping/degeneracy/perturbed_pose_0", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedPose1 = create_publisher<geometry_msgs::msg::PoseStamped>("lili/mapping/degeneracy/perturbed_pose_1", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyPerturbedPose2 = create_publisher<geometry_msgs::msg::PoseStamped>("lili/mapping/degeneracy/perturbed_pose_2", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedPose0 = create_publisher<geometry_msgs::msg::PoseStamped>("lili/mapping/degeneracy/aligned_pose_0", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedPose1 = create_publisher<geometry_msgs::msg::PoseStamped>("lili/mapping/degeneracy/aligned_pose_1", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyAlignedPose2 = create_publisher<geometry_msgs::msg::PoseStamped>("lili/mapping/degeneracy/aligned_pose_2", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyDisplacements = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/degeneracy/displacements", QosPolicy(history_policy, reliability_policy));
+    pubDegeneracyOptimizationPaths = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/degeneracy/optimization_paths", QosPolicy(history_policy, reliability_policy));
+    pubComplementaryOdomCorrectionDirection = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/complementary_odom/correction_direction", QosPolicy(history_policy, reliability_policy));
+    pubComplementaryOdomLaggedPaths = create_publisher<visualization_msgs::msg::MarkerArray>("lili/mapping/complementary_odom/lagged_paths", QosPolicy(history_policy, reliability_policy));
+    pubComplementaryOdomScaleDebug = create_publisher<lili::msg::ComplementaryOdomScaleDebug>("lili/mapping/complementary_odom/scale_debug", QosPolicy(history_policy, reliability_policy));
 
-    pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("liorf/gps_origin", QosPolicy(history_policy, reliability_policy));
+    pubGpsOrigin = create_publisher<sensor_msgs::msg::NavSatFix>("lili/gps_origin", QosPolicy(history_policy, reliability_policy));
     origin_publish_timer = this->create_wall_timer(std::chrono::seconds(1), std::bind(&mapOptimization::timerCallbackPublishOrigin, this));
 
-    srvSaveMap = create_service<liorf::srv::SaveMap>("liorf/save_map", 
+    srvSaveMap = create_service<lili::srv::SaveMap>("lili/save_map", 
                     std::bind(&mapOptimization::saveMapService, this, std::placeholders::_1, std::placeholders::_2 ));
 
     downSizeFilterSurf.setLeafSize(mappingSurfLeafSize, mappingSurfLeafSize, mappingSurfLeafSize);
@@ -190,7 +190,7 @@ void mapOptimization::allocateMemory()
     downSizeFilterSurroundingKeyPoses.setLeafSize(surroundingKeyframeDensity, surroundingKeyframeDensity, surroundingKeyframeDensity); // for surrounding key poses of scan-to-map optimization
 }
 
-void mapOptimization::laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedPtr msgIn)
+void mapOptimization::laserCloudInfoHandler(const lili::msg::CloudInfo::SharedPtr msgIn)
 {
     runtimeTfCoordinator->noteLidarMessageFrameId(msgIn->cloud_deskewed.header.frame_id);
     if (!runtimeTfCoordinator->hasLidarToBaselinkTransform() && !lidarFrame.empty() && lidarFrame != baselinkFrame)

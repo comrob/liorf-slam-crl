@@ -172,22 +172,22 @@ struct ScaleReplayFrameSample
     std::array<double, 7> pose_effective{};
 };
 
-class LiorfDiagnostics
+class LiliDiagnostics
 {
 public:
-    LiorfDiagnostics(
+    LiliDiagnostics(
         rclcpp::Node *node,
         const rclcpp::QoS &qos,
         const std::string &history_policy,
         const std::string &reliability_policy,
-        const std::string &base_dir = "~/.ros/liorf_logs",
+        const std::string &base_dir = "~/.ros/lili_logs",
         const std::string &run_suffix = "",
-        const std::string &topic = "/liorf/debug/telemetry",
+        const std::string &topic = "/lili/debug/telemetry",
         double publish_hz = 1.0,
         DiagnosticsOutputPolicy diagnostics_output_policy = {},
         TrajectoryOutputPolicy trajectory_output_policy = {});
 
-    ~LiorfDiagnostics();
+    ~LiliDiagnostics();
 
     void markLidarUpdate(const rclcpp::Time &stamp);
     void markGpsUpdate(const rclcpp::Time &stamp);

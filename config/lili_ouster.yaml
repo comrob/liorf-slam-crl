@@ -3,7 +3,7 @@
     history_policy: "history_keep_last"
     reliability_policy: "reliability_reliable"
     log:
-      base_dir: "~/.ros/liorf_logs"
+      base_dir: "~/.ros/lili_logs"
       run_suffix: ""
       diagnostics:
         write_files: true
@@ -86,8 +86,8 @@
     manual_gps_origin: [46.75602856, 7.59374951, 617.67]   # LLA GPS origin for manual georeference initialization (if `force_initial_gps` enabled)
     manual_global_heading: 0.0                   # global yaw heading in degrees to rotate EN
 
-    # keep liorf without GPS conpletely
-    # kalman filter on top of it with liorf anfd GPS
+    # keep lili without GPS conpletely
+    # kalman filter on top of it with lili anfd GPS
 
     # Export settings
     savePCD: false                              

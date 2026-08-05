@@ -1,12 +1,12 @@
 # ================================================================
-#  LIORF SLAM - Main Makefile (Dispatcher)
+#  LILI-SAM - Main Makefile (Dispatcher)
 #  Delegates to specialized .mk files for better organization
 # ================================================================
 
 .PHONY: help
 
 help:
-	@echo "LIORF SLAM Docker Environment"
+	@echo "LILI-SAM Docker Environment"
 	@echo "========================================"
 	@echo ""
 	@echo "Infrastructure (mk/infra.mk):"

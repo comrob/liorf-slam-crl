@@ -1,4 +1,4 @@
-# LIORF Architecture Notes
+# LILI-SAM Architecture Notes
 
 ## mapOptimization implementation layout
 
@@ -101,14 +101,14 @@ Notes:
   - `mapFrameLocal -> odometryFrame` from local-vs-incremental odometry alignment,
   - `odometryFrame -> "lidar_link"` and `odometryFrame -> baselinkFrame` as smooth robot pose outputs,
   - LiDAR odometry topics:
-    - `liorf/mapping/odometry` in `mapFrameLocal -> "lidar_link"`
-    - `liorf/mapping/odometry_incremental` in `odometryFrame -> "lidar_link"`
+    - `lili/mapping/odometry` in `mapFrameLocal -> "lidar_link"`
+    - `lili/mapping/odometry_incremental` in `odometryFrame -> "lidar_link"`
   - base-link odometry topics:
-    - `liorf/mapping/baselink_odometry` in `mapFrameLocal -> baselinkFrame`
-    - `liorf/mapping/baselink_odometry_incremental` in `odometryFrame -> baselinkFrame`
+    - `lili/mapping/baselink_odometry` in `mapFrameLocal -> baselinkFrame`
+    - `lili/mapping/baselink_odometry_incremental` in `odometryFrame -> baselinkFrame`
   - GPS-fused base-link odometry topics:
-    - `liorf/mapping/baselink_gps_enu_odometry` in `mapFrameEnu -> baselinkFrame`
-    - `liorf/mapping/baselink_gps_ned_odometry` in `mapFrameNed -> baselinkFrame`
+    - `lili/mapping/baselink_gps_enu_odometry` in `mapFrameEnu -> baselinkFrame`
+    - `lili/mapping/baselink_gps_ned_odometry` in `mapFrameNed -> baselinkFrame`
 
 When `lidarFrame != baselinkFrame`, `mapOptimization` derives `odometryFrame -> baselinkFrame` by applying the inverse of the looked-up `lidarFrame -> baselinkFrame` transform to the computed base pose so TF directionality remains parent-to-child and tree-consistent.
 - `imuPreintegration` / `TransformFusion` continue producing incremental and fused odometry on existing topics; this does not replace TF ownership above.
@@ -122,8 +122,8 @@ When `lidarFrame != baselinkFrame`, `mapOptimization` derives `odometryFrame -> 
 
 Legacy LiDAR odometry topics are intentionally split across the two local layers:
 
-- `liorf/mapping/odometry_incremental` carries smooth LiDAR motion in `odometryFrame` and keeps `child_frame_id = "lidar_link"` for IMU-preintegration compatibility.
-- `liorf/mapping/odometry` carries graph-optimized LiDAR pose in `mapFrameLocal` and keeps `child_frame_id = "lidar_link"`.
+- `lili/mapping/odometry_incremental` carries smooth LiDAR motion in `odometryFrame` and keeps `child_frame_id = "lidar_link"` for IMU-preintegration compatibility.
+- `lili/mapping/odometry` carries graph-optimized LiDAR pose in `mapFrameLocal` and keeps `child_frame_id = "lidar_link"`.
 
 Map-local map products derived from the optimized trajectory (trajectory cloud/path/registered map clouds) are published in `mapFrameLocal`, while smooth robot motion is represented through the `odometryFrame -> ...` TF and incremental odometry topics.
 

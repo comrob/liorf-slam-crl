@@ -14,7 +14,7 @@ from rviz_config_resolver import default_rviz_config_path
 
 
 def generate_launch_description():
-    share_dir = get_package_share_directory('liorf')
+    share_dir = get_package_share_directory('lili')
     launch_dir = os.path.join(share_dir, 'launch')
     default_rviz_config = default_rviz_config_path(share_dir)
 
@@ -27,7 +27,7 @@ def generate_launch_description():
     params_declare = DeclareLaunchArgument(
         'params_file',
         default_value=os.path.join(
-            share_dir, 'config', 'lio_sam_ouster.yaml'),
+            share_dir, 'config', 'lili_ouster.yaml'),
         description='FPath to the ROS2 parameters file to use.')
 
     config_override_declare = DeclareLaunchArgument(
@@ -55,7 +55,7 @@ def generate_launch_description():
     )
 
     include_core = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(launch_dir, 'liorf.launch.py')),
+        PythonLaunchDescriptionSource(os.path.join(launch_dir, 'lili.launch.py')),
         launch_arguments={
             'params_file': params_file,
             'config_override': config_override,

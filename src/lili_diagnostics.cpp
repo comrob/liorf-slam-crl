@@ -1,6 +1,6 @@
-#include "liorf_diagnostics.h"
+#include "lili_diagnostics.h"
 
-LiorfDiagnostics::LiorfDiagnostics(
+LiliDiagnostics::LiliDiagnostics(
     rclcpp::Node *node,
     const rclcpp::QoS &qos,
     const std::string &history_policy,
@@ -189,21 +189,21 @@ LiorfDiagnostics::LiorfDiagnostics(
     dumpActiveParameters();
 
     telemetry_pub_ = node_->create_publisher<std_msgs::msg::String>(topic, qos);
-    timing_stats_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/timing_stats", qos);
-    time_deltas_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/time_deltas", qos);
-    event_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/event", qos);
-    warnings_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/warnings", qos);
-    frame_metrics_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/frame_metrics", qos);
-    degeneracy_metrics_pub_ = node_->create_publisher<std_msgs::msg::String>("/liorf/debug/degeneracy_metrics", qos);
+    timing_stats_pub_ = node_->create_publisher<std_msgs::msg::String>("/lili/debug/timing_stats", qos);
+    time_deltas_pub_ = node_->create_publisher<std_msgs::msg::String>("/lili/debug/time_deltas", qos);
+    event_pub_ = node_->create_publisher<std_msgs::msg::String>("/lili/debug/event", qos);
+    warnings_pub_ = node_->create_publisher<std_msgs::msg::String>("/lili/debug/warnings", qos);
+    frame_metrics_pub_ = node_->create_publisher<std_msgs::msg::String>("/lili/debug/frame_metrics", qos);
+    degeneracy_metrics_pub_ = node_->create_publisher<std_msgs::msg::String>("/lili/debug/degeneracy_metrics", qos);
 
     const double hz = std::max(0.1, publish_hz);
     const auto period_ms = std::chrono::milliseconds(static_cast<int>(1000.0 / hz));
-    diagnostics_timer_ = node_->create_wall_timer(period_ms, std::bind(&LiorfDiagnostics::publishTelemetry, this));
+    diagnostics_timer_ = node_->create_wall_timer(period_ms, std::bind(&LiliDiagnostics::publishTelemetry, this));
 
-    RCLCPP_INFO(node_->get_logger(), "[LIORF_DIAG] log directory: %s", run_dir_.string().c_str());
+    RCLCPP_INFO(node_->get_logger(), "[LILI_DIAG] log directory: %s", run_dir_.string().c_str());
 }
 
-LiorfDiagnostics::~LiorfDiagnostics()
+LiliDiagnostics::~LiliDiagnostics()
 {
     std::lock_guard<std::mutex> lock(mutex_);
     const bool diagnostics_files_enabled = diagnostics_output_policy_.write_files_master;
@@ -235,19 +235,19 @@ LiorfDiagnostics::~LiorfDiagnostics()
         perturbation_degeneracy_metrics_csv_.flush();
 }
 
-void LiorfDiagnostics::markLidarUpdate(const rclcpp::Time &stamp)
+void LiliDiagnostics::markLidarUpdate(const rclcpp::Time &stamp)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     last_lidar_update_ = stamp;
 }
 
-void LiorfDiagnostics::markGpsUpdate(const rclcpp::Time &stamp)
+void LiliDiagnostics::markGpsUpdate(const rclcpp::Time &stamp)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     last_gps_update_ = stamp;
 }
 
-void LiorfDiagnostics::recordSlice(const std::string &stage, double elapsed_ms)
+void LiliDiagnostics::recordSlice(const std::string &stage, double elapsed_ms)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     const double stamp_sec = node_->now().seconds();
@@ -276,7 +276,7 @@ void LiorfDiagnostics::recordSlice(const std::string &stage, double elapsed_ms)
         it->second = 0.9 * it->second + 0.1 * elapsed_ms;
 }
 
-void LiorfDiagnostics::logEvent(const std::string &message)
+void LiliDiagnostics::logEvent(const std::string &message)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     const double stamp_sec = node_->now().seconds();
@@ -297,7 +297,7 @@ void LiorfDiagnostics::logEvent(const std::string &message)
     }
 }
 
-void LiorfDiagnostics::logEventThrottle(const std::string &key, double period_sec, const std::string &message)
+void LiliDiagnostics::logEventThrottle(const std::string &key, double period_sec, const std::string &message)
 {
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -324,7 +324,7 @@ void LiorfDiagnostics::logEventThrottle(const std::string &key, double period_se
     }
 }
 
-void LiorfDiagnostics::recordComplementaryOdomScaleCsv(const ComplementaryOdomScaleDebugSample &sample)
+void LiliDiagnostics::recordComplementaryOdomScaleCsv(const ComplementaryOdomScaleDebugSample &sample)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!complementary_odom_scale_csv_.is_open())
@@ -389,7 +389,7 @@ void LiorfDiagnostics::recordComplementaryOdomScaleCsv(const ComplementaryOdomSc
                                    << sample.dt_immediate_odom_pair_interval_s << "\n";
 }
 
-void LiorfDiagnostics::recordComplementaryOdomTwistCsv(const ComplementaryOdomTwistDebugSample &sample)
+void LiliDiagnostics::recordComplementaryOdomTwistCsv(const ComplementaryOdomTwistDebugSample &sample)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!complementary_odom_twist_csv_.is_open())
@@ -410,7 +410,7 @@ void LiorfDiagnostics::recordComplementaryOdomTwistCsv(const ComplementaryOdomTw
                                    << sample.ang_norm << "\n";
 }
 
-void LiorfDiagnostics::recordScaleReplayFrameCsv(const ScaleReplayFrameSample &sample)
+void LiliDiagnostics::recordScaleReplayFrameCsv(const ScaleReplayFrameSample &sample)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!scale_replay_frames_csv_.is_open())
@@ -445,7 +445,7 @@ void LiorfDiagnostics::recordScaleReplayFrameCsv(const ScaleReplayFrameSample &s
     scale_replay_frames_csv_ << "\n";
 }
 
-void LiorfDiagnostics::recordComplementaryOdomStreamTum(const TumPoseSample &sample)
+void LiliDiagnostics::recordComplementaryOdomStreamTum(const TumPoseSample &sample)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!complementary_odom_stream_tum_.is_open())
@@ -462,7 +462,7 @@ void LiorfDiagnostics::recordComplementaryOdomStreamTum(const TumPoseSample &sam
                                    << sample.qw << "\n";
 }
 
-void LiorfDiagnostics::recordComplementaryOdomMeta(const ComplementaryOdomMetaSample &sample)
+void LiliDiagnostics::recordComplementaryOdomMeta(const ComplementaryOdomMetaSample &sample)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!diagnostics_output_policy_.write_files_master ||
@@ -489,7 +489,7 @@ void LiorfDiagnostics::recordComplementaryOdomMeta(const ComplementaryOdomMetaSa
          << "translation_scale_applied_online: " << sample.translation_scale_applied_online << "\n";
 }
 
-void LiorfDiagnostics::publishWarning(const std::string &message)
+void LiliDiagnostics::publishWarning(const std::string &message)
 {
     if (!warnings_pub_)
         return;
@@ -514,7 +514,7 @@ void LiorfDiagnostics::publishWarning(const std::string &message)
     logEvent(message);
 }
 
-void LiorfDiagnostics::recordTimeDelta(double delta_s)
+void LiliDiagnostics::recordTimeDelta(double delta_s)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     const double stamp_sec = node_->now().seconds();
@@ -538,14 +538,14 @@ void LiorfDiagnostics::recordTimeDelta(double delta_s)
     }
 }
 
-void LiorfDiagnostics::recordTranslationPrediction(double delta_m)
+void LiliDiagnostics::recordTranslationPrediction(double delta_m)
 {
     std::lock_guard<std::mutex> lock(mutex_);
     max_translation_delta_last_batch_m_ = std::max(max_translation_delta_last_batch_m_, delta_m);
     last_prediction_delta_m_ = delta_m;
 }
 
-void LiorfDiagnostics::recordFrameMetrics(double stamp_sec,
+void LiliDiagnostics::recordFrameMetrics(double stamp_sec,
                                           double time_delta_s,
                                           double last_time_delta_s,
                                           double prediction_delta_m,
@@ -582,7 +582,7 @@ void LiorfDiagnostics::recordFrameMetrics(double stamp_sec,
     }
 }
 
-void LiorfDiagnostics::recordDegeneracyTelemetry(
+void LiliDiagnostics::recordDegeneracyTelemetry(
     double stamp_sec, 
     const std::string &module_name, 
     bool is_degenerate, 
@@ -624,7 +624,7 @@ void LiorfDiagnostics::recordDegeneracyTelemetry(
     }
 }
 
-void LiorfDiagnostics::recordJacobianDegeneracyTelemetry(
+void LiliDiagnostics::recordJacobianDegeneracyTelemetry(
     double stamp_sec,
     const std::string &module_name,
     const lio::JacobianDegeneracyInfo &info)
@@ -695,7 +695,7 @@ void LiorfDiagnostics::recordJacobianDegeneracyTelemetry(
     }
 }
 
-void LiorfDiagnostics::recordPerturbationDegeneracyTelemetry(
+void LiliDiagnostics::recordPerturbationDegeneracyTelemetry(
     double stamp_sec,
     bool detected,
     size_t raw_twist_count,
@@ -738,7 +738,7 @@ void LiorfDiagnostics::recordPerturbationDegeneracyTelemetry(
     }
 }
 
-void LiorfDiagnostics::recordOdomTrajectoryTum(const TumPoseSample &sample)
+void LiliDiagnostics::recordOdomTrajectoryTum(const TumPoseSample &sample)
 {
     if (!trajectory_output_policy_.write_odom_trajectory_tum || !odom_trajectory_tum_.is_open())
         return;
@@ -755,13 +755,13 @@ void LiorfDiagnostics::recordOdomTrajectoryTum(const TumPoseSample &sample)
                          << sample.qw << "\n";
 }
 
-double LiorfDiagnostics::getLastPredictionDelta() const
+double LiliDiagnostics::getLastPredictionDelta() const
 {
     std::lock_guard<std::mutex> lock(mutex_);
     return last_prediction_delta_m_;
 }
 
-std::filesystem::path LiorfDiagnostics::createRunDirectory(const std::string &base_dir, const std::string &run_suffix)
+std::filesystem::path LiliDiagnostics::createRunDirectory(const std::string &base_dir, const std::string &run_suffix)
 {
     std::string expanded = base_dir;
     if (!expanded.empty() && expanded[0] == '~')
@@ -790,7 +790,7 @@ std::filesystem::path LiorfDiagnostics::createRunDirectory(const std::string &ba
     return path;
 }
 
-void LiorfDiagnostics::dumpActiveParameters()
+void LiliDiagnostics::dumpActiveParameters()
 {
     if (!run_parameters_.is_open())
         return;
@@ -810,7 +810,7 @@ void LiorfDiagnostics::dumpActiveParameters()
     }
 }
 
-void LiorfDiagnostics::publishTelemetry()
+void LiliDiagnostics::publishTelemetry()
 {
     if (!telemetry_pub_)
         return;

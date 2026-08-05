@@ -1,7 +1,7 @@
 [project]
-name = "liorf-tools"
+name = "lili-tools"
 version = "0.1.0"
-description = "Utility tools for LIORF saved-map export and visualization"
+description = "Utility tools for LILI saved-map export and visualization"
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "numpy>=1.26.0",

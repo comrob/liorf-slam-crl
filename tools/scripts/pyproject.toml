@@ -1,8 +1,8 @@
 [tool.poetry]
-name = "liorf-map-tools"
+name = "lili-map-tools"
 version = "0.1.0"
-description = "Utility tools for LIORF saved-map export and visualization"
-authors = ["LIORF contributors"]
+description = "Utility tools for LILI saved-map export and visualization"
+authors = ["LILI contributors"]
 readme = "../README.md"
 package-mode = false
 packages = [{include = "replay_scale", from = ".."}]

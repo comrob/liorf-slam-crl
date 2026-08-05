@@ -27,9 +27,9 @@ def _build_node_parameters(context, *parameter_sources):
     return parameters
 
 
-def _liorf_node(executable, name, parameters, remappings=None):
+def _lili_node(executable, name, parameters, remappings=None):
     return Node(
-        package='liorf',
+        package='lili',
         executable=executable,
         name=name,
         parameters=parameters,
@@ -40,7 +40,7 @@ def _liorf_node(executable, name, parameters, remappings=None):
 
 def generate_launch_description():
 
-    share_dir = get_package_share_directory('liorf')
+    share_dir = get_package_share_directory('lili')
     parameter_file = LaunchConfiguration('params_file')
     config_override = LaunchConfiguration('config_override')
     enable_rviz = LaunchConfiguration('enable_rviz')
@@ -49,7 +49,7 @@ def generate_launch_description():
     params_declare = DeclareLaunchArgument(
         'params_file',
         default_value=os.path.join(
-            share_dir, 'config', 'lio_sam_ouster.yaml'),
+            share_dir, 'config', 'lili_ouster.yaml'),
         description='FPath to the ROS2 parameters file to use.')
     
     config_override_declare = DeclareLaunchArgument(
@@ -70,22 +70,22 @@ def generate_launch_description():
     def launch_setup(context, *args, **kwargs):
         node_parameters = _build_node_parameters(context, parameter_file, config_override)
         return [
-            _liorf_node(
-                'liorf_imuPreintegration',
-                'liorf_imuPreintegration',
+            _lili_node(
+                'lili_imuPreintegration',
+                'lili_imuPreintegration',
                 node_parameters,
-                remappings=[('/liorf/mapping/odometry', '/estimated_odom')]
+                remappings=[('/lili/mapping/odometry', '/estimated_odom')]
             ),
-            _liorf_node(
-                'liorf_imageProjection',
-                'liorf_imageProjection',
+            _lili_node(
+                'lili_imageProjection',
+                'lili_imageProjection',
                 node_parameters
             ),
-            _liorf_node(
-                'liorf_mapOptmization',
-                'liorf_mapOptmization',
+            _lili_node(
+                'lili_mapOptimization',
+                'lili_mapOptimization',
                 node_parameters,
-                remappings=[('/liorf/mapping/odometry', '/estimated_odom')]
+                remappings=[('/lili/mapping/odometry', '/estimated_odom')]
             ),
             Node(
                 package='rviz2',

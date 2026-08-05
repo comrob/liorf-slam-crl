@@ -41,16 +41,16 @@ public:
     std::string lidarOdomFrameId;
     deque<nav_msgs::msg::Odometry> imuOdomQueue;
 
-    TransformFusion(const rclcpp::NodeOptions & options) : ParamServer("liorf_transformFusion", options)
+    TransformFusion(const rclcpp::NodeOptions & options) : ParamServer("lili_transformFusion", options)
     {
-        subLaserOdometry = create_subscription<nav_msgs::msg::Odometry>("liorf/mapping/odometry", QosPolicy(history_policy, reliability_policy), 
+        subLaserOdometry = create_subscription<nav_msgs::msg::Odometry>("lili/mapping/odometry", QosPolicy(history_policy, reliability_policy), 
                     std::bind(&TransformFusion::lidarOdometryHandler, this, std::placeholders::_1));
 
         subImuOdometry = create_subscription<nav_msgs::msg::Odometry>(odomTopic+"_incremental", QosPolicy(history_policy, reliability_policy),
                     std::bind(&TransformFusion::imuOdometryHandler, this, std::placeholders::_1));
 
         pubImuOdometry = create_publisher<nav_msgs::msg::Odometry>(odomTopic, QosPolicy(history_policy, reliability_policy));
-        pubImuPath = create_publisher<nav_msgs::msg::Path>("liorf/imu/path", QosPolicy(history_policy, reliability_policy));
+        pubImuPath = create_publisher<nav_msgs::msg::Path>("lili/imu/path", QosPolicy(history_policy, reliability_policy));
     }
 
     Eigen::Affine3f odom2affine(nav_msgs::msg::Odometry odom)
@@ -194,7 +194,7 @@ public:
     gtsam::Pose3 lidar2Imu;
 
     IMUPreintegration(const rclcpp::NodeOptions & options) :
-            ParamServer("liorf_imu_preintegration", options)
+            ParamServer("lili_imu_preintegration", options)
     {
         subImu = create_subscription<sensor_msgs::msg::Imu>(
             imuTopic, 
@@ -208,7 +208,7 @@ public:
             std::bind(&IMUPreintegration::lidarFrameObserverHandler, this, std::placeholders::_1)
         );
 
-        subOdometry = create_subscription<nav_msgs::msg::Odometry>("liorf/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy),
+        subOdometry = create_subscription<nav_msgs::msg::Odometry>("lili/mapping/odometry_incremental", QosPolicy(history_policy, reliability_policy),
                     std::bind(&IMUPreintegration::odometryHandler, this, std::placeholders::_1));
 
         pubImuOdometry = create_publisher<nav_msgs::msg::Odometry>(odomTopic+"_incremental", QosPolicy(history_policy, reliability_policy));

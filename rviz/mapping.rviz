@@ -51,7 +51,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /liorf/mapping/gps_constraints
+        Value: /lili/mapping/gps_constraints
       Value: true
     - Alpha: 1
       Autocompute Intensity Bounds: true
@@ -82,7 +82,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /liorf/mapping/surf_debug_colored
+        Value: /lili/mapping/surf_debug_colored
       Use Fixed Frame: true
       Use rainbow: true
       Value: false
@@ -115,7 +115,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /liorf/mapping/map_local
+        Value: /lili/mapping/map_local
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -165,7 +165,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/path
+            Value: /lili/mapping/path
           Value: false
         - Alpha: 1
           Autocompute Intensity Bounds: true
@@ -196,7 +196,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/cloud_registered_raw
+            Value: /lili/mapping/cloud_registered_raw
           Use Fixed Frame: true
           Use rainbow: true
           Value: false
@@ -229,7 +229,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/map_global
+            Value: /lili/mapping/map_global
           Use Fixed Frame: true
           Use rainbow: true
           Value: false
@@ -270,7 +270,7 @@ Visualization Manager:
             Filter size: 10
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/odometry
+            Value: /lili/mapping/odometry
           Value: true
       Enabled: true
       Name: Mapping
@@ -286,7 +286,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy_raw
+            Value: /lili/mapping/degeneracy_raw
           Value: false
         - Class: rviz_default_plugins/MarkerArray
           Enabled: false
@@ -298,7 +298,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy_basis
+            Value: /lili/mapping/degeneracy_basis
           Value: false
         - Class: rviz_default_plugins/MarkerArray
           Enabled: false
@@ -310,7 +310,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy_pca
+            Value: /lili/mapping/degeneracy_pca
           Value: false
         - Class: rviz_default_plugins/MarkerArray
           Enabled: true
@@ -322,7 +322,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy_paths
+            Value: /lili/mapping/degeneracy_paths
           Value: true
       Enabled: false
       Name: Deg Directions
@@ -357,7 +357,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy/perturbed_scan_0
+            Value: /lili/mapping/degeneracy/perturbed_scan_0
           Use Fixed Frame: true
           Use rainbow: true
           Value: false
@@ -390,7 +390,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy/perturbed_scan_1
+            Value: /lili/mapping/degeneracy/perturbed_scan_1
           Use Fixed Frame: true
           Use rainbow: true
           Value: false
@@ -423,7 +423,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy/perturbed_scan_2
+            Value: /lili/mapping/degeneracy/perturbed_scan_2
           Use Fixed Frame: true
           Use rainbow: true
           Value: false
@@ -456,7 +456,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy/aligned_scan_0
+            Value: /lili/mapping/degeneracy/aligned_scan_0
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
@@ -489,7 +489,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy/aligned_scan_1
+            Value: /lili/mapping/degeneracy/aligned_scan_1
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
@@ -522,7 +522,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy/aligned_scan_2
+            Value: /lili/mapping/degeneracy/aligned_scan_2
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
@@ -536,7 +536,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy/displacements
+            Value: /lili/mapping/degeneracy/displacements
           Value: true
         - Class: rviz_default_plugins/MarkerArray
           Enabled: true
@@ -548,7 +548,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/degeneracy/optimization_paths
+            Value: /lili/mapping/degeneracy/optimization_paths
           Value: true
       Enabled: false
       Name: Deg Perturbation Debug
@@ -583,7 +583,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/debug/cloud_previous_pose
+            Value: /lili/mapping/debug/cloud_previous_pose
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
@@ -616,7 +616,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/debug/cloud_predicted_pose
+            Value: /lili/mapping/debug/cloud_predicted_pose
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
@@ -649,7 +649,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/cloud_registered
+            Value: /lili/mapping/cloud_registered
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
@@ -667,7 +667,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/kdtree_plane_normals
+            Value: /lili/mapping/kdtree_plane_normals
           Value: true
         - Class: rviz_default_plugins/MarkerArray
           Enabled: true
@@ -679,7 +679,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/kdtree_plane_residuals
+            Value: /lili/mapping/kdtree_plane_residuals
           Value: true
         - Alpha: 1
           Autocompute Intensity Bounds: true
@@ -710,7 +710,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/kdtree_plane_points
+            Value: /lili/mapping/kdtree_plane_points
           Use Fixed Frame: true
           Use rainbow: true
           Value: true
@@ -775,7 +775,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -791,7 +791,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -807,7 +807,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -823,7 +823,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -839,7 +839,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -926,7 +926,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -942,7 +942,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -958,7 +958,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -1045,7 +1045,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -1061,7 +1061,7 @@ Visualization Manager:
               Line Style: Solid
               Line Width: 2
               Plot Style: Line
-              Topic: /liorf/mapping/complementary_odom/scale_debug
+              Topic: /lili/mapping/complementary_odom/scale_debug
               Unit: ""
               Value: true
               Value Offset: 0
@@ -1108,7 +1108,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/complementary_odom/correction_direction
+            Value: /lili/mapping/complementary_odom/correction_direction
           Value: true
         - Class: rviz_default_plugins/MarkerArray
           Enabled: false
@@ -1120,7 +1120,7 @@ Visualization Manager:
             Durability Policy: Volatile
             History Policy: Keep Last
             Reliability Policy: Reliable
-            Value: /liorf/mapping/complementary_odom/lagged_paths
+            Value: /lili/mapping/complementary_odom/lagged_paths
           Value: false
       Enabled: true
       Name: Complementary Odom Debug

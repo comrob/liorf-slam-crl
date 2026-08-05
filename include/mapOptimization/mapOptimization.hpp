@@ -5,9 +5,9 @@
 #include "utility.h"
 #include "export/map_types.hpp"
 #include "export/MapExporter.hpp"
-#include "liorf/msg/complementary_odom_scale_debug.hpp"
-#include "liorf/msg/cloud_info.hpp"
-#include "liorf/srv/save_map.hpp"
+#include "lili/msg/complementary_odom_scale_debug.hpp"
+#include "lili/msg/cloud_info.hpp"
+#include "lili/srv/save_map.hpp"
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <gtsam/geometry/Rot3.h>
 #include <gtsam/geometry/Pose3.h>
@@ -141,7 +141,7 @@ public:
     gtsam::Values isamCurrentEstimate;
     Eigen::MatrixXd poseCovariance;
 
-    rclcpp::Subscription<liorf::msg::CloudInfo>::SharedPtr subCloud;
+    rclcpp::Subscription<lili::msg::CloudInfo>::SharedPtr subCloud;
     rclcpp::Subscription<sensor_msgs::msg::NavSatFix>::SharedPtr subGPS;
     rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr subLoop;
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subComplementaryOdom;
@@ -170,7 +170,7 @@ public:
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubCloudRegisteredRaw;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubLoopConstraintEdge;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubGpsConstraintViz;
-    rclcpp::Publisher<liorf::msg::CloudInfo>::SharedPtr pubSLAMInfo;
+    rclcpp::Publisher<lili::msg::CloudInfo>::SharedPtr pubSLAMInfo;
     rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pubGpsOdom;
     rclcpp::Publisher<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr pubGlobalOffset;
     rclcpp::Publisher<sensor_msgs::msg::NavSatFix>::SharedPtr pubLidarGpsFix;
@@ -199,7 +199,7 @@ public:
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubDegeneracyOptimizationPaths;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubComplementaryOdomCorrectionDirection;
     rclcpp::Publisher<visualization_msgs::msg::MarkerArray>::SharedPtr pubComplementaryOdomLaggedPaths;
-    rclcpp::Publisher<liorf::msg::ComplementaryOdomScaleDebug>::SharedPtr pubComplementaryOdomScaleDebug;
+    rclcpp::Publisher<lili::msg::ComplementaryOdomScaleDebug>::SharedPtr pubComplementaryOdomScaleDebug;
 
     const gtsam::Key T_EL_KEY = gtsam::Symbol('T', 0);
     bool T_EL_initialized = false;
@@ -233,7 +233,7 @@ public:
         return (T_EL_initialized && gpsFactorsAccepted >= 2) || forced_anchor_active;
     }
 
-    rclcpp::Service<liorf::srv::SaveMap>::SharedPtr srvSaveMap;
+    rclcpp::Service<lili::srv::SaveMap>::SharedPtr srvSaveMap;
 
     std::deque<nav_msgs::msg::Odometry> gpsQueue;
     std::deque<gtsam::Point3> gpsReceivedEnuQueue;
@@ -243,7 +243,7 @@ public:
     std::mutex gpsHistoryMutex;
     std::mutex densePoseHistoryMutex;
     static constexpr size_t kMaxGpsVizPoints = 2000;
-    liorf::msg::CloudInfo cloudInfo;
+    lili::msg::CloudInfo cloudInfo;
 
     vector<pcl::PointCloud<PointType>::Ptr> surfCloudKeyFrames;
     std::vector<uint8_t> keyframeScanAdmissible;
@@ -312,7 +312,7 @@ public:
 
     mapOptimization(const rclcpp::NodeOptions &options);
     void allocateMemory();
-    void laserCloudInfoHandler(const liorf::msg::CloudInfo::SharedPtr msgIn);
+    void laserCloudInfoHandler(const lili::msg::CloudInfo::SharedPtr msgIn);
 
     void timerCallbackPublishOrigin();
     void initializeDatum(double lat, double lon, double alt, double heading_deg);
@@ -333,7 +333,7 @@ public:
     void logLocalMapStats(const std::string &stage);
     void manageLocalMap();
     void updateRollingMap();
-    bool saveMapService(const std::shared_ptr<liorf::srv::SaveMap::Request> req, std::shared_ptr<liorf::srv::SaveMap::Response> res);
+    bool saveMapService(const std::shared_ptr<lili::srv::SaveMap::Request> req, std::shared_ptr<lili::srv::SaveMap::Response> res);
     void visualizeGlobalMapThread();
     void publishGlobalMap();
     void publishTwistMarkers(

@@ -1,4 +1,4 @@
-# LIORF. Improved by CRL, CTU in Prague (ROS 2 Jazzy)
+# LILI-SAM. Improved by CRL, CTU in Prague (ROS 2 Jazzy)
 
 Main features:
 - **Robust constant-velocity motion model** for translation prediction, improving resilience to IMU noise and sensor dropouts. Works with ouster's IMU out-of-the-box.
@@ -16,7 +16,7 @@ Main features:
 - **Structured map metadata** output with geo-referenced clouds in both local and ENU frames, timestamped trajectories, and automatic orbit path persistence.
 
 
-This repository provides a ROS 2 Jazzy port of LIORF/LIO-SAM style lidar-inertial odometry and mapping.
+LILI-SAM (short name `lili`) is a ROS 2 Jazzy lidar-inertial odometry and mapping system in the LIORF/LIO-SAM lineage.
 This guide is simplified for **Ubuntu 24.04** and uses **Zenoh (`rmw_zenoh_cpp`)** as the default ROS middleware.
 
 ---
@@ -94,9 +94,9 @@ sudo ldconfig
 ## 4) Build this repository
 
 ```bash
-mkdir -p ~/liorf_ws/src
-cd ~/liorf_ws/src
-git clone <YOUR_FORK_OR_THIS_REPO_URL> liorf
+mkdir -p ~/lili_ws/src
+cd ~/lili_ws/src
+git clone <YOUR_FORK_OR_THIS_REPO_URL> lili
 cd ..
 
 source /opt/ros/jazzy/setup.bash
@@ -146,15 +146,15 @@ echo $RMW_IMPLEMENTATION
 ## 6) Run
 
 ```bash
-cd ~/liorf_ws
+cd ~/lili_ws
 source install/setup.bash
-ros2 launch liorf liorf.launch.py
+ros2 launch lili lili.launch.py
 ```
 
 In another terminal (same environment), play a bag:
 
 ```bash
-cd ~/liorf_ws
+cd ~/lili_ws
 source install/setup.bash
 ros2 bag play <path_to_ros2_bag>
 ```
@@ -190,13 +190,13 @@ Diagnostics telemetry is also persisted as `telemetry.csv` in each run directory
 
 
 
-By default, the script reads the latest run (via `~/.ros/liorf_logs/latest` when available), saves the PNG plot, and displays it.
+By default, the script reads the latest run (via `~/.ros/lili_logs/latest` when available), saves the PNG plot, and displays it.
 
 Useful options:
 
 ```bash
 # specific run directory or CSV
-python3 scripts/plot_time_slicing_stats.py --input ~/.ros/liorf_logs/run_YYYYMMDD_HHMMSS
+python3 scripts/plot_time_slicing_stats.py --input ~/.ros/lili_logs/run_YYYYMMDD_HHMMSS
 
 # smoothing + custom output
 python3 scripts/plot_time_slicing_stats.py --window 10 --output /tmp/timing_plot.png
@@ -206,7 +206,7 @@ python3 scripts/plot_time_slicing_stats.py --window 10 --output /tmp/timing_plot
 
 ## 7) Frame model overview
 
-LIORF follows ROS frame guidance from REP-105 ([map/odom/base_link](https://www.ros.org/reps/rep-0105.html#map)) and uses a layered variant so local smooth odometry and global georeferencing remain cleanly separated.
+LILI follows ROS frame guidance from REP-105 ([map/odom/base_link](https://www.ros.org/reps/rep-0105.html#map)) and uses a layered variant so local smooth odometry and global georeferencing remain cleanly separated.
 
 ### TLDR frame tree (active Ouster profile examples)
 
@@ -257,11 +257,11 @@ ECEFframe      (e.g., "earth")
 ### Odometry topics
 
 - Legacy LiDAR topics kept for compatibility:
-  - `liorf/mapping/odometry`: graph-optimized LiDAR pose in `mapFrameLocal -> "lidar_link"`
-  - `liorf/mapping/odometry_incremental`: smooth LiDAR pose in `odometryFrame -> "lidar_link"`
+  - `lili/mapping/odometry`: graph-optimized LiDAR pose in `mapFrameLocal -> "lidar_link"`
+  - `lili/mapping/odometry_incremental`: smooth LiDAR pose in `odometryFrame -> "lidar_link"`
 - New base-link topics:
-  - `liorf/mapping/baselink_odometry`: graph-optimized base-link pose in `mapFrameLocal -> baselinkFrame`
-  - `liorf/mapping/baselink_odometry_incremental`: smooth base-link pose in `odometryFrame -> baselinkFrame`
+  - `lili/mapping/baselink_odometry`: graph-optimized base-link pose in `mapFrameLocal -> baselinkFrame`
+  - `lili/mapping/baselink_odometry_incremental`: smooth base-link pose in `odometryFrame -> baselinkFrame`
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for full transform chain, TF ownership, and publication behavior details.
 
@@ -298,13 +298,13 @@ Parameter meaning:
 
 Behavior:
 
-- `liorf/gps_origin` and ENU/NED GPS-derived outputs can start before the first sensor GNSS message.
+- `lili/gps_origin` and ENU/NED GPS-derived outputs can start before the first sensor GNSS message.
 - On the first accepted real GPS factor, the floating-anchor prior is inserted once and translation is aligned, while manual yaw is preserved.
 
 If this appears inactive at runtime, verify you are launching the build that contains your updated YAML and code:
 
 - for source workspace runs: rebuild and `source install/setup.bash` in that workspace before `ros2 launch`.
-- for installed package runs: confirm the installed YAML under `install/liorf/share/liorf/config/` has the same parameter values.
+- for installed package runs: confirm the installed YAML under `install/lili/share/lili/config/` has the same parameter values.
 
 Example:
 
@@ -314,12 +314,12 @@ gpsTopic: "gps/fix"
 
 ### Outputs related to GPS fusion
 
-- `liorf/mapping/gps_odom` (`nav_msgs/msg/Odometry`): local Cartesian projection of NavSatFix.
-- `liorf/gps_origin` (`sensor_msgs/msg/NavSatFix`): captured datum origin used for local projection.
+- `lili/mapping/gps_odom` (`nav_msgs/msg/Odometry`): local Cartesian projection of NavSatFix.
+- `lili/gps_origin` (`sensor_msgs/msg/NavSatFix`): captured datum origin used for local projection.
 - TF `mapFrameEnu -> mapFrameLocal`: optimized global offset/rotation from floating-anchor fusion.
-- `liorf/enu_to_local_offset` (`geometry_msgs/msg/PoseWithCovarianceStamped`): same ENU-to-local offset as the TF, including covariance when available.
-- `liorf/mapping/lidar_gps_enu_pose` and `liorf/mapping/lidar_gps_ned_pose` (`geometry_msgs/msg/PoseStamped`): fused LiDAR pose in ENU/NED frames.
-- `liorf/mapping/baselink_gps_enu_odometry` and `liorf/mapping/baselink_gps_ned_odometry` (`nav_msgs/msg/Odometry`): fused base-link pose in ENU/NED frames.
+- `lili/enu_to_local_offset` (`geometry_msgs/msg/PoseWithCovarianceStamped`): same ENU-to-local offset as the TF, including covariance when available.
+- `lili/mapping/lidar_gps_enu_pose` and `lili/mapping/lidar_gps_ned_pose` (`geometry_msgs/msg/PoseStamped`): fused LiDAR pose in ENU/NED frames.
+- `lili/mapping/baselink_gps_enu_odometry` and `lili/mapping/baselink_gps_ned_odometry` (`nav_msgs/msg/Odometry`): fused base-link pose in ENU/NED frames.
 
 ### Map saving metadata
 
@@ -336,26 +336,26 @@ You can trigger map export via ROS service directly or with the helper script:
 ./scripts/save_map.sh -d Downloads/my_map
 
 # absolute destination
-./scripts/save_map.sh -a /tmp/liorf_map
+./scripts/save_map.sh -a /tmp/lili_map
 ```
 
 You can also trigger map export via launch arguments:
 
 ```bash
 # default values (resolution=0.0, destination='')
-ros2 launch liorf save_map.launch.py
+ros2 launch lili save_map.launch.py
 
 # custom resolution
-ros2 launch liorf save_map.launch.py resolution:=0.2
+ros2 launch lili save_map.launch.py resolution:=0.2
 
 # custom destination
-ros2 launch liorf save_map.launch.py destination:=/tmp/liorf_map
+ros2 launch lili save_map.launch.py destination:=/tmp/lili_map
 
 # custom wait timeout for service availability
-ros2 launch liorf save_map.launch.py wait_timeout_sec:=60.0
+ros2 launch lili save_map.launch.py wait_timeout_sec:=60.0
 ```
 
-When calling `liorf/save_map`, georeference metadata is saved to:
+When calling `lili/save_map`, georeference metadata is saved to:
 
 - `goereference.yaml`
 
@@ -389,7 +389,7 @@ Saved artifacts are organized as:
 
 After successful map save, the node writes the absolute path to:
 
-- `~/.liorf_last_saved_map_path`
+- `~/.lili_last_saved_map_path`
 
 ### Satellite overlay visualization (saved maps)
 
@@ -401,7 +401,7 @@ python3 scripts/visualize_saved_map_satellite.py --map-dir <saved_map_directory>
 
 If `--map-dir` is omitted, the script resolves map directory in this order:
 
-1. `~/.liorf_last_saved_map_path` (written by `liorf/save_map` on successful save)
+1. `~/.lili_last_saved_map_path` (written by `lili/save_map` on successful save)
 2. default `~/Downloads/LOAM`
 3. fail with an error message
 

@@ -188,7 +188,7 @@ def _load_timing_csv(csv_path: str):
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Plot LIORF time-slicing diagnostics from timing_stats.csv"
+        description="Plot LILI time-slicing diagnostics from timing_stats.csv"
     )
     parser.add_argument(
         "--input",
@@ -202,8 +202,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--base-dir",
-        default="~/.ros/liorf_logs",
-        help="Base diagnostics log directory (default: ~/.ros/liorf_logs)",
+        default="~/.ros/lili_logs",
+        help="Base diagnostics log directory (default: ~/.ros/lili_logs)",
     )
     parser.add_argument(
         "--output",
@@ -300,7 +300,7 @@ def main() -> int:
             t_rel, y = _stage_rel_xy(stage)
             ax.plot(t_rel, y, label=stage, linewidth=1.2)
 
-        ax.set_title("LIORF Time Slicing Statistics (overlay)")
+        ax.set_title("LILI Time Slicing Statistics (overlay)")
         ax.set_xlabel("Time since first sample [s]")
         ax.set_ylabel("Elapsed time [ms]")
         ax.grid(True, alpha=0.3)
@@ -330,7 +330,7 @@ def main() -> int:
         for j in range(len(selected), nrows * cols):
             axes_list[j].axis("off")
 
-        fig.suptitle("LIORF Time Slicing Statistics (detailed facets)", fontsize=12)
+        fig.suptitle("LILI Time Slicing Statistics (detailed facets)", fontsize=12)
         fig.supxlabel("Time since first sample [s]")
         fig.supylabel("Elapsed time [ms]")
         fig.tight_layout(rect=[0, 0, 1, 0.97])
@@ -400,7 +400,7 @@ def main() -> int:
         ax_right.set_ylabel("Elapsed time [ms]")
         ax_right.grid(True, alpha=0.3)
 
-        fig.suptitle("LIORF Time Slicing Statistics", fontsize=12)
+        fig.suptitle("LILI Time Slicing Statistics", fontsize=12)
         fig.tight_layout(rect=[0, 0, 1, 0.95])
 
     output_path = args.output.strip()

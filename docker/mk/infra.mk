@@ -13,21 +13,21 @@ Q := @
 .PHONY: up down clean prune clean-build reimage stop image rebuild
 
 up:
-	$(Q)$(COMPOSE) up -d liorf_dev bag_player
+	$(Q)$(COMPOSE) up -d lili_dev bag_player
 
 down:
-	$(Q)$(COMPOSE) down liorf_dev bag_player
+	$(Q)$(COMPOSE) down lili_dev bag_player
 
 clean:
 	@echo "Removing project containers and network..."
-	$(Q)$(COMPOSE) down --remove-orphans liorf_dev bag_player liorf_run
+	$(Q)$(COMPOSE) down --remove-orphans lili_dev bag_player lili_run
 
 prune:
 	@echo "Pruning all stopped containers system-wide..."
 	$(Q)docker container prune -f
 
 clean-build:
-	@echo "Cleaning ros liorf package build cache (preserving .empty files)..."
+	@echo "Cleaning ros lili package build cache (preserving .empty files)..."
 	$(Q)find $(DOCKER_DIR)/cache/build -mindepth 1 ! -name ".empty" -exec rm -rf {} +
 	$(Q)find $(DOCKER_DIR)/cache/install -mindepth 1 ! -name ".empty" -exec rm -rf {} +
 	$(Q)find $(DOCKER_DIR)/cache/log -mindepth 1 ! -name ".empty" -exec rm -rf {} +

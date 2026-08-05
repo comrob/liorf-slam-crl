@@ -7,8 +7,8 @@
 include $(dir $(abspath $(lastword $(MAKEFILE_LIST))))/infra.mk
 
 REGISTRY := ghcr.io/comrob
-IMAGE_NAME := liorf-crl
-LOCAL_IMAGE := liorf_jazzy_prod
+IMAGE_NAME := lili-sam
+LOCAL_IMAGE := lili_jazzy_prod
 TAG ?= jazzy
 LATEST ?= false
 
@@ -62,12 +62,12 @@ pull:
 
 # List local images
 list-images:
-	@echo "Local LIORF images:"
-	@docker images | grep -E "$(IMAGE_NAME)|liorf_jazzy"
+	@echo "Local LILI images:"
+	@docker images | grep -E "$(IMAGE_NAME)|lili_jazzy"
 
 # Remove local images
 clean-images:
-	@echo "Removing local LIORF images..."
+	@echo "Removing local LILI images..."
 	@docker rmi $(REGISTRY)/$(IMAGE_NAME):$(TAG) 2>/dev/null || true
 	@docker rmi $(LOCAL_IMAGE) 2>/dev/null || true
 	@echo "✓ Cleaned up images"

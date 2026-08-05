@@ -4,7 +4,7 @@
 #define PCL_NO_PRECOMPILE 
 // <!-- liorf_yjz_lucky_boy -->
 #include <rclcpp/rclcpp.hpp>
-#include "liorf_diagnostics.h"
+#include "lili_diagnostics.h"
 
 #include <std_msgs/msg/header.hpp>
 #include <std_msgs/msg/string.hpp>
@@ -123,7 +123,7 @@ struct ComplementaryOdomParameters
 
 struct LogOutputConfig
 {
-    std::string base_dir = "~/.ros/liorf_logs";
+    std::string base_dir = "~/.ros/lili_logs";
     std::string run_suffix;
 
     bool write_files = true;
@@ -157,7 +157,7 @@ inline std::string TranslationPredictionSourceToString(TranslationPredictionSour
 class ParamServer : public rclcpp::Node
 {
 public:
-    std::shared_ptr<LiorfDiagnostics> diagnostics;
+    std::shared_ptr<LiliDiagnostics> diagnostics;
 
     string history_policy;
     string reliability_policy;

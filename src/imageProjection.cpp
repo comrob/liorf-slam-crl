@@ -1,5 +1,5 @@
 #include "utility.h"
-#include "liorf/msg/cloud_info.hpp"
+#include "lili/msg/cloud_info.hpp"
 // <!-- liorf_localization_yjz_lucky_boy -->
 struct VelodynePointXYZIRT
 {
@@ -73,7 +73,7 @@ private:
     rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr subOdom;
 
     rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pubExtractedCloud;
-    rclcpp::Publisher<liorf::msg::CloudInfo>::SharedPtr pubLaserCloudInfo;
+    rclcpp::Publisher<lili::msg::CloudInfo>::SharedPtr pubLaserCloudInfo;
 
     std::deque<sensor_msgs::msg::Imu> imuQueue;
     std::deque<nav_msgs::msg::Odometry> odomQueue;
@@ -108,14 +108,14 @@ private:
     float scanYawSpan;
     float scanDuration;
 
-    liorf::msg::CloudInfo cloudInfo;
+    lili::msg::CloudInfo cloudInfo;
     double timeScanCur;
     double timeScanEnd;
     std_msgs::msg::Header cloudHeader;
 
 public:
     ImageProjection(const rclcpp::NodeOptions & options) :
-            ParamServer("liorf_imageProjection", options), deskewFlag(0)
+            ParamServer("lili_imageProjection", options), deskewFlag(0)
     {
         subImu = create_subscription<sensor_msgs::msg::Imu>(
             imuTopic, 
@@ -132,9 +132,9 @@ public:
             std::bind(&ImageProjection::cloudHandler, this, std::placeholders::_1)
         );
 
-        pubExtractedCloud = create_publisher<sensor_msgs::msg::PointCloud2>( "liorf/deskew/cloud_deskewed", QosPolicy(history_policy, reliability_policy));
+        pubExtractedCloud = create_publisher<sensor_msgs::msg::PointCloud2>( "lili/deskew/cloud_deskewed", QosPolicy(history_policy, reliability_policy));
 
-        pubLaserCloudInfo = create_publisher<liorf::msg::CloudInfo>("liorf/deskew/cloud_info", QosPolicy(history_policy, reliability_policy));
+        pubLaserCloudInfo = create_publisher<lili::msg::CloudInfo>("lili/deskew/cloud_info", QosPolicy(history_policy, reliability_policy));
 
         allocateMemory();
         resetParameters();

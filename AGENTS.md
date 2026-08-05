@@ -4,11 +4,11 @@ This file is a working guide for future LLM/code agents modifying this repositor
 
 ## 1) Project purpose
 
-`liorf` is a ROS 2 Jazzy LiDAR–IMU(-GPS) SLAM package (LIORF/LIO-SAM style) with three core C++ executables:
+`lili` is the ROS 2 Jazzy package for **LILI-SAM**, a LiDAR–IMU(-GPS) SLAM system in the LIORF/LIO-SAM lineage, with three core C++ executables:
 
-- `liorf_imageProjection`
-- `liorf_imuPreintegration`
-- `liorf_mapOptmization`
+- `lili_imageProjection`
+- `lili_imuPreintegration`
+- `lili_mapOptimization`
 
 The runtime architecture is topic-driven and split across front-end deskewing, IMU preintegration, and map optimization.
 
@@ -46,20 +46,20 @@ The runtime architecture is topic-driven and split across front-end deskewing, I
 - [config/](config)
   - Per-dataset/per-sensor parameter YAML files.
   - Commonly edited files:
-    - [config/lio_sam_default.yaml](config/lio_sam_default.yaml)
-    - [config/kitti.yaml](config/kitti.yaml)
-    - [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
-    - [config/lio_sam_livox.yaml](config/lio_sam_livox.yaml)
-    - [config/mulran.yaml](config/mulran.yaml)
+    - [config/lili_default.yaml](config/lili_default.yaml)
+    - [config/datasets/kitti.yaml](config/datasets/kitti.yaml)
+    - [config/lili_ouster.yaml](config/lili_ouster.yaml)
+    - [config/datasets/lio_sam_livox.yaml](config/datasets/lio_sam_livox.yaml)
+    - [config/datasets/mulran.yaml](config/datasets/mulran.yaml)
 
 ### Launch
 
-- [launch/liorf.launch.py](launch/liorf.launch.py)
+- [launch/lili.launch.py](launch/lili.launch.py)
   - General launch entry point (params + optional RViz).
 
 - Dataset launchers (same node trio, different default params), e.g.:
-  - [launch/run_lio_sam_default.launch.py](launch/run_lio_sam_default.launch.py)
-  - [launch/run_kitti.launch.py](launch/run_kitti.launch.py)
+  - [launch/run_lili_ouster.launch.py](launch/run_lili_ouster.launch.py)
+  - [launch/datasets/run_kitti.launch.py](launch/datasets/run_kitti.launch.py)
 
 ### Core C++ source files
 
@@ -153,36 +153,36 @@ The runtime architecture is topic-driven and split across front-end deskewing, I
      - IMU
      - `odomTopic + "_incremental"`
    - Publishes:
-     - `liorf/deskew/cloud_deskewed`
-     - `liorf/deskew/cloud_info`
+     - `lili/deskew/cloud_deskewed`
+     - `lili/deskew/cloud_info`
 
 3. `mapOptimization` ([src/mapOptimization/mapOptimization_core.cpp](src/mapOptimization/mapOptimization_core.cpp), [src/mapOptimization/mapOptimization_map.cpp](src/mapOptimization/mapOptimization_map.cpp), [src/mapOptimization/mapOptimization_scan.cpp](src/mapOptimization/mapOptimization_scan.cpp), [src/mapOptimization/mapOptimization_gps.cpp](src/mapOptimization/mapOptimization_gps.cpp), [src/mapOptimization/mapOptimization_loop.cpp](src/mapOptimization/mapOptimization_loop.cpp), [src/mapOptimization/mapOptimization_publish.cpp](src/mapOptimization/mapOptimization_publish.cpp))
    - Subscribes:
-     - `liorf/deskew/cloud_info`
+     - `lili/deskew/cloud_info`
      - GPS (`gpsTopic`)
      - optional loop topic `lio_loop/loop_closure_detection`
    - Publishes (key ones):
-     - `liorf/mapping/odometry`
-     - `liorf/mapping/odometry_incremental`
-     - `liorf/mapping/path`
+     - `lili/mapping/odometry`
+     - `lili/mapping/odometry_incremental`
+     - `lili/mapping/path`
      - map/trajectory clouds
-     - `liorf/mapping/gps_odom`
-     - `liorf/gps_origin`
+     - `lili/mapping/gps_odom`
+     - `lili/gps_origin`
 
 4. `IMUPreintegration` ([src/imuPreintegration.cpp](src/imuPreintegration.cpp))
    - Subscribes:
      - IMU raw
-     - `liorf/mapping/odometry_incremental`
+     - `lili/mapping/odometry_incremental`
    - Publishes:
      - `odomTopic + "_incremental"`
 
 5. `TransformFusion` ([src/imuPreintegration.cpp](src/imuPreintegration.cpp))
    - Subscribes:
-     - `liorf/mapping/odometry`
+     - `lili/mapping/odometry`
      - `odomTopic + "_incremental"`
    - Publishes:
      - final/fused `odomTopic`
-     - `liorf/imu/path`
+     - `lili/imu/path`
 
 ### Feedback loop
 
@@ -281,8 +281,8 @@ Use newest-first order (latest entry at top).
 ## 7) Quick run/build pointers
 
 - Build/package config: [CMakeLists.txt](CMakeLists.txt), [package.xml](package.xml)
-- Main launch: [launch/liorf.launch.py](launch/liorf.launch.py)
-- Typical default launch: [launch/run_lio_sam_default.launch.py](launch/run_lio_sam_default.launch.py)
+- Main launch: [launch/lili.launch.py](launch/lili.launch.py)
+- Typical default launch: [launch/run_lili_ouster.launch.py](launch/run_lili_ouster.launch.py)
 
 ---
 
@@ -290,8 +290,8 @@ Use newest-first order (latest entry at top).
 
 For the current development context, treat the following as the primary runtime entrypoint and parameter set:
 
-- Primary launch file: [launch/liorf.launch.py](launch/liorf.launch.py)
-- Primary config file: [config/lio_sam_ouster.yaml](config/lio_sam_ouster.yaml)
+- Primary launch file: [launch/lili.launch.py](launch/lili.launch.py)
+- Primary config file: [config/lili_ouster.yaml](config/lili_ouster.yaml)
 
 When relevant parameters are changed, also update [config/anymal.yaml](config/anymal.yaml) if it is in scope for the user's task.
 

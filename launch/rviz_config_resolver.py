@@ -5,7 +5,7 @@ def default_rviz_config_path(share_dir: str) -> str:
     installed_path = os.path.join(share_dir, 'rviz', 'mapping.rviz')
     candidates = []
 
-    source_dir_from_env = os.environ.get('LIORF_SOURCE_DIR', '').strip()
+    source_dir_from_env = os.environ.get('LILI_SOURCE_DIR', '').strip()
     if source_dir_from_env:
         candidates.append(os.path.join(source_dir_from_env, 'rviz', 'mapping.rviz'))
 

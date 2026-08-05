@@ -50,7 +50,7 @@ pcl::PointCloud<PointType>::Ptr transformPointCloud(
 }
 
 std::filesystem::path resolveSaveDirectory(
-    const liorf::srv::SaveMap::Request &req,
+    const lili::srv::SaveMap::Request &req,
     const std::string &savePCDDirectory,
     const std::string &homeDir)
 {
@@ -77,8 +77,8 @@ std::filesystem::path resolveSaveDirectory(
 } // namespace
 
 bool MapExporter::executeSave(
-    const liorf::srv::SaveMap::Request &req,
-    liorf::srv::SaveMap::Response &res,
+    const lili::srv::SaveMap::Request &req,
+    lili::srv::SaveMap::Response &res,
     const std::string &savePCDDirectory,
     float mappingSurfLeafSize,
     bool saveDenseGpsTrajectory,
@@ -196,7 +196,7 @@ bool MapExporter::executeSave(
     try
     {
         const fs::path templateReadmePath =
-            fs::path(ament_index_cpp::get_package_share_directory("liorf")) / "scripts" / "saved_map_output_README.md";
+            fs::path(ament_index_cpp::get_package_share_directory("lili")) / "scripts" / "saved_map_output_README.md";
         std::error_code copyEc;
         fs::copy_file(templateReadmePath, saveDir / "README.md", fs::copy_options::overwrite_existing, copyEc);
         if (copyEc)
@@ -398,7 +398,7 @@ bool MapExporter::executeSave(
     res.success = ret == 0;
     if (res.success)
     {
-        const fs::path lastSavedMapPathFile = fs::path(homeDir) / ".liorf_last_saved_map_path";
+        const fs::path lastSavedMapPathFile = fs::path(homeDir) / ".lili_last_saved_map_path";
         std::ofstream lastPathOut(lastSavedMapPathFile.string(), std::ios::trunc);
         if (lastPathOut.is_open())
         {

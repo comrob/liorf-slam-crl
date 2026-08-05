@@ -84,9 +84,9 @@ ENV DISTCC_HOSTS=${DISTCC_HOSTS}
 ENV CCACHE_PREFIX=${CCACHE_PREFIX}
 
 # 5. PRE-BUILD APPLICATION
-RUN mkdir -p /home/$USERNAME/ros2_ws/src/liorf
+RUN mkdir -p /home/$USERNAME/ros2_ws/src/lili
 
-WORKDIR /home/$USERNAME/ros2_ws/src/liorf
+WORKDIR /home/$USERNAME/ros2_ws/src/lili
 
 # Layer 1: Copy C++ source and build metadata
 # Changes here trigger full C++ rebuild
@@ -115,7 +115,7 @@ RUN /bin/bash -c "source /opt/ros/jazzy/setup.bash && \
                    -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
       --parallel-workers ${COLCON_PARALLEL_WORKERS:-$(nproc)}"
 
-WORKDIR /home/$USERNAME/ros2_ws/src/liorf
+WORKDIR /home/$USERNAME/ros2_ws/src/lili
 
 # Layer 2: Copy actual configuration and launch files
 # Changes here DO NOT trigger C++ rebuild - just file copy
@@ -139,4 +139,4 @@ COPY --chown=$USERNAME:$USERNAME docker/entrypoint.sh /home/$USERNAME/ros2_ws/en
 RUN chmod +x /home/$USERNAME/ros2_ws/entrypoint.sh
 
 ENTRYPOINT ["/home/dev/ros2_ws/entrypoint.sh"]
-CMD ["ros2", "launch", "liorf", "run_lio_sam_bench.py"]
+CMD ["ros2", "launch", "lili", "run_lili_bench.py"]
