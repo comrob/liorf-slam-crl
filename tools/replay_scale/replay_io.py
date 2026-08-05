@@ -12,7 +12,9 @@ try:
 except ImportError:  # Optional dependency until used.
     yaml = None
 
+from .odom_source import apply_odom_source, sync_odom_to_frames
 from .scale_estimator import (
+    CORRECTION_MODES,
     Frame,
     ReplayParams,
     ScaleEstimateFrame,
@@ -29,6 +31,15 @@ DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config", "default
 
 
 @dataclass
+class ComplementarySourceSettings:
+    # Empty path keeps the twist baked into scale_replay_frames.csv by the online run.
+    path: str = ""
+    max_match_dt_s: float = 0.25
+    # 4x4 T_complementary_to_lidar override; None falls back to the run's meta file.
+    extrinsic: object = None
+
+
+@dataclass
 class ReplayToolSettings:
     scale_mode: str = "estimated"
     scales: list = field(default_factory=lambda: [1.0])
@@ -36,6 +47,37 @@ class ReplayToolSettings:
     output_subdir: str = "replay"
     no_correction: bool = False
     validate: bool = False
+    correction_mode: str = "twist6"
+    complementary_source: ComplementarySourceSettings = field(
+        default_factory=ComplementarySourceSettings)
+
+
+META_NAME = "complementary_odom_meta.yaml"
+
+
+def _extrinsic_from_mapping(node):
+    """Build a 4x4 T_complementary_to_lidar from a translation/quaternion mapping."""
+    if not isinstance(node, dict):
+        return None
+    translation = node.get("translation")
+    rotation = node.get("rotation_quat_xyzw")
+    if translation is None or rotation is None:
+        return None
+    tx, ty, tz = (float(v) for v in translation)
+    qx, qy, qz, qw = (float(v) for v in rotation)
+    return quat_to_matrix(tx, ty, tz, qx, qy, qz, qw)
+
+
+def load_complementary_odom_meta(csv_path):
+    """Read T_complementary_to_lidar from the run's meta file; None if absent."""
+    meta_path = os.path.join(os.path.dirname(csv_path), META_NAME)
+    if yaml is None or not os.path.isfile(meta_path):
+        return None
+    with open(meta_path, "r", encoding="utf-8") as fh:
+        raw = yaml.safe_load(fh)
+    if not isinstance(raw, dict):
+        return None
+    return _extrinsic_from_mapping(raw.get("T_complementary_to_lidar"))
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +121,55 @@ def resolve_output_dirs(csv_path, settings):
     return out_dir, traj_dir, log_dir
 
 
+def complementary_source_tag(settings):
+    """Filename suffix identifying the odometry source, empty for the recorded one.
+
+    Keeps replays of different sources side by side in trajectories/ instead of
+    overwriting each other, so they can be plotted against one another.
+    """
+    tag = ""
+    path = settings.complementary_source.path
+    if path:
+        tag += f"_src_{os.path.splitext(os.path.basename(expand_path(path)))[0]}"
+    if settings.correction_mode != "twist6":
+        tag += f"_corr_{settings.correction_mode}"
+    return tag
+
+
+def apply_complementary_source(frames, settings, csv_path):
+    """Re-synchronize an alternative complementary odometry source onto frames.
+
+    No-op returning None when no source path is configured, in which case the
+    twist recorded by the online run is kept. Otherwise the frames are mutated
+    in place and a short human-readable status is returned.
+    """
+    source = settings.complementary_source
+    if not source.path:
+        return None
+
+    stream_path = expand_path(source.path)
+    if not os.path.isfile(stream_path):
+        raise FileNotFoundError(f"Complementary odometry source not found: {stream_path}")
+
+    T_ext = source.extrinsic
+    extrinsic_origin = "config override"
+    if T_ext is None:
+        T_ext = load_complementary_odom_meta(csv_path)
+        extrinsic_origin = f"run {META_NAME}"
+    if T_ext is None:
+        T_ext = np.eye(4, dtype=float)
+        extrinsic_origin = "identity (no config override and no run meta file)"
+
+    odom_stream = load_tum(stream_path)
+    synced = sync_odom_to_frames(odom_stream, frames, T_ext,
+                                 max_match_dt_s=source.max_match_dt_s)
+    matched = apply_odom_source(frames, synced)
+    return (f"complementary source: {stream_path}\n"
+            f"    extrinsic: {extrinsic_origin}\n"
+            f"    stream samples: {len(odom_stream)}\n"
+            f"    matched frames: {matched}/{len(frames)}")
+
+
 def reconstruct_replay_trajectories(frames, settings, params, collect_traces=False):
     """Build the trajectory/trajectories selected by settings.scale_mode.
 
@@ -86,20 +177,23 @@ def reconstruct_replay_trajectories(frames, settings, params, collect_traces=Fal
     (tag, trajectory) pairs; scale_trace/vector_trace are only populated for
     scale_mode "estimated" (and only when collect_traces is True).
     """
+    mode = settings.correction_mode
     if settings.scale_mode == "fixed":
         results = []
         for scale in settings.scales:
-            traj = reconstruct_fixed(frames, lambda f, s=scale: s, apply_correction=True)
+            traj = reconstruct_fixed(frames, lambda f, s=scale: s, apply_correction=True,
+                                     correction_mode=mode)
             results.append((f"scale_{scale:g}", traj))
         return results, [], []
 
     if settings.scale_mode == "recorded":
-        traj = reconstruct_fixed(frames, lambda f: f.scale_applied, apply_correction=True)
+        traj = reconstruct_fixed(frames, lambda f: f.scale_applied, apply_correction=True,
+                                 correction_mode=mode)
         return [("recorded_scale", traj)], [], []
 
     if settings.scale_mode == "estimated":
         traj, scale_trace, vector_trace = reconstruct_with_estimator(
-            frames, params, collect_vectors=collect_traces)
+            frames, params, collect_vectors=collect_traces, correction_mode=mode)
         return [("estimated_scale", traj)], scale_trace, vector_trace
 
     raise ValueError(f"Unknown replay_scale_tool.scale_mode: {settings.scale_mode!r}")
@@ -129,6 +223,7 @@ def load_frames(csv_path):
         for row in reader:
             f = Frame()
             f.time = _col(row, "time")
+            f.lidar_prev_stamp = _col(row, "scale_replay/stamp/lidar_prev_s")
             f.dt_scan = _col(row, "scale_replay/dt/scan_s")
             f.degeneracy_detected = _col(row, "scale_replay/flags/degeneracy_detected") >= 0.5
             f.has_basis = _col(row, "scale_replay/flags/has_degeneracy_basis") >= 0.5
@@ -216,10 +311,22 @@ def load_replay_tool_settings(yaml_path):
         settings.output_subdir = str(section.get("output_subdir", settings.output_subdir))
         settings.no_correction = bool(section.get("no_correction", settings.no_correction))
         settings.validate = bool(section.get("validate", settings.validate))
+        settings.correction_mode = str(section.get("correction_mode", settings.correction_mode))
+
+        source_section = section.get("complementary_source", {})
+        if isinstance(source_section, dict):
+            source = settings.complementary_source
+            source.path = str(source_section.get("path", source.path))
+            source.max_match_dt_s = float(
+                source_section.get("max_match_dt_s", source.max_match_dt_s))
+            source.extrinsic = _extrinsic_from_mapping(source_section.get("extrinsic"))
 
     if settings.scale_mode not in _SCALE_MODES:
         raise ValueError(
             f"replay_scale_tool.scale_mode must be one of {_SCALE_MODES}, got {settings.scale_mode!r}")
+    if settings.correction_mode not in CORRECTION_MODES:
+        raise ValueError(f"replay_scale_tool.correction_mode must be one of "
+                         f"{CORRECTION_MODES}, got {settings.correction_mode!r}")
     if not settings.scales:
         raise ValueError("replay_scale_tool.scales must contain at least one value")
     return settings

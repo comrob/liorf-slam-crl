@@ -44,7 +44,10 @@ LiorfDiagnostics::LiorfDiagnostics(
         complementary_odom_twist_csv_.open((run_dir_ / "complementary_odom_twist.csv").string(), std::ios::out);
     }
     if (diagnostics_files_enabled && diagnostics_output_policy_.write_scale_replay_frames)
+    {
         scale_replay_frames_csv_.open((run_dir_ / "scale_replay_frames.csv").string(), std::ios::out);
+        complementary_odom_stream_tum_.open((run_dir_ / "complementary_odom_stream.tum").string(), std::ios::out);
+    }
 
     // Odom trajectory TUM export is controlled independently from diagnostics file gating.
     if (odom_trajectory_export_enabled)
@@ -440,6 +443,50 @@ void LiorfDiagnostics::recordScaleReplayFrameCsv(const ScaleReplayFrameSample &s
     for (const double v : sample.pose_effective)
         scale_replay_frames_csv_ << "," << v;
     scale_replay_frames_csv_ << "\n";
+}
+
+void LiorfDiagnostics::recordComplementaryOdomStreamTum(const TumPoseSample &sample)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!complementary_odom_stream_tum_.is_open())
+        return;
+
+    complementary_odom_stream_tum_ << std::fixed << std::setprecision(9)
+                                   << sample.stamp_sec << " "
+                                   << sample.tx << " "
+                                   << sample.ty << " "
+                                   << sample.tz << " "
+                                   << sample.qx << " "
+                                   << sample.qy << " "
+                                   << sample.qz << " "
+                                   << sample.qw << "\n";
+}
+
+void LiorfDiagnostics::recordComplementaryOdomMeta(const ComplementaryOdomMetaSample &sample)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!diagnostics_output_policy_.write_files_master ||
+        !diagnostics_output_policy_.write_scale_replay_frames)
+        return;
+
+    std::ofstream meta((run_dir_ / "complementary_odom_meta.yaml").string(), std::ios::out);
+    if (!meta.is_open())
+        return;
+
+    meta << std::fixed << std::setprecision(9)
+         << "# Complementary odometry source description for offline replay.\n"
+         << "# complementary_odom_stream.tum holds the raw poses this describes.\n"
+         << "T_complementary_to_lidar:\n"
+         << "  translation: [" << sample.extrinsic_translation[0] << ", "
+         << sample.extrinsic_translation[1] << ", "
+         << sample.extrinsic_translation[2] << "]\n"
+         << "  rotation_quat_xyzw: [" << sample.extrinsic_rotation_xyzw[0] << ", "
+         << sample.extrinsic_rotation_xyzw[1] << ", "
+         << sample.extrinsic_rotation_xyzw[2] << ", "
+         << sample.extrinsic_rotation_xyzw[3] << "]\n"
+         << "source_frame: \"" << sample.source_frame << "\"\n"
+         << "lidar_frame: \"" << sample.lidar_frame << "\"\n"
+         << "translation_scale_applied_online: " << sample.translation_scale_applied_online << "\n";
 }
 
 void LiorfDiagnostics::publishWarning(const std::string &message)

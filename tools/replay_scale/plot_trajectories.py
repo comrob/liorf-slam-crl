@@ -16,6 +16,7 @@ import sys
 
 from .replay_io import (
     DEFAULT_CONFIG_PATH,
+    apply_complementary_source,
     expand_path,
     load_frames,
     load_replay_params_from_ros_yaml,
@@ -92,6 +93,11 @@ def main(argv=None):
 
     print(f"Loaded {len(frames)} frames from {csv_path}")
     print(f"  found {len(tum_paths)} trajectory file(s) in {traj_dir}")
+
+    # Affects only the additional-odometry overlay; the .tum curves are already written.
+    source_status = apply_complementary_source(frames, settings, csv_path)
+    if source_status:
+        print(f"  {source_status}")
 
     fig, ax = plt.subplots(figsize=(9, 9))
 

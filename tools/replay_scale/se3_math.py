@@ -97,11 +97,32 @@ def project_onto_basis_translation(t_vec, basis):
 
 
 def project_degenerate_correction(T_optimized, T_predicted, basis):
-    """Replace degenerate-direction component of T_optimized with prediction."""
+    """Replace degenerate-direction component of T_optimized with prediction.
+
+    Port of mapOptimization::projectDegenerateCorrection. Note this projects the
+    full 6D twist, so a basis vector carrying any angular part also rotates the
+    pose; see ``project_degenerate_correction_translation``.
+    """
     T_diff = np.linalg.inv(T_optimized) @ T_predicted
     xi_diff = matrix_to_twist(T_diff, 1.0)
     xi_proj = project_onto_basis(xi_diff, basis)
     return T_optimized @ exp_map(xi_proj, 1.0)
+
+
+def project_degenerate_correction_translation(T_optimized, T_predicted, basis):
+    """Correct only translation along the degenerate directions; keep orientation.
+
+    The 6D projection mixes metres and radians in one inner product, so residual
+    angular content in the basis converts an injected translation into a heading
+    change. Where rotation is observable (tunnel walls constrain yaw) that
+    rotation is spurious, so this variant applies a pure body-frame translation
+    along the degenerate translational subspace and leaves orientation to LiDAR.
+    """
+    T_diff = np.linalg.inv(T_optimized) @ T_predicted
+    t_proj = project_onto_basis_translation(T_diff[:3, 3], basis)
+    correction = np.eye(4, dtype=float)
+    correction[:3, 3] = t_proj
+    return T_optimized @ correction
 
 
 # ---------------------------------------------------------------------------

@@ -127,7 +127,7 @@ ament_target_dependencies(${PROJECT_NAME}_imuPreintegration ${ros2_lib})
 target_link_libraries(${PROJECT_NAME}_imuPreintegration ${PROJECT_NAME}_diagnostics ${PROJECT_NAME}_tf_runtime Boost::timer "${cpp_typesupport_target}" ${PCL_LIBRARIES} ${OpenCV_LIBRARIES} gtsam)
 
 install(
-  DIRECTORY launch config rviz scripts
+  DIRECTORY launch config rviz tools
   DESTINATION share/${PROJECT_NAME}/
 )
 

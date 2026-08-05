@@ -18,6 +18,8 @@ import sys
 
 from .replay_io import (
     DEFAULT_CONFIG_PATH,
+    apply_complementary_source,
+    complementary_source_tag,
     expand_path,
     load_frames,
     load_replay_params_from_ros_yaml,
@@ -77,6 +79,10 @@ def main(argv=None):
     print(f"  output directory: {out_dir}")
     print(f"  scale mode: {settings.scale_mode}")
 
+    source_status = apply_complementary_source(frames, settings, csv_path)
+    if source_status:
+        print(f"  {source_status}")
+
     recorded = recorded_effective_trajectory(frames)
     rec_path = os.path.join(traj_dir, "trajectory_recorded_effective.tum")
     write_tum(rec_path, recorded)
@@ -99,16 +105,17 @@ def main(argv=None):
     else:
         params = None
 
+    source_tag = complementary_source_tag(settings)
     replay_results, scale_trace, vector_trace = reconstruct_replay_trajectories(
         frames, settings, params, collect_traces=True)
     for tag, traj in replay_results:
-        path = os.path.join(traj_dir, f"trajectory_replay_{tag}.tum")
+        path = os.path.join(traj_dir, f"trajectory_replay_{tag}{source_tag}.tum")
         write_tum(path, traj)
         print(f"  wrote {path}")
 
     if settings.scale_mode == "estimated":
-        trace_path = os.path.join(log_dir, "scale_replay_estimator_trace.csv")
-        vector_path = os.path.join(log_dir, "scale_replay_vectors.csv")
+        trace_path = os.path.join(log_dir, f"scale_replay_estimator_trace{source_tag}.csv")
+        vector_path = os.path.join(log_dir, f"scale_replay_vectors{source_tag}.csv")
         write_scale_trace_csv(trace_path, scale_trace)
         write_scale_vector_csv(vector_path, vector_trace)
         print(f"  wrote {trace_path}")

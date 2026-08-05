@@ -52,6 +52,21 @@ struct TrajectoryOutputPolicy
     bool write_odom_trajectory_tum = false;
 };
 
+// One-shot metadata describing the complementary odometry source. Written next
+// to the raw odometry stream so that an offline replay can re-synchronize a
+// different odometry source against the same LiDAR frames.
+struct ComplementaryOdomMetaSample
+{
+    // T_complementary_to_lidar (odometry frame -> LiDAR frame).
+    std::array<double, 3> extrinsic_translation{};
+    std::array<double, 4> extrinsic_rotation_xyzw{{0.0, 0.0, 0.0, 1.0}};
+    std::string source_frame;
+    std::string lidar_frame;
+    // translationScale the online run baked into the queued poses. The raw
+    // stream is logged before it is applied, so replay owns this factor.
+    double translation_scale_applied_online = 1.0;
+};
+
 struct ComplementaryOdomTwistDebugSample
 {
     double stamp_sec = 0.0;
@@ -208,6 +223,9 @@ public:
     void recordComplementaryOdomScaleCsv(const ComplementaryOdomScaleDebugSample &sample);
     void recordComplementaryOdomTwistCsv(const ComplementaryOdomTwistDebugSample &sample);
     void recordScaleReplayFrameCsv(const ScaleReplayFrameSample &sample);
+    // Raw (pre-translationScale) complementary odometry poses at full rate.
+    void recordComplementaryOdomStreamTum(const TumPoseSample &sample);
+    void recordComplementaryOdomMeta(const ComplementaryOdomMetaSample &sample);
     void recordOdomTrajectoryTum(const TumPoseSample &sample);
     double getLastPredictionDelta() const;
     std::filesystem::path runDirectory() const { return run_dir_; }
@@ -236,6 +254,7 @@ private:
     std::ofstream complementary_odom_scale_csv_;
     std::ofstream complementary_odom_twist_csv_;
     std::ofstream scale_replay_frames_csv_;
+    std::ofstream complementary_odom_stream_tum_;
 
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr telemetry_pub_;
     rclcpp::Publisher<std_msgs::msg::String>::SharedPtr timing_stats_pub_;

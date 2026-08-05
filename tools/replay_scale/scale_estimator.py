@@ -13,8 +13,20 @@ from .se3_math import (
     exp_map,
     matrix_to_twist,
     project_degenerate_correction,
+    project_degenerate_correction_translation,
     project_onto_basis_translation,
 )
+
+# "twist6" mirrors the node; "translation" leaves observable orientation alone.
+CORRECTION_MODES = ("twist6", "translation")
+
+
+def _correction_fn(correction_mode):
+    if correction_mode == "translation":
+        return project_degenerate_correction_translation
+    if correction_mode == "twist6":
+        return project_degenerate_correction
+    raise ValueError(f"Unknown correction_mode: {correction_mode!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -33,7 +45,7 @@ class ReplayParams:
 
 class Frame:
     __slots__ = (
-        "time", "dt_scan", "degeneracy_detected", "has_basis",
+        "time", "lidar_prev_stamp", "dt_scan", "degeneracy_detected", "has_basis",
         "has_complementary", "scale_applied", "basis_size", "basis",
         "lidar_increment", "complementary_twist", "dt_complementary",
         "pose_prev", "pose_optimized", "pose_effective",
@@ -66,30 +78,48 @@ class ScaleVectorFrame:
 # Trajectory reconstruction
 # ---------------------------------------------------------------------------
 
-def reconstruct_fixed(frames, scale_of_frame, apply_correction=True, translation_scale_multiplier=1.0):
+def _pin_logged_orientation(T_optimized, frame):
+    """Take orientation from the logged absolute pose instead of the chain.
+
+    ``lidar_increment`` is ``log(pose_effective[k-1]^-1 * pose_optimized[k])`` --
+    referenced to the *online* corrected pose, not to whatever pose this replay
+    has reached. Chaining it therefore accumulates orientation error as soon as
+    the replayed trajectory departs from the online one, which is the whole point
+    of replaying a different correction. Orientation is LiDAR-observable and
+    logged absolutely per frame, so read it rather than integrate it; only
+    position needs to accumulate for a changed scale to propagate.
+    """
+    T_optimized[:3, :3] = frame.pose_optimized[:3, :3]
+
+
+def reconstruct_fixed(frames, scale_of_frame, apply_correction=True, translation_scale_multiplier=1.0,
+                      correction_mode="twist6"):
     """Chain a trajectory from LiDAR increments using fixed/recorded scales."""
     if not frames:
         return []
 
+    correct = _correction_fn(correction_mode)
     T_prev = frames[0].pose_prev.copy()
     out = []
     for f in frames:
         T_optimized = T_prev @ exp_map(f.lidar_increment, 1.0)
+        _pin_logged_orientation(T_optimized, f)
 
+        # Requires a complementary prediction: with none there is nothing to
+        # substitute into the degenerate directions. See the note in
+        # reconstruct_with_estimator on why this diverges from the node.
         do_correction = (apply_correction and f.degeneracy_detected
-                         and f.has_basis and len(f.basis) > 0)
+                         and f.has_basis and len(f.basis) > 0
+                         and f.has_complementary)
         if do_correction:
-            if f.has_complementary:
-                scale = scale_of_frame(f)
-                dt = f.dt_complementary if f.dt_complementary > 1e-5 else f.dt_scan
-                xi_comp = f.complementary_twist.copy()
-                xi_comp[:3] *= translation_scale_multiplier
-                T_comp_rel = exp_map(xi_comp, dt)
-                T_comp_rel[:3, 3] *= scale
-                T_comp_abs = T_prev @ T_comp_rel
-            else:
-                T_comp_abs = T_prev.copy()
-            T_corrected = project_degenerate_correction(T_optimized, T_comp_abs, f.basis)
+            scale = scale_of_frame(f)
+            dt = f.dt_complementary if f.dt_complementary > 1e-5 else f.dt_scan
+            xi_comp = f.complementary_twist.copy()
+            xi_comp[:3] *= translation_scale_multiplier
+            T_comp_rel = exp_map(xi_comp, dt)
+            T_comp_rel[:3, 3] *= scale
+            T_comp_abs = T_prev @ T_comp_rel
+            T_corrected = correct(T_optimized, T_comp_abs, f.basis)
         else:
             T_corrected = T_optimized
 
@@ -202,7 +232,7 @@ def build_additional_odom_scale_sample(
     return result
 
 
-def reconstruct_with_estimator(frames, params, collect_vectors=False):
+def reconstruct_with_estimator(frames, params, collect_vectors=False, correction_mode="twist6"):
     """Replay with online-style lagged scale estimation and application.
 
     Notes about parity with C++:
@@ -215,6 +245,7 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False):
     if not frames:
         return [], [], []
 
+    correct = _correction_fn(correction_mode)
     T_prev = frames[0].pose_prev.copy()
     out = []
     scale_trace = []
@@ -241,6 +272,7 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False):
         scale_applied = float(smoothed_scale_for_apply) if has_applied_scale else 1.0
 
         T_optimized = T_prev @ exp_map(f.lidar_increment, 1.0)
+        _pin_logged_orientation(T_optimized, f)
         T_comp_scaled_abs = T_prev.copy()
 
         has_comp = bool(f.has_complementary and np.all(np.isfinite(f.complementary_twist)))
@@ -261,12 +293,16 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False):
             comp_step_rel[k] = T_comp_rel_unscaled
             comp_step_dt[k] = dt_pred
 
-        if estimator_mode_active and len(basis) > 0:
-            T_corrected = project_degenerate_correction(T_optimized, T_comp_scaled_abs, basis)
-        else:
-            T_corrected = T_optimized
+        # The override also requires a complementary prediction. The node leaves
+        # its prediction at T_prev when the match fails and still projects it,
+        # which substitutes *zero motion* along the degenerate axis and makes the
+        # trajectory slide sideways. That is unreachable online (its own odometry
+        # matches every frame) but routine when replaying a source with gaps.
+        apply_override = estimator_mode_active and len(basis) > 0 and has_comp
+        T_corrected = (correct(T_optimized, T_comp_scaled_abs, basis)
+                       if apply_override else T_optimized)
 
-        T_effective = T_corrected if (estimator_mode_active and len(basis) > 0) else T_optimized
+        T_effective = T_corrected
         out.append((f.time, T_effective))
 
         lidar_pose_buffer.append((k, f.time, T_effective.copy()))

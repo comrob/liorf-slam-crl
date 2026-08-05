@@ -7,6 +7,22 @@
 
 void mapOptimization::complementaryOdomHandler(const nav_msgs::msg::Odometry::SharedPtr msg)
 {
+    // Log the raw pose before translationScale is baked in, so that an offline
+    // replay owns that factor and can re-synchronize this stream itself.
+    if (diagnostics)
+    {
+        TumPoseSample stream_sample;
+        stream_sample.stamp_sec = ROS_TIME(msg->header.stamp);
+        stream_sample.tx = msg->pose.pose.position.x;
+        stream_sample.ty = msg->pose.pose.position.y;
+        stream_sample.tz = msg->pose.pose.position.z;
+        stream_sample.qx = msg->pose.pose.orientation.x;
+        stream_sample.qy = msg->pose.pose.orientation.y;
+        stream_sample.qz = msg->pose.pose.orientation.z;
+        stream_sample.qw = msg->pose.pose.orientation.w;
+        diagnostics->recordComplementaryOdomStreamTum(stream_sample);
+    }
+
     std::lock_guard<std::mutex> lock(complementaryOdomMutex);
     nav_msgs::msg::Odometry scaled_msg = *msg;
     scaled_msg.pose.pose.position.x *= complementaryOdom.translationScale;
@@ -33,12 +49,33 @@ bool mapOptimization::resolveComplementaryOdomExtrinsics(const std::string &msgF
 {
     if (complementaryOdomTfResolved) return true;
 
+    // Record the resolved extrinsic once, so that an offline replay can push an
+    // alternative odometry source through the same transform.
+    const auto recordMeta = [this](const std::string &source_frame)
+    {
+        if (!diagnostics)
+            return;
+
+        ComplementaryOdomMetaSample meta;
+        const Eigen::Quaternionf q(Eigen::Matrix3f(T_complementary_to_lidar.block<3, 3>(0, 0)));
+        meta.extrinsic_translation = {static_cast<double>(T_complementary_to_lidar(0, 3)),
+                                      static_cast<double>(T_complementary_to_lidar(1, 3)),
+                                      static_cast<double>(T_complementary_to_lidar(2, 3))};
+        meta.extrinsic_rotation_xyzw = {static_cast<double>(q.x()), static_cast<double>(q.y()),
+                                        static_cast<double>(q.z()), static_cast<double>(q.w())};
+        meta.source_frame = source_frame;
+        meta.lidar_frame = lidarFrame;
+        meta.translation_scale_applied_online = static_cast<double>(complementaryOdom.translationScale);
+        diagnostics->recordComplementaryOdomMeta(meta);
+    };
+
     if (!complementaryOdom.autoLookupLidarToTf)
     {
         T_complementary_to_lidar = Eigen::Matrix4f::Identity();
         T_complementary_to_lidar.block<3, 3>(0, 0) = complementaryOdom.extRot.cast<float>();
         T_complementary_to_lidar.block<3, 1>(0, 3) = complementaryOdom.extTrans.cast<float>();
         complementaryOdomTfResolved = true;
+        recordMeta(complementaryOdom.frame.empty() ? msgFrameId : complementaryOdom.frame);
         return true;
     }
 
@@ -47,13 +84,14 @@ bool mapOptimization::resolveComplementaryOdomExtrinsics(const std::string &msgF
 
     try
     {
-        geometry_msgs::msg::TransformStamped tf_msg = 
-            runtimeTfCoordinator->getTfBuffer()->lookupTransform(lidarFrame, target_frame, rclcpp::Time(0)); 
-        
+        geometry_msgs::msg::TransformStamped tf_msg =
+            runtimeTfCoordinator->getTfBuffer()->lookupTransform(lidarFrame, target_frame, rclcpp::Time(0));
+
         Eigen::Isometry3d tf_iso = tf2::transformToEigen(tf_msg);
         T_complementary_to_lidar = tf_iso.matrix().cast<float>();
         complementaryOdomTfResolved = true;
         RCLCPP_INFO_STREAM(get_logger(), "[COMPLEMENTARY_ODOM_TF] Resolved T_complementary_to_lidar from TF tree.");
+        recordMeta(target_frame);
         return true;
     }
     catch (const tf2::TransformException &ex)
