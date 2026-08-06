@@ -8,7 +8,7 @@
 
       # Minimum non-degenerate speed [m/s] required for a scale sample to
       # be considered observable. Samples below this threshold are discarded.
-      scaleMinNonDegenerateSpeed: 0.1
+      scaleMinNonDegenerateSpeed: 0.2
 
       # Number of frames to lag the anchor pose for scale estimation.
       # Larger values reduce sensitivity to per-frame noise at the cost of latency.
@@ -58,6 +58,31 @@ replay_scale_tool:
   #                 observable (tunnel walls constrain yaw), so any injected
   #                 heading is spurious.
   correction_mode: twist6 # translation 
+
+  # Simulate a systematic error in the complementary odometry, to check what
+  # the scale estimator does with an error whose size you already know.
+  # Each frame's complementary displacement gains alpha * |displacement| along
+  # the given body axis, applied to the raw twist before translationScale and
+  # before any estimated scale.
+  #
+  #   axis: y  - lateral (default). The scale cannot express a sideways error,
+  #              but the sideways component is exactly what the estimate is
+  #              computed from, so the error re-emerges as a *longitudinal*
+  #              scale error. This tests the method's core assumption: that the
+  #              observable cross-tunnel motion is a good yardstick for the
+  #              unobservable along-tunnel motion.
+  #   axis: x  - along travel, a pure scale error: with alpha = 0.1 the odometry
+  #              reports 10% too far and the estimator should recover roughly
+  #              1/1.1 to cancel it. A recovery check rather than a stress test.
+  #
+  # In a tunnel the genuine lateral motion is small while |displacement| is
+  # dominated by along-tunnel travel, so lateral alpha bites hard. Sweep small
+  # values first.
+  #
+  # Outputs are tagged with the alpha used, so a sweep does not overwrite itself.
+  complementary_drift:
+    alpha: 0.0
+    axis: y
 
   # Replay against a complementary odometry source other than the one used
   # online. The replay re-synchronizes it against the same LiDAR frame stamps,

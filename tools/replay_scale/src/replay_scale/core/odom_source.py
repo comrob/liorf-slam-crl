@@ -106,6 +106,57 @@ def sync_odom_to_frames(odom_stream, frames, T_comp_to_lidar, max_match_dt_s=0.2
     return results
 
 
+#: Body-frame axes a simulated drift can be injected along.
+DRIFT_AXES = ("x", "y", "z")
+
+
+def apply_complementary_drift(frames, alpha, axis="y"):
+    """Inject a distance-proportional error into the complementary odometry.
+
+    Each frame's complementary displacement gains ``alpha * ||displacement||``
+    along the given body axis, which is how odometry error on a legged or
+    wheeled platform actually accumulates -- proportional to ground covered,
+    not constant per frame and not white noise.
+
+    Applied to the raw twist, i.e. *before* ``complementaryOdom.translationScale``
+    and before any estimated scale, so the injected error is a property of the
+    simulated sensor rather than of the correction being tested.
+
+    The axis decides what is being tested. Lateral (``y``, the default) is an
+    error the scale cannot express, and it lands squarely on the non-degenerate
+    component the estimate is *computed from* -- so it does not stay lateral, it
+    comes back out as a longitudinal scale error. Along travel (``x``) is a pure
+    scale error the estimator should be able to recover.
+
+    Frames mutate in place; returns the count modified.
+    """
+    if axis not in DRIFT_AXES:
+        raise ValueError(f"drift axis must be one of {DRIFT_AXES}, got {axis!r}")
+    if not alpha:
+        return 0
+
+    component = DRIFT_AXES.index(axis)
+    modified = 0
+    for f in frames:
+        if not f.has_complementary or not np.all(np.isfinite(f.complementary_twist)):
+            continue
+        # Same dt fallback the reconstruction uses, so the injected displacement
+        # is the one that actually gets integrated.
+        dt = f.dt_complementary if f.dt_complementary > 1e-5 else f.dt_scan
+        if not np.isfinite(dt) or dt <= 0.0:
+            continue
+
+        distance = float(np.linalg.norm(f.complementary_twist[:3] * dt))
+        if distance <= 0.0:
+            continue
+
+        twist = f.complementary_twist.copy()
+        twist[component] += alpha * distance / dt
+        f.complementary_twist = twist
+        modified += 1
+    return modified
+
+
 def apply_odom_source(frames, synced):
     """Overwrite each frame's complementary fields with a re-synced source.
 

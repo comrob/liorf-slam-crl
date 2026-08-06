@@ -13,7 +13,8 @@ import os
 from dataclasses import dataclass, field, replace
 
 from .core.model import CORRECTION_MODES, SCALE_MODES, ReplayParams
-from .core.se3 import quat_to_matrix
+from .core.odom_source import DRIFT_AXES
+from .core.se3 import matrix_to_quat, quat_to_matrix
 
 try:
     import yaml
@@ -34,6 +35,22 @@ class ComplementarySourceSettings:
 
 
 @dataclass
+class ComplementaryDriftSettings:
+    """A simulated, distance-proportional error in the complementary odometry.
+
+    Injecting a *known* error is what turns "does the estimated scale look
+    right" into "we put in alpha, did we get it back".
+    """
+
+    # Fraction of distance travelled added along `axis`. 0 disables.
+    alpha: float = 0.0
+    # Body-frame axis the drift is injected along. Lateral by default: that is
+    # the component the scale estimate is derived from, so it is where a
+    # complementary-odometry error actually corrupts the result.
+    axis: str = "y"
+
+
+@dataclass
 class ReplayToolSettings:
     scale_mode: str = "estimated"
     scales: list = field(default_factory=lambda: [1.0])
@@ -44,6 +61,8 @@ class ReplayToolSettings:
     correction_mode: str = "twist6"
     complementary_source: ComplementarySourceSettings = field(
         default_factory=ComplementarySourceSettings)
+    complementary_drift: ComplementaryDriftSettings = field(
+        default_factory=ComplementaryDriftSettings)
 
     def validated(self):
         """Return self after checking the enum-ish fields; raises ValueError."""
@@ -55,6 +74,9 @@ class ReplayToolSettings:
                              f"{CORRECTION_MODES}, got {self.correction_mode!r}")
         if not self.scales:
             raise ValueError("replay_scale_tool.scales must contain at least one value")
+        if self.complementary_drift.axis not in DRIFT_AXES:
+            raise ValueError(f"replay_scale_tool.complementary_drift.axis must be one of "
+                             f"{DRIFT_AXES}, got {self.complementary_drift.axis!r}")
         return self
 
     def evolve(self, **changes):
@@ -164,6 +186,12 @@ def replay_tool_settings_from_mapping(section):
                 source_section.get("max_match_dt_s", source.max_match_dt_s))
             source.extrinsic = extrinsic_from_mapping(source_section.get("extrinsic"))
 
+        drift_section = section.get("complementary_drift", {})
+        if isinstance(drift_section, dict):
+            drift = settings.complementary_drift
+            drift.alpha = float(drift_section.get("alpha", drift.alpha))
+            drift.axis = str(drift_section.get("axis", drift.axis))
+
     return settings.validated()
 
 
@@ -177,6 +205,69 @@ def load_replay_tool_settings(yaml_path):
     raw = _read_yaml(yaml_path)
     return replay_tool_settings_from_mapping(
         raw.get("replay_scale_tool", {}) if isinstance(raw, dict) else {})
+
+
+def config_to_mapping(settings, params):
+    """Round-trippable dict in the on-disk config layout.
+
+    Keeps the two trees separate exactly as the file does: ``ros__parameters``
+    for what the node itself reads, ``replay_scale_tool`` for this tool.
+    """
+    source = {
+        "path": settings.complementary_source.path,
+        "max_match_dt_s": float(settings.complementary_source.max_match_dt_s),
+    }
+    extrinsic = settings.complementary_source.extrinsic
+    if extrinsic is not None:
+        tx, ty, tz, qx, qy, qz, qw = matrix_to_quat(extrinsic)
+        source["extrinsic"] = {
+            "translation": [float(tx), float(ty), float(tz)],
+            "rotation_quat_xyzw": [float(qx), float(qy), float(qz), float(qw)],
+        }
+    return {
+        "/**": {
+            "ros__parameters": {
+                "complementaryOdom": {
+                    "scaleEstimationApply": bool(params.scale_estimation_apply),
+                    "scaleMinNonDegenerateSpeed": float(params.scale_min_nondegenerate_speed),
+                    "scaleBaselineFrameLag": int(params.scale_baseline_frame_lag),
+                    "scaleSmoothingWindowSize": int(params.scale_smoothing_window_size),
+                    "ignore_dz": bool(params.ignore_dz),
+                    "translationScale": float(params.translation_scale),
+                },
+            },
+        },
+        "replay_scale_tool": {
+            "scale_mode": settings.scale_mode,
+            "scales": [float(s) for s in settings.scales],
+            "output_dir": settings.output_dir,
+            "output_subdir": settings.output_subdir,
+            "no_correction": bool(settings.no_correction),
+            "validate": bool(settings.validate),
+            "correction_mode": settings.correction_mode,
+            "complementary_source": source,
+            "complementary_drift": {
+                "alpha": float(settings.complementary_drift.alpha),
+                "axis": settings.complementary_drift.axis,
+            },
+        },
+    }
+
+
+def dump_config(settings, params):
+    """Serialize settings + params to config YAML text."""
+    _require_yaml()
+    return yaml.safe_dump(config_to_mapping(settings, params), sort_keys=False)
+
+
+def save_config(yaml_path, settings, params):
+    """Write settings + params as a config file readable by :func:`load_config`.
+
+    Comments in a hand-edited source file are not preserved -- this writes the
+    values, not the document.
+    """
+    with open(yaml_path, "w", encoding="utf-8") as fh:
+        fh.write(dump_config(settings, params))
 
 
 def load_config(yaml_path):

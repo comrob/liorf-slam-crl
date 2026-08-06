@@ -10,6 +10,8 @@ therefore running the replay itself -- does not require it.
 import glob
 import os
 
+import numpy as np
+
 from .core.estimator import reconstruct_complementary_only
 from .io.tum import load_tum
 
@@ -21,6 +23,21 @@ AUXILIARY_COLOR = "tab:green"
 
 #: Curve kinds accepted by build_trajectory_figure.
 KINDS = ("reference", "replay", "auxiliary")
+
+
+#: Anchor-frame view colors.
+ANCHOR_COLOR = "tab:blue"
+COMP_COLOR = "tab:green"
+DEGENERATE_COLOR = "tab:orange"
+
+
+def _screen(v):
+    """View-frame (x, y) -> plot (horizontal, vertical).
+
+    Robotics convention: x points up the page, y to the left. The horizontal
+    axis therefore carries y, and is inverted so +y lands on the left.
+    """
+    return float(v[1]), float(v[0])
 
 
 def _xy(trajectory):
@@ -99,5 +116,134 @@ def build_trajectory_figure(curves, *, title="", figsize=(9, 9)):
     ax.set_aspect("equal", adjustable="datalim")
     ax.grid(True, linestyle=":", linewidth=0.5)
     ax.legend()
+    fig.tight_layout()
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# Anchor-frame vector view
+# ---------------------------------------------------------------------------
+
+def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False):
+    """Draw one :class:`LocalFrameView` into an existing axes.
+
+    Clears and redraws ``ax``. ``extent`` is the half-width of the square view;
+    omit it to snap to a zoom step sized for this frame. Limits are always set
+    explicitly -- letting matplotlib autoscale makes scrubbing unreadable.
+
+    With ``normalize``, everything is divided by ``|comp_vec|`` so the
+    complementary arrow has unit length and the LiDAR displacement can be read
+    straight off the axes as a multiple of it. Axes are then dimensionless.
+    Frames with no complementary window cannot be normalized and are drawn in
+    metres with a note. Applied at draw time, so the view itself is untouched
+    and toggling costs a redraw rather than a rebuild.
+    """
+    from .core.local_view import snap_extent
+
+    divisor = view.comp_norm if normalize else None
+    k = 1.0 / divisor if divisor else 1.0
+    normalized = divisor is not None
+
+    if extent is None:
+        extent = snap_extent(view.reach * k)
+
+    ax.clear()
+
+    ax.axhline(0.0, color="0.85", linewidth=0.8, zorder=0)
+    ax.axvline(0.0, color="0.85", linewidth=0.8, zorder=0)
+
+    latest_pos = view.latest_pos * k
+
+    # Extended past the corners so a line always spans the view wherever the
+    # latest position sits inside it.
+    half_len = 3.0 * extent
+
+    # Older lines first and fainter, so the current one stays legible on top.
+    # Normalized, each earlier line is drawn in *its own* normalized geometry so
+    # every overlaid frame has its own complementary vector at unit length;
+    # frames that had no window cannot be normalized and are dropped.
+    if view.history_lines:
+        oldest = max(h.age for h in view.history_lines)
+        drawn = 0
+        for h in sorted(view.history_lines, key=lambda h: -h.age):
+            if normalized:
+                if h.comp_norm is None:
+                    continue
+                origin, direction = h.own_origin / h.comp_norm, h.own_direction
+            else:
+                origin, direction = h.origin, h.direction
+            fade = 1.0 - (h.age / (oldest + 1))
+            sx, sy = _screen(origin - half_len * direction), _screen(origin + half_len * direction)
+            ax.plot([sx[0], sy[0]], [sx[1], sy[1]],
+                    color=DEGENERATE_COLOR, linewidth=0.9, linestyle=":",
+                    alpha=0.15 + 0.35 * fade, zorder=1)
+            drawn += 1
+        if drawn:
+            ax.plot([], [], color=DEGENERATE_COLOR, linewidth=0.9, linestyle=":",
+                    alpha=0.4, label=f"previous degenerate ({drawn})")
+
+    for i, d in enumerate(view.degenerate_dirs):
+        sx, sy = _screen(latest_pos - half_len * d), _screen(latest_pos + half_len * d)
+        ax.plot([sx[0], sy[0]], [sx[1], sy[1]],
+                color=DEGENERATE_COLOR, linewidth=1.4, linestyle="--", zorder=2,
+                label="degenerate direction" if i == 0 else None)
+
+    if view.has_comp_vec:
+        ax.annotate("", xy=_screen(view.comp_vec * k), xytext=(0.0, 0.0),
+                    arrowprops=dict(arrowstyle="->", color=COMP_COLOR, linewidth=1.8),
+                    zorder=3)
+        # Proxy artist: annotate() arrows do not appear in the legend.
+        ax.plot([], [], color=COMP_COLOR, linewidth=1.8,
+                label="complementary (unit)" if normalized else "complementary")
+
+    ax.plot([0.0], [0.0], marker="o", markersize=8, color=ANCHOR_COLOR,
+            linestyle="none", zorder=4,
+            label=f"anchor (frame {view.anchor_frame_idx})")
+
+    if normalized:
+        # The unit circle the complementary arrow now lands on, as a ruler.
+        theta = np.linspace(0.0, 2.0 * np.pi, 181)
+        ax.plot(np.cos(theta), np.sin(theta), color=COMP_COLOR, linewidth=0.8,
+                linestyle=":", alpha=0.5, zorder=0)
+
+    # Horizontal axis reversed so +y is on the left, with x up the page.
+    ax.set_xlim(extent, -extent)
+    ax.set_ylim(-extent, extent)
+    ax.set_aspect("equal", adjustable="box")
+    unit = "|comp|" if normalized else "m"
+    if view.frame == "anchor":
+        forward, frame_note = "anchor forward", "anchor body frame"
+    elif view.frame == "comp":
+        forward = "complementary forward"
+        frame_note = ("complementary-aligned frame" if view.comp_aligned
+                      else "complementary-aligned (no vector — map orientation)")
+    else:
+        forward, frame_note = "map", "map frame, origin at anchor"
+    ax.set_ylabel(f"x [{unit}] ({forward})")
+    ax.set_xlabel(f"y [{unit}] (left)")
+    ax.grid(True, linestyle=":", linewidth=0.5)
+
+    if normalized:
+        scale_note = f"  ·  normalized: |comp| = 1 ({divisor:.3f} m)"
+    elif normalize:
+        scale_note = "  ·  cannot normalize: no complementary window"
+    else:
+        scale_note = ""
+
+    total = f"/{n_frames - 1}" if n_frames else ""
+    flag = " · degenerate" if view.degeneracy_detected else ""
+    ax.set_title(f"frame {view.frame_idx}{total}  ·  t +{view.time_rel:.2f} s{flag}\n"
+                 f"{frame_note}  ·  view ±{extent:g} {unit}{scale_note}", fontsize="medium")
+    ax.legend(loc="upper right", fontsize="small")
+    return ax
+
+
+def build_local_frame_figure(view, *, extent=None, n_frames=None, normalize=False,
+                             figsize=(7, 7)):
+    """Standalone figure for one frame view; for tests and headless use."""
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=figsize)
+    draw_local_frame(ax, view, extent=extent, n_frames=n_frames, normalize=normalize)
     fig.tight_layout()
     return fig

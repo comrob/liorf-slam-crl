@@ -79,8 +79,13 @@ def project_onto_basis(twist, basis):
     return proj
 
 
-def project_onto_basis_translation(t_vec, basis):
-    """Project translation onto span of linear parts of the twist basis."""
+def orthonormal_translation_basis(basis):
+    """Gram-Schmidt the linear parts of a twist basis into unit 3-vectors.
+
+    Returns at most three vectors; near-dependent directions are dropped. This
+    is the degenerate translational subspace: the directions along which LiDAR
+    constrains nothing and the complementary prediction is substituted.
+    """
     lin = []
     for b in basis:
         v = b[:3].copy()
@@ -89,9 +94,13 @@ def project_onto_basis_translation(t_vec, basis):
         n = float(np.linalg.norm(v))
         if n > 1e-6:
             lin.append(v / n)
+    return lin
 
+
+def project_onto_basis_translation(t_vec, basis):
+    """Project translation onto span of linear parts of the twist basis."""
     proj = np.zeros(3, dtype=float)
-    for u in lin:
+    for u in orthonormal_translation_basis(basis):
         proj += float(t_vec @ u) * u
     return proj
 

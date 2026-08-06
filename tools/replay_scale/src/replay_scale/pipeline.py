@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .core.estimator import reconstruct_fixed, reconstruct_with_estimator
-from .core.odom_source import apply_odom_source, sync_odom_to_frames
+from .core.odom_source import apply_complementary_drift, apply_odom_source, sync_odom_to_frames
 from .io.paths import (
     complementary_source_tag,
     expand_path,
@@ -61,6 +61,7 @@ class ReplayResult:
     traj_dir: str
     log_dir: str
     source_status: str = None
+    drift_status: str = None
     recorded_effective: list = field(default_factory=list)
     replays: list = field(default_factory=list)       # [(tag, trajectory)]
     lidar_only: list = None
@@ -136,6 +137,21 @@ def apply_complementary_source(frames, settings, csv_path):
             f"    extrinsic: {extrinsic_origin}\n"
             f"    stream samples: {len(odom_stream)}\n"
             f"    matched frames: {matched}/{len(frames)}")
+
+
+def apply_simulated_drift(frames, settings):
+    """Inject the configured complementary-odometry drift, if any.
+
+    No-op returning None when alpha is zero. Runs *after* any source swap, so
+    the drift applies to whichever odometry is actually being replayed.
+    """
+    drift = settings.complementary_drift
+    if not drift.alpha:
+        return None
+    modified = apply_complementary_drift(frames, drift.alpha, drift.axis)
+    return (f"simulated drift: {drift.alpha:+g} x |displacement| "
+            f"along body {drift.axis}\n"
+            f"    frames affected: {modified}/{len(frames)}")
 
 
 def reconstruct_replay_trajectories(frames, settings, params, collect_traces=False):
@@ -222,6 +238,10 @@ def run_replay(csv_path, settings, params=None, *, write=True, on_progress=None)
     result.source_status = apply_complementary_source(frames, settings, csv_path)
     if result.source_status:
         emit(f"  {result.source_status}")
+
+    result.drift_status = apply_simulated_drift(frames, settings)
+    if result.drift_status:
+        emit(f"  {result.drift_status}")
 
     result.recorded_effective = recorded_effective_trajectory(frames)
     _write_tum(os.path.join(traj_dir, "trajectory_recorded_effective.tum"),

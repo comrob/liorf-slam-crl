@@ -325,6 +325,11 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
             vf.time = float(f.time)
             vf.degeneracy_detected = bool(estimator_mode_active)
             vf.gate_observable = bool(gate_observable)
+            # Mirrors the trimming of lidar_pose_buffer above, which holds
+            # frames max(0, k - baseline_lag)..k. Recorded unconditionally: the
+            # anchor *pose* is well defined even on frames where the
+            # complementary window failed to close and the vectors below are nan.
+            vf.anchor_frame_idx = max(0, k - baseline_lag)
             if debug_vecs is not None:
                 vf.anchor_pos = debug_vecs["anchor_pos"]
                 vf.latest_pos = debug_vecs["latest_pos"]

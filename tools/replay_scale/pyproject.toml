@@ -11,9 +11,13 @@ dependencies = [
     "matplotlib>=3.8.0",
 ]
 
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+
 [project.scripts]
 replay-scale-trajectory = "replay_scale.cli:main"
 replay-scale-plot-trajectories = "replay_scale.cli:main_plot"
+replay-scale-gui = "replay_scale.gui.app:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0"]

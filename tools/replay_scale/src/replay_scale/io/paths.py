@@ -55,4 +55,8 @@ def complementary_source_tag(settings):
         tag += f"_src_{os.path.splitext(os.path.basename(expand_path(path)))[0]}"
     if settings.correction_mode != "twist6":
         tag += f"_corr_{settings.correction_mode}"
+    drift = getattr(settings, "complementary_drift", None)
+    if drift is not None and drift.alpha:
+        # Sweeping alpha is the point, so each value needs its own file.
+        tag += f"_drift_{drift.axis}{drift.alpha:+g}".replace("+", "p").replace("-", "m")
     return tag

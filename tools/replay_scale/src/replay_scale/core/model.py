@@ -49,8 +49,12 @@ class ScaleEstimateFrame:
 
 
 class ScaleVectorFrame:
+    # anchor_frame_idx is the estimator's lagged-baseline anchor for this frame.
+    # It is always set -- the anchor pose exists whether or not the complementary
+    # window closed -- so frontends never re-derive the buffer rule themselves.
     __slots__ = (
         "frame_idx", "time", "degeneracy_detected", "gate_observable",
+        "anchor_frame_idx",
         "anchor_pos", "latest_pos",
         "t_lidar_map", "t_comp_map",
         "t_lidar_nondeg_map", "t_comp_nondeg_map",
