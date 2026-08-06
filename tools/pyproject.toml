@@ -7,19 +7,16 @@ dependencies = [
     "numpy>=1.26.0",
     "folium>=0.16.0",
     "matplotlib>=3.8.0",
-    "pyyaml>=6.0",
 ]
 
 [project.scripts]
 visualize-saved-map-satellite = "scripts.visualize_saved_map_satellite:main"
 plot-jacobian-perturbation-degeneracy = "scripts.plot_jacobian_perturbation_degeneracy:main"
 plot-time-slicing-stats = "scripts.plot_time_slicing_stats:main"
-replay-scale-trajectory = "replay_scale.replay_scale_trajectory:main"
-replay-scale-plot-trajectories = "replay_scale.plot_trajectories:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["replay_scale", "scripts"]
+packages = ["scripts"]

@@ -15,7 +15,7 @@ velocity twist. To swap sources, replay redoes the same steps here:
 
 import numpy as np
 
-from .se3_math import matrix_to_twist
+from .se3 import matrix_to_twist
 
 # Gates from mapOptimization_degeneracy.cpp.
 _MIN_DT_COMPLEMENTARY_S = 1e-3

@@ -1,24 +1,23 @@
-"""Data model and trajectory reconstruction / scale estimation logic.
+"""Trajectory reconstruction / scale estimation logic.
 
 Port of:
 - src/mapOptimization/mapOptimization_degeneracy.cpp
+
+Pure computation over :mod:`replay_scale.core.model` objects: reads no files,
+writes no files and prints nothing.
 """
 
 from collections import deque
-from dataclasses import dataclass
 
 import numpy as np
 
-from .se3_math import (
+from .model import ScaleEstimateFrame, ScaleVectorFrame
+from .se3 import (
     exp_map,
-    matrix_to_twist,
     project_degenerate_correction,
     project_degenerate_correction_translation,
     project_onto_basis_translation,
 )
-
-# "twist6" mirrors the node; "translation" leaves observable orientation alone.
-CORRECTION_MODES = ("twist6", "translation")
 
 
 def _correction_fn(correction_mode):
@@ -27,51 +26,6 @@ def _correction_fn(correction_mode):
     if correction_mode == "twist6":
         return project_degenerate_correction
     raise ValueError(f"Unknown correction_mode: {correction_mode!r}")
-
-
-# ---------------------------------------------------------------------------
-# Data model
-# ---------------------------------------------------------------------------
-
-@dataclass
-class ReplayParams:
-    translation_scale: float = 1.0
-    scale_estimation_apply: bool = True
-    scale_min_nondegenerate_speed: float = 0.2
-    scale_baseline_frame_lag: int = 1
-    scale_smoothing_window_size: int = 20
-    ignore_dz: bool = False
-
-
-class Frame:
-    __slots__ = (
-        "time", "lidar_prev_stamp", "dt_scan", "degeneracy_detected", "has_basis",
-        "has_complementary", "scale_applied", "basis_size", "basis",
-        "lidar_increment", "complementary_twist", "dt_complementary",
-        "pose_prev", "pose_optimized", "pose_effective",
-    )
-
-
-@dataclass
-class ScaleEstimateFrame:
-    frame_idx: int
-    time: float
-    gate_observable: bool
-    scale_instant_raw: float
-    scale_filtered: float
-    scale_smooth: float
-    scale_applied: float
-
-
-class ScaleVectorFrame:
-    __slots__ = (
-        "frame_idx", "time", "degeneracy_detected", "gate_observable",
-        "anchor_pos", "latest_pos",
-        "t_lidar_map", "t_comp_map",
-        "t_lidar_nondeg_map", "t_comp_nondeg_map",
-        "t_lidar_nondeg_proj_map", "nondeg_axis_map",
-        "scale_instant_raw", "scale_smooth", "scale_applied",
-    )
 
 
 # ---------------------------------------------------------------------------

@@ -5,20 +5,17 @@ description = "Utility tools for LILI saved-map export and visualization"
 authors = ["LILI contributors"]
 readme = "../README.md"
 package-mode = false
-packages = [{include = "replay_scale", from = ".."}]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
 numpy = "^1.26.0"
 folium = "^0.16.0"
 matplotlib = "^3.8.0"
-pyyaml = "^6.0"
 
 [tool.poetry.scripts]
 visualize-saved-map-satellite = "visualize_saved_map_satellite:main"
 plot-jacobian-perturbation-degeneracy = "plot_jacobian_perturbation_degeneracy:main"
 plot-time-slicing-stats = "plot_time_slicing_stats:main"
-replay-scale-trajectory = "replay_scale.replay_scale_trajectory:main"
 
 [build-system]
 requires = ["poetry-core>=1.8.0"]

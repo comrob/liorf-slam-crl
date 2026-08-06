@@ -249,7 +249,7 @@ sudo usermod -aG docker $USER  # Run docker without sudo
 
 ```bash
 # Clone to your robot
-git clone https://github.com/comrob/lili-sam.git
+git clone https://gitlab.fel.cvut.cz/hulchvse/lili-sam.git
 cd lili-sam
 ```
 

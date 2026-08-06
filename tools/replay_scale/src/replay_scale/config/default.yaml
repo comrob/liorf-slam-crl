@@ -24,14 +24,14 @@
       # Additional multiplier applied to complementary odometry translation.
       # The recorded twists already include the online run's translationScale;
       # this is an extra replay-time factor on top of that.
-      translationScale: 1.5
+      translationScale: 1.0
 
-# Settings for tools/replay_scale/replay_scale_trajectory.py itself (not a ROS
+# Settings for the replay_scale tool itself (not a ROS
 # parameter tree; this key is ignored by any ROS node loading this file as
 # a parameters YAML since it does not match a node/wildcard name).
 replay_scale_tool:
 
-  # Scale source: fixed, recorded, or estimated. See replay_scale_trajectory.py --help.
+  # Scale source: fixed, recorded, or estimated. See replay-scale-trajectory --help.
   scale_mode: estimated
 
   # Constant translation scales to replay with when scale_mode is "fixed".
@@ -44,7 +44,7 @@ replay_scale_tool:
   output_subdir: replay
 
   # Also emit the LiDAR-only trajectory (no degeneracy override).
-  no_correction: true
+  no_correction: false
 
   # Replay with the recorded per-frame scale and report drift vs recorded effective.
   validate: false
