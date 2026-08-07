@@ -25,11 +25,31 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=DESCRIPTION,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("input", nargs="?", default="",
-                        help="Run directory or scale_replay_frames.csv to open at "
-                             "startup. Defaults to the newest run under --base-dir.")
-    parser.add_argument("--base-dir", default="~/.ros/lili_logs",
-                        help="Base directory holding run folders (default: %(default)s).")
+                        help="Run directory or scale_replay_frames.csv to open at startup. "
+                             "Omit to use replay_scale_tool.input_path from the config, and "
+                             "the newest run under the base directory if that is empty too.")
+    parser.add_argument("--base-dir", default="",
+                        help="Base directory holding run folders. Overrides "
+                             "replay_scale_tool.base_dir from the config.")
+    parser.add_argument("--ros-params-yaml", default="",
+                        help="Configuration to start from (default: bundled "
+                             "config/default.yaml). Another can be loaded from "
+                             "the Configuration dock at any time.")
     args = parser.parse_args(argv)
+
+    # The config the replay will load, read here for where to look as well: the
+    # run list and the startup run must agree with the CLI's.
+    from ..io.paths import DEFAULT_BASE_DIR, expand_path
+    from ..settings import DEFAULT_CONFIG_PATH, load_config
+
+    config_path = expand_path(args.ros_params_yaml) if args.ros_params_yaml else DEFAULT_CONFIG_PATH
+    try:
+        settings, _ = load_config(config_path)
+    except Exception as exc:
+        print(f"Could not load {config_path}: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    base_dir = args.base_dir or settings.base_dir or DEFAULT_BASE_DIR
+    initial_input = args.input or settings.input_path
 
     try:
         from PySide6.QtWidgets import QApplication
@@ -40,7 +60,8 @@ def main(argv=None):
     from .main_window import MainWindow
 
     app = QApplication(sys.argv[:1])
-    window = MainWindow(base_dir=args.base_dir, initial_input=args.input)
+    window = MainWindow(base_dir=base_dir, initial_input=initial_input,
+                        config_path=config_path)
     window.show()
     return app.exec()
 

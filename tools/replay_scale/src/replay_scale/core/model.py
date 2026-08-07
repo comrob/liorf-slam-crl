@@ -13,6 +13,11 @@ CORRECTION_MODES = ("twist6", "translation")
 # Scale sources accepted by replay_scale_tool.scale_mode.
 SCALE_MODES = ("fixed", "recorded", "estimated")
 
+# How the accepted samples in the smoothing window become the applied scale.
+# "mean" mirrors the node; "median" is robust to the ratio's heavy tail;
+# "trimmed" drops the tail by quartile fence and averages what is left.
+SMOOTHING_MODES = ("mean", "median", "trimmed")
+
 
 @dataclass
 class ReplayParams:
@@ -23,7 +28,15 @@ class ReplayParams:
     scale_min_nondegenerate_speed: float = 0.2
     scale_baseline_frame_lag: int = 1
     scale_smoothing_window_size: int = 20
+    # Statistic taken over that window; see SMOOTHING_MODES. "mean" is the
+    # node's, so it is the default here.
+    scale_smoothing_mode: str = "mean"
     ignore_dz: bool = False
+    # Range a scale sample is clamped into before it enters the smoothing
+    # filter. Defaults are no bound at all: the node has no such limit, so
+    # bounding is opt-in.
+    scale_min: float = 0.0
+    scale_max: float = float("inf")
 
 
 class Frame:

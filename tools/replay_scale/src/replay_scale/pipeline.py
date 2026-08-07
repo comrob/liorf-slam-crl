@@ -131,10 +131,14 @@ def apply_complementary_source(frames, settings, csv_path):
 
     odom_stream = load_tum(stream_path)
     synced = sync_odom_to_frames(odom_stream, frames, T_ext,
-                                 max_match_dt_s=source.max_match_dt_s)
+                                 max_match_dt_s=source.max_match_dt_s,
+                                 match_mode=source.match_mode)
     matched = apply_odom_source(frames, synced)
+    gate = ("max interpolated gap" if source.match_mode == "interpolate"
+            else "max match dt")
     return (f"complementary source: {stream_path}\n"
             f"    extrinsic: {extrinsic_origin}\n"
+            f"    match mode: {source.match_mode} ({gate}: {source.max_match_dt_s} s)\n"
             f"    stream samples: {len(odom_stream)}\n"
             f"    matched frames: {matched}/{len(frames)}")
 
@@ -193,7 +197,9 @@ def _format_params(params):
             f"    scaleEstimationApply: {params.scale_estimation_apply}\n"
             f"    scaleMinNonDegenerateSpeed: {params.scale_min_nondegenerate_speed}\n"
             f"    scaleBaselineFrameLag: {params.scale_baseline_frame_lag}\n"
-            f"    scaleSmoothingWindowSize: {params.scale_smoothing_window_size}\n"
+            f"    scaleSmoothingWindowSize: {params.scale_smoothing_window_size}"
+            f"  ({params.scale_smoothing_mode})\n"
+            f"    scaleMin: {params.scale_min}  scaleMax: {params.scale_max}\n"
             f"    ignore_dz: {params.ignore_dz}")
 
 

@@ -11,13 +11,69 @@ from collections import deque
 
 import numpy as np
 
-from .model import ScaleEstimateFrame, ScaleVectorFrame
+from .model import SMOOTHING_MODES, ScaleEstimateFrame, ScaleVectorFrame
 from .se3 import (
     exp_map,
     project_degenerate_correction,
     project_degenerate_correction_translation,
     project_onto_basis_translation,
 )
+
+
+#: Tukey fence width for the "trimmed" mode, in interquartile ranges. The
+#: textbook 1.5 -- wide enough to keep a symmetric window intact, narrow enough
+#: to cut the ratio's tail.
+IQR_FENCE_K = 1.5
+
+#: Below this many samples the quartiles are not meaningful and "trimmed"
+#: cannot distinguish a tail from the data.
+_MIN_TRIM_SAMPLES = 4
+
+
+def smoothed_scale(history, mode="mean"):
+    """The scale to apply, from the window of accepted samples.
+
+    All three modes read the same trailing window, so all three are causal: the
+    window holds past samples only, and the value applied at frame *k* is built
+    from samples up to *k-1*.
+
+    ``"mean"``
+        The node's arithmetic mean. The samples are a ratio of two short
+        displacements and their distribution is heavy-tailed -- on real runs the
+        raw ratio reaches 60x -- so the mean is set by the excursions rather
+        than by the bulk: one 20x sample moves a 50-wide window by 0.4 and keeps
+        it moved for the next 50 frames.
+    ``"median"``
+        The middle sample. It cannot be dragged: a new sample moves it by at
+        most one order statistic and always *towards* the side it fell on. The
+        cost is that it throws away most of the window -- half the samples only
+        vote on which side the middle lies -- so it is jumpier than it needs to
+        be when the samples are in fact clean.
+    ``"trimmed"``
+        Both: locate the bulk with the quartiles, drop what falls outside a
+        Tukey fence of :data:`IQR_FENCE_K` interquartile ranges, then take the
+        mean of the rest. On a clean window the fence catches nothing and this
+        *is* the mean; on a window with a tail it is the mean of the inliers,
+        which uses far more of the data than the median while still ignoring
+        the excursions. Falls back to the median when the window is too short
+        for quartiles to mean anything.
+    """
+    if mode == "median":
+        return float(np.median(history))
+    if mode == "mean":
+        return float(np.mean(history))
+    if mode == "trimmed":
+        samples = np.asarray(history, dtype=float)
+        if samples.size < _MIN_TRIM_SAMPLES:
+            return float(np.median(samples))
+        q1, q3 = np.percentile(samples, (25.0, 75.0))
+        iqr = q3 - q1
+        inliers = samples[(samples >= q1 - IQR_FENCE_K * iqr)
+                          & (samples <= q3 + IQR_FENCE_K * iqr)]
+        # The fence always contains the quartiles themselves, so this is never
+        # empty; the guard is for a window of identical values, where iqr == 0.
+        return float(np.mean(inliers)) if inliers.size else float(np.median(samples))
+    raise ValueError(f"Unknown scale_smoothing_mode: {mode!r}; expected one of {SMOOTHING_MODES}")
 
 
 def _correction_fn(correction_mode):
@@ -116,9 +172,23 @@ def build_additional_odom_scale_sample(
     ignore_dz,
     dt_complementary_s,
     min_nondegenerate_speed,
+    scale_min=0.0,
+    scale_max=float("inf"),
+    dt_lidar_s=None,
     debug=False,
 ):
-    """Port of mapOptimization::buildAdditionalOdomCorrectionResult for scaling."""
+    """Port of mapOptimization::buildAdditionalOdomCorrectionResult for scaling.
+
+    ``scale_min``/``scale_max`` bound what may enter the smoothing filter and
+    are a replay-time addition -- the node has no such limit, so the defaults
+    change nothing. A sample outside the range is clamped to the bound, not
+    dropped; ``scale_instant_raw`` still reports it as measured.
+
+    The observability gate is measured on the LiDAR displacement alone, which
+    is an intentional divergence from the node -- see the comment at the gate.
+    ``dt_lidar_s`` is the LiDAR window's own duration, defaulting to
+    ``dt_complementary_s`` when a caller has only that.
+    """
     t_lidar_rel_anchor = T_lidar_rel[:3, 3].copy()
     t_comp_rel_uncorrected_anchor = T_comp_rel[:3, 3].copy()
 
@@ -160,17 +230,42 @@ def build_additional_odom_scale_sample(
     if comp_nondeg_norm > 1e-6:
         scale_instant_raw = lidar_proj_norm / comp_nondeg_norm
 
-    projected_nondeg_speed = lidar_proj_norm / max(1e-5, dt_complementary_s)
+    # Intentional divergence from the node. It gates on
+    # |t_lidar_nondeg_proj| / dt_complementary: the LiDAR displacement projected
+    # onto the *complementary* non-degenerate direction, over the complementary
+    # window. Both halves of that carry the complementary odometry -- the
+    # projection shortens by cos(theta) between the two vectors, and the divisor
+    # is the odometry's own interval -- so a frame where the LiDAR moved plenty
+    # is called unobservable whenever the complementary vector is short, noisy or
+    # misaligned. That inverts the gate's purpose: it asks whether enough motion
+    # was *observed* to measure a ratio against, and it ends up rejecting exactly
+    # the frames where the complementary odometry is what wants inspecting.
+    # Replay therefore gates on the LiDAR displacement over the LiDAR window,
+    # which contains no complementary quantity. The scale ratio itself is
+    # unchanged, and still uses the projection.
+    lidar_nondeg_norm = float(np.linalg.norm(t_lidar_nondeg))
+    dt_gate = dt_complementary_s if dt_lidar_s is None else dt_lidar_s
+    nondeg_speed = lidar_nondeg_norm / max(1e-5, dt_gate)
     gate_observable = (
         np.isfinite(scale_instant_raw)
-        and projected_nondeg_speed >= max(0.0, min_nondegenerate_speed)
+        and nondeg_speed >= max(0.0, min_nondegenerate_speed)
     )
+
+    # The bounds clamp rather than reject: an out-of-range sample still says the
+    # LiDAR moved further than the odometry claimed, and dropping it would let
+    # the filter keep averaging as though the frame had never happened. Clamping
+    # admits the direction of the evidence while capping how far one sample can
+    # pull the mean. scale_instant_raw stays as measured, so the trace and the
+    # scale tab still show what the frame actually produced.
+    scale_filtered = np.nan
+    if gate_observable:
+        scale_filtered = min(max(scale_instant_raw, scale_min), scale_max)
 
     result = {
         "valid": True,
         "gate_observable": bool(gate_observable),
         "scale_instant_raw": float(scale_instant_raw),
-        "scale_filtered": float(scale_instant_raw) if gate_observable else np.nan,
+        "scale_filtered": float(scale_filtered),
     }
     if debug:
         result["debug"] = {
@@ -220,7 +315,8 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
 
         smoothed_scale_for_apply = np.nan
         if scale_apply_enabled and len(lagged_scale_filtered_history) > 0:
-            smoothed_scale_for_apply = float(np.mean(lagged_scale_filtered_history))
+            smoothed_scale_for_apply = smoothed_scale(
+                lagged_scale_filtered_history, params.scale_smoothing_mode)
 
         has_applied_scale = scale_apply_enabled and np.isfinite(smoothed_scale_for_apply)
         scale_applied = float(smoothed_scale_for_apply) if has_applied_scale else 1.0
@@ -271,8 +367,12 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
         # Port of lagged scale update path: if buffer has anchor/current pair,
         # estimate lagged scale sample and append to filtered history when observable.
         if len(lidar_pose_buffer) >= 2:
-            anchor_idx, _, T_anchor = lidar_pose_buffer[0]
-            latest_idx, _, T_latest = lidar_pose_buffer[-1]
+            anchor_idx, anchor_stamp, T_anchor = lidar_pose_buffer[0]
+            latest_idx, latest_stamp, T_latest = lidar_pose_buffer[-1]
+            # The window the LiDAR displacement actually spans, which is what the
+            # observability gate divides by. Distinct from dt_comp_window, whose
+            # length depends on how the odometry matched.
+            dt_lidar_window = float(latest_stamp - anchor_stamp)
 
             T_comp_rel_window = np.eye(4, dtype=float)
             dt_comp_window = 0.0
@@ -295,6 +395,9 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                     bool(params.ignore_dz),
                     dt_comp_window,
                     float(params.scale_min_nondegenerate_speed),
+                    scale_min=float(params.scale_min),
+                    scale_max=float(params.scale_max),
+                    dt_lidar_s=dt_lidar_window,
                     debug=collect_vectors,
                 )
                 gate_observable = sample["gate_observable"]
@@ -308,7 +411,9 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                 while len(lagged_scale_filtered_history) > max(1, int(params.scale_smoothing_window_size)):
                     lagged_scale_filtered_history.popleft()
 
-        scale_smooth = float(np.mean(lagged_scale_filtered_history)) if lagged_scale_filtered_history else np.nan
+        scale_smooth = (smoothed_scale(lagged_scale_filtered_history,
+                                        params.scale_smoothing_mode)
+                        if lagged_scale_filtered_history else np.nan)
         scale_trace.append(ScaleEstimateFrame(
             frame_idx=k,
             time=float(f.time),

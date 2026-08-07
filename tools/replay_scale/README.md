@@ -67,17 +67,32 @@ replay-scale-plot-trajectories [same] [--output PNG] [--show]
 
 | Flag | Meaning |
 | --- | --- |
-| `input` | Run directory or path to `scale_replay_frames.csv`. Omit to use `--latest`. |
-| `--latest` | Use `<base-dir>/latest`, else the newest `run_*` by mtime. |
-| `--base-dir` | Where `run_*` folders live. Default `~/.ros/lili_logs`. |
+| `input` | Run directory or path to `scale_replay_frames.csv`. Omit to use the config's `input_path`, then the latest run. |
+| `--latest` | Use `<base-dir>/latest`, else the newest `run_*` by mtime. Ignores a configured `input_path`. |
+| `--base-dir` | Where `run_*` folders live. Overrides the config's `base_dir`; default `~/.ros/lili_logs`. |
 | `--ros-params-yaml` | Config file. Default: bundled [`config/default.yaml`](src/replay_scale/config/default.yaml). |
 | `--output` | Plot only. PNG destination. Default `<out>/trajectories/trajectories_2d.png`. |
 | `--show` | Plot only. Also open an interactive window. |
 
 Everything else — scale mode, correction mode, output location, alternative
 odometry source — is set in the YAML rather than on the command line, so a
-replay is fully described by one file you can keep next to your results. Copy
-the bundled default and edit it:
+replay is fully described by one file you can keep next to your results. That
+includes *which run* to replay:
+
+```yaml
+replay_scale_tool:
+  input_path: "~/.ros/lili_logs/run_20260805_192954_kdtree_lm"   # "" = newest run
+  base_dir: ""                                                   # "" = ~/.ros/lili_logs
+```
+
+Resolution is the same for the CLI and the GUI: an explicit path on the command
+line wins, then `input_path`, then the newest run under the base directory —
+the `latest` symlink if there is one, else the most recently modified `run_*`.
+`--latest` forces that last step regardless of what the config names, and
+`--base-dir` overrides `base_dir`. Leaving both keys empty is exactly the old
+behaviour, so pinning a run is opt-in.
+
+Copy the bundled default and edit it:
 
 ```bash
 cp src/replay_scale/config/default.yaml my_replay.yaml
@@ -112,6 +127,93 @@ comes from.
 | `twist6` | Node parity: projects the full 6D twist onto the degenerate basis. The inner product mixes metres and radians, so residual angular content in the basis turns the correction into a rotation. |
 | `translation` | Projects only translation onto the degenerate directions, leaving orientation to LiDAR. Use where rotation is observable (tunnel walls constrain yaw) and any injected heading is therefore spurious. |
 
+### The observability gate
+
+**`scaleMinNonDegenerateSpeed`** decides which frames produce a usable scale
+sample. In replay it is measured on the LiDAR's own non-degenerate displacement
+over the LiDAR window:
+
+```
+|t_lidar_nondeg| / dt_lidar  >=  scaleMinNonDegenerateSpeed
+```
+
+The node instead uses `|t_lidar_nondeg_proj| / dt_complementary` — the LiDAR
+displacement *projected onto the complementary non-degenerate direction*, over
+the complementary window. Both halves of that carry the odometry: the projection
+shortens by cos θ between the two vectors, and the divisor is the odometry's own
+matched interval. A frame where the LiDAR moved plenty is then called
+unobservable because the *complementary* vector was short, noisy or misaligned —
+which inverts what the gate is for. It asks whether enough motion was **observed**
+to measure a ratio against, and it should not be answered with the quantity under
+test; those are exactly the frames worth looking at.
+
+The scale ratio itself is unchanged and still uses the projection — only the gate
+moved. On a 6519-frame run at `scaleMinNonDegenerateSpeed: 0.1` this admits 3755
+samples where the node's rule admits 3648; at 0.2 the two agree to within a
+couple of frames. The difference is small on well-aligned data and grows exactly
+where the complementary odometry is poor.
+
+**`scaleSmoothingMode`** — which statistic the smoothing window collapses to.
+
+| Mode | Behaviour |
+| --- | --- |
+| `mean` | Node parity: the arithmetic mean of the window. One 20× sample shifts the applied scale by 0.4 on a 50-wide window, and keeps it shifted for the next 50 frames. |
+| `median` | The middle sample. A new observation moves it by at most one order statistic, always towards the side it fell on — so a sustained change arrives in full, while a lone excursion moves nothing but its own vote. Robust, but half the window only votes on which side the middle lies. |
+| `trimmed` | Quartiles locate the bulk, samples outside a 1.5 × IQR Tukey fence are dropped, and the rest are averaged. On a clean window the fence catches nothing and this *is* the mean; on a window with a tail it is the mean of the inliers. Falls back to the median for windows shorter than four samples, where quartiles mean nothing. |
+
+The samples are a ratio of two short displacements, so the distribution is
+heavy-tailed and this is not a cosmetic choice. On a window of
+`[1.0, 1.1, 0.9, 1.05, 0.95, 20.0]` the three give 4.17, 1.03 and 1.00; on a
+clean window they agree exactly. Over the bundled 6519-frame run:
+
+| Mode | applied median | p90 | max |
+| --- | --- | --- | --- |
+| `mean` | 0.741 | 4.73 | 24.26 |
+| `median` | 0.493 | 1.69 | 2.81 |
+| `trimmed` | 0.494 | 2.11 | 6.09 |
+
+`trimmed` sits where you would expect: it agrees with the median on where the
+bulk is, and its wider tail is windows whose *bulk* really was high — not
+outliers, and not something a filter should hide.
+
+All three read the same trailing window, so all three are causal: the window
+holds past samples only, and the value applied at frame *k* is built from
+samples up to *k−1*, which is the node's own ordering. The bundled config
+selects `trimmed`; `mean` is the default in code so an unconfigured replay still
+reproduces the node.
+
+**`scaleMin` / `scaleMax`** — the range a scale sample is **clamped into**
+before it enters the smoothing filter:
+
+```yaml
+      scaleMin: 0.5
+      scaleMax: 2.0
+```
+
+Samples are *clamped, not dropped*. A 12× sample still says the LiDAR moved
+much further than the odometry claimed, and discarding it would let the filter
+average on as though the frame had never happened; capping it keeps the vote
+while limiting how far one frame can pull the mean. The applied scale is the
+mean of clamped samples, so it stays inside the range as well.
+
+`scale_instant_raw` is logged as measured either way, so the estimator trace and
+the viewer's **Scale** tab still show what each frame really produced — the raw
+curve running outside the dashed bound lines is exactly the population being
+clamped.
+
+Clamping is independent of observability: a sample still has to pass
+`scaleMinNonDegenerateSpeed` to enter the filter at all, and the bounds do not
+change which frames count as observable. This is not a node parameter — the node
+has no such limit, so the defaults (`0.0` and `.inf`) clamp nothing and preserve
+parity.
+
+The two knobs overlap. Under `scaleSmoothingMode: median` an outlier already
+counts only as one vote regardless of its size, so clamping changes little — on
+the bundled run, `[0.5, 2.0]` moves the median-filtered p90 not at all (1.690
+either way) and only caps the extreme (2.81 → 2.00). Under `mean` the same
+bounds matter a great deal (p90 4.73 → 1.70). Reach for the bounds when you need
+a hard guarantee on what can be applied; reach for the median first.
+
 Set `validate: true` to additionally replay with the recorded scale and report
 position drift against the pose the online run used — a check that the replay
 chain reproduces the original run. `no_correction: true` also emits the
@@ -120,22 +222,88 @@ LiDAR-only trajectory with no degeneracy override at all.
 ## Replaying a different odometry source
 
 `complementary_source.path` takes a TUM file of absolute odometry poses. The
-replay re-synchronizes it against the same LiDAR frame stamps using the same
-nearest-sample matching the node performs, so it is a fair substitution rather
-than a re-timed one.
+replay re-synchronizes it against the same LiDAR frame stamps, so it is a fair
+substitution rather than a re-timed one.
 
 ```yaml
 replay_scale_tool:
   complementary_source:
     path: "/path/to/t265.tum"
+    match_mode: nearest           # or: interpolate
     max_match_dt_s: 0.25          # reject matches farther than this, as the node does
-    # extrinsic:                  # omit to reuse the run's complementary_odom_meta.yaml
-    #   translation: [0.0, 0.0, 0.0]
-    #   rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+    extrinsicTrans: [-0.310, 0.0, 0.159]     # omit both to reuse the run's
+    extrinsicRot: [-1.0, 0.0, 0.0,           # complementary_odom_meta.yaml
+                   0.0, -1.0, 0.0,
+                   0.0, 0.0, 1.0]
 ```
 
-Set `extrinsic` when the alternative sensor sits on a different mount than the
-one the run recorded. Frames whose match fails a gate lose their complementary
+### The extrinsic
+
+Set it when the alternative sensor sits on a different mount than the one the
+run recorded; omit it and the run's own `complementary_odom_meta.yaml` is used.
+
+`extrinsicTrans` / `extrinsicRot` are spelled and read exactly as the node's
+`complementaryOdom.extrinsicRot` parameters in `config/anymal.yaml` — a
+3-vector and a **row-major** 3×3, nine numbers (nested rows also accepted) —
+so a mount can be pasted between the two configs unchanged. Either key may be
+left out, defaulting to zero translation and identity rotation as the ROS
+parameter declarations do. They may sit directly in `complementary_source` as
+above, or inside an `extrinsic:` sub-mapping.
+
+The quaternion form the node writes into `complementary_odom_meta.yaml` is
+accepted too:
+
+```yaml
+    extrinsic:
+      translation: [-0.310, 0.0, 0.159]
+      rotation_quat_xyzw: [0.0, 0.0, 1.0, 0.0]
+```
+
+An `extrinsic:` block that holds neither pair is a **hard error**, as is a
+rotation that is not nine numbers, not orthonormal to 1e-3, or a reflection.
+A wrong mount never fails loudly on its own — it silently rotates every
+complementary displacement, and comes back out as a scale — so a spelling the
+loader does not understand is refused rather than dropped in favour of the run's
+recorded mount. Saving from the GUI writes the matrix form, unconverted.
+
+### Matching a source that is not much faster than the LiDAR
+
+Each frame's complementary displacement is measured between two LiDAR stamps,
+and the scale estimate is a *ratio* taken from it. `match_mode` decides how the
+source pose at those two stamps is obtained.
+
+| Mode | What it does | Interval the twist spans |
+| --- | --- | --- |
+| `nearest` (default) | The node's own rule: take the sample closest to each stamp; reject the frame if either is farther than `max_match_dt_s`. | The odometry pair's own interval. |
+| `interpolate` | Evaluate the source pose *at* each LiDAR stamp, between the two samples bracketing it. | Exactly the LiDAR interval. |
+
+`nearest` quantizes both ends of the window onto the source's sample grid, so
+the window is off by up to one sample period at each end — which lands directly
+in the displacement the ratio is built from. At 200 Hz against 10 Hz LiDAR that
+is under 5%; at 25 Hz it is up to 20% per frame, and at 2.5 Hz the measured
+window can be twice the real one. `interpolate` removes it: the poses are at the
+stamps, so `dt_complementary` is the LiDAR interval itself.
+
+Interpolation is along the SE(3) geodesic between the bracketing samples — the
+constant twist connecting them, the same motion model the reconstruction
+integrates, not a straight line for position with the rotation handled apart
+from it. It therefore reproduces a turn as an arc rather than a chord.
+
+It cannot invent motion the source did not observe: across a gap it assumes
+constant twist, so a source too sparse to resolve the real motion yields a
+smoothed one. That is what `max_match_dt_s` gates in this mode — it becomes the
+widest gap that may be interpolated across, and must exceed the source's own
+sample period or every frame is rejected. Stamps outside the stream are never
+extrapolated. Because the gate means something different in each mode, the
+status line spells out which is in force:
+
+```
+    match mode: interpolate (max interpolated gap: 0.25 s)
+```
+
+`interpolate` is a replay-time improvement, not node parity — outputs are tagged
+with it so an interpolated replay sits beside a `nearest` one in
+`trajectories/` rather than overwriting it. Frames whose match fails a gate lose their complementary
 twist, and get no degeneracy override — a source covering only part of the run
 replays only that part, which is expected and reported in the output:
 
@@ -222,14 +390,52 @@ material for diagnosing why the estimator settled where it did.
 ```bash
 replay-scale-gui                      # opens the newest run under ~/.ros/lili_logs
 replay-scale-gui ~/.ros/lili_logs/run_20260805_192954_kdtree_lm
+replay-scale-gui --ros-params-yaml my_replay.yaml
 ```
 
 A frame scrubber, not a second way to run a replay: it calls the same
-`run_replay` the CLI does, with `write=False`, so it produces no files and can
-do nothing the CLI cannot. It forces `scale_mode: estimated` — the per-frame
-vectors it draws only exist on that path — and says so in the status bar.
+`run_replay` the CLI does, with `write=False`, so it produces no files unless
+you ask, and can do nothing the CLI cannot. It forces `scale_mode: estimated` —
+the per-frame vectors it draws only exist on that path — and says so in the
+status bar.
 
-Axes follow the robotics convention: **x up the page, y to the left**.
+### Choosing and saving a run
+
+The left panel lists every run under the base directory, newest first. Selecting
+a row does nothing on its own; **Load** replays the selected run, and a
+double-click does both at once. Selection is cheap and reversible, a load is a
+second or so of work, so they are kept separate. **Open other…** takes a run
+directory from anywhere on disk, and adds it to the list once loaded.
+
+The run being shown is marked `▶` and bold, with its full path under the list —
+every other panel in the window describes that run, and a list where the
+selection has wandered off should not be able to imply otherwise.
+
+**Save trajectories…** is the only thing that writes. It asks for a directory
+and re-runs the replay through the pipeline's writing path with the
+configuration the panel currently shows, so what lands is exactly what the CLI
+would have written: `<chosen>/trajectories/*.tum` and `<chosen>/log/*.csv`, with
+the same source tagging, and no extra `replay/` level since you already chose
+where it goes. Editing a parameter and saving therefore needs no round trip
+through a YAML file — though **Save YAML…** in the configuration dock still
+writes one if you want the run reproducible headlessly.
+
+One load feeds three tabs: **Anchor frame**, the per-frame vector view described
+below; **Trajectory**, the whole-run plot; and **Scale**, the estimate over
+time.
+
+The **scrubber sits under the tabs, not inside one**. The frame index is a
+property of the session rather than of the view looking at it, so every tab
+marks the same frame and switching tabs keeps you on it: find a suspicious step
+in the applied scale, switch to the anchor view, and you are already on the
+frame that caused it. The coverage strip, the frame counter and the
+**Observable only** filter are shared for the same reason; only options that
+change how a tab *draws* (zoom, frame, history, `|comp| = 1`, log axis) live
+inside their tab.
+
+Axes on the anchor-frame tab follow the robotics convention: **x up the page,
+y to the left**. (The trajectory tab keeps the plotting CLI's orientation, x
+right and y up, so the two figures can be compared with what is already saved.)
 
 Each frame is drawn with the **lagged anchor pose at the origin**. Three frame
 choices, selectable in the toolbar:
@@ -252,7 +458,7 @@ choices, selectable in the toolbar:
 | Blue dot at origin | The anchor pose, `scaleBaselineFrameLag` frames back. |
 | Green arrow | Complementary displacement over the lag window (`t_comp_map`), rooted at the anchor. Absent when the window did not close. |
 | Orange dashed line | Degenerate translational direction(s) through the latest position — where LiDAR constrains nothing and the complementary prediction is substituted. |
-| Orange dotted lines | The previous degenerate frames' lines (`history`, default 5, taking every `step`-th, default 3), fading with age. |
+| Orange dotted lines | The previous degenerate frames' lines (`history`, default 50, taking every `step`-th, default 4), fading with age. |
 
 The history overlay is not simply the last *N* frames redrawn — each earlier
 line was computed against **its own** anchor, and how it is placed depends on
@@ -269,10 +475,10 @@ the mode:
   that shows the spread of the scale ratio and of the degenerate direction over
   the last *N* frames.
 
-Consecutive frames barely differ, so **step** (default 3) strides through the
-earlier degenerate frames rather than redrawing almost the same line five
-times — with the defaults the overlay spans the last 15 degenerate frames.
-Frames without a usable basis are skipped, so a history of 5 always shows 5
+Consecutive frames barely differ, so **step** (default 4) strides through the
+earlier degenerate frames rather than redrawing almost the same line fifty
+times — with the defaults the overlay spans the last 200 degenerate frames.
+Frames without a usable basis are skipped, so a history of 50 always shows 50
 real lines. **Observable only** applies here too: with it checked, the overlay
 only looks back at frames that passed the gate, so it never mixes a meaningful
 line with a noise-dominated one. It restricts the overlay only — the line for
@@ -296,7 +502,7 @@ vectors are short at that scale; *auto* re-snaps per frame if you want to see
 them, at the cost of frames no longer being comparable. Fixed steps from the
 ladder are also selectable.
 
-**|comp| = 1** divides the whole frame through by the length of the
+**|comp| = 1** is on by default: it divides the whole frame through by the length of the
 complementary vector, so it always draws at unit length (a faint unit circle
 marks it) and the axes become dimensionless. The distance from the origin to
 the latest LiDAR position then reads directly as **|LiDAR| / |comp|** — the
@@ -310,27 +516,91 @@ normalization the *fixed* zoom switches to ±2 in units of |comp|.
 **Observable only** is on by default: the slider only lands on — and the
 history overlay only looks back at — frames whose scale sample passed the
 estimator's observability gate
-(`complementaryOdom.scaleMinNonDegenerateSpeed`). Because that gate is a *speed*
-gate, it is exactly the filter that removes noise-dominated frames. On the
+(`complementaryOdom.scaleMinNonDegenerateSpeed`, measured on the LiDAR
+displacement — see [The observability gate](#the-observability-gate)). Because
+that gate is a *speed* gate, it is exactly the filter that removes
+noise-dominated frames. On the
 bundled example it keeps 1821 of 3819 frames and lifts the median window
 displacement from 0.11 m to 0.89 m; frames under 0.15 m fall from 54% to 7%.
-Uncheck it to reach every frame.
+Uncheck it to reach every frame. `scaleMin`/`scaleMax` do not enter here: they
+clamp a sample's value, not whether it is observable.
+
+### Trajectory tab
+
+The second tab is the whole-run, top-down XY plot — the same figure
+`replay-scale-plot` writes, with the same curves and colours: the recorded
+effective trajectory, every replay this configuration produced, and the raw
+complementary odometry integrated on its own.
+
+It is drawn from the replay held in memory, not from the `trajectories/` folder:
+the GUI runs with `write=False`, so there may be no files to read, and reading
+them would show whatever an earlier CLI run left behind rather than the settings
+currently applied. **Apply & re-run** therefore redraws this tab too — which is
+the quickest way to see what a parameter change did to the *shape* of the run,
+where the anchor-frame view only shows one window of it.
+
+A black dot marks the frame the slider is on. The matplotlib toolbar above the
+plot pans and zooms; these runs are long and thin, so the interesting stretch is
+usually a small part of the extent. Scrubbing only moves the marker, and only
+while this tab is on screen — the curves themselves are redrawn once per load.
+
+### Scale tab
+
+The estimate over the run, as three curves per frame:
+
+| Curve | What it is |
+| --- | --- |
+| `instant raw` (grey) | `scale_instant_raw` — the ratio this frame's window alone argues for. Noisy by nature; it is a ratio of two short displacements. |
+| `smoothed estimate` (green) | `scale_smooth` — the `scaleSmoothingMode` statistic (mean or median) over the last `scaleSmoothingWindowSize` **observable** samples. |
+| `applied` (orange, dashed) | `scale_applied` — what the trajectory was actually built with. It is the smoothed value from *previous* frames, so it lags by one and steps rather than glides. |
+
+Frames that failed the observability gate are shaded, which is the answer to
+"why is the green curve flat here" — nothing was admitted to the history, so
+the mean could not move. Configured `scaleMin` / `scaleMax` are drawn as dashed
+red lines: raw samples outside them are the ones entering the filter clamped,
+and the smoothed curve can never leave the band between them.
+
+The y-axis is **linear**, so a deviation reads as the number it is. The **log
+scale** checkbox switches to a logarithmic one, which is the axis a ratio
+deserves — 2 and 0.5 are the same error in opposite directions — and which keeps
+a run whose estimate spans decades readable near 1.
+
+Either way the range is fitted to the bulk of the estimate (its 1st–99th
+percentile) rather than to its extremes: the raw ratio reaches 60× on real runs
+and is allowed to clip, because otherwise it flattens everything worth reading
+into a single line. Zoom with the toolbar to follow a spike out of frame.
+
+A black vertical line marks the scrubbed frame here too, so the anchor view and
+this one always describe the same sample.
 
 ### Editing the configuration
 
 The **Configuration** dock edits the same `complementaryOdom` parameters and
 `replay_scale_tool` settings the YAML carries — `translationScale`,
 `scaleMinNonDegenerateSpeed`, `scaleBaselineFrameLag`,
-`scaleSmoothingWindowSize`, `scaleEstimationApply`, `ignore_dz`,
-`correction_mode`, and the complementary source path and match gate.
+`scaleSmoothingWindowSize`, `scaleSmoothingMode`, `scaleMin`, `scaleMax`,
+`scaleEstimationApply`,
+`ignore_dz`, `correction_mode`, and the complementary source path, `match_mode`
+and match gate. `scaleMax` shows **unbounded** at 0, which is how an infinite
+bound round-trips through a spin box.
 
 - **Apply & re-run** replays with the edited values (on the worker thread, still
   writing nothing) and redraws.
 - **Revert** returns to the configuration the current view was produced with —
   so a failed run does not lose your baseline.
+- **Load YAML…** reads a configuration file in and immediately replays the
+  current run with it — loading a file but waiting for *Apply* would leave the
+  window showing one configuration and holding another. The frame you were on is
+  kept. A file that does not parse is reported and changes nothing.
 - **Save YAML…** writes those values as a config file, and the status bar shows
   the `replay-scale-trajectory … --ros-params-yaml <file>` command that
   reproduces the same replay headlessly.
+
+The file the values came from is named at the top of the dock, and both loading
+and saving update it. The viewer starts from the bundled
+[`config/default.yaml`](src/replay_scale/config/default.yaml) unless
+`replay-scale-gui --ros-params-yaml <file>` names another — the same flag the
+CLI takes.
 
 The panel produces the very same `ReplayToolSettings` / `ReplayParams` objects
 the YAML loader does, so it cannot express a configuration the CLI could not
@@ -406,7 +676,7 @@ below:
 | `io/` | CSV / TUM readers and writers, run-directory paths | Serialization only. May use `core.model` and `core.se3`, never `core.estimator`. |
 | `settings.py` | Settings objects and the YAML that fills them | Named `settings` because `config/` is the data directory. |
 | `pipeline.py` | `run_replay()` — CSV in, trajectories out | The seam every frontend goes through. Never prints. |
-| `plotting.py` | `build_trajectory_figure()`, `draw_local_frame()` | Never calls `show()` or `savefig()`. |
+| `plotting.py` | `draw_trajectories()`, `draw_local_frame()`, `draw_scale_history()`, and the `build_*_figure()` wrappers around them | Never calls `show()` or `savefig()`. The `draw_*` half takes an axes, so a GUI canvas and a saved PNG share one drawing routine. |
 | `cli.py` | argparse, printing, exit codes | Peer of `gui/`. |
 | `gui/` | PySide6 viewer; `sources.py` is Qt-free | Calls `run_replay` directly, never shells out to the CLI. |
 
@@ -464,13 +734,18 @@ and is reimplemented here in Python. Parity is deliberate and documented at the
 call sites:
 
 - `core/estimator.py` mirrors `buildAdditionalOdomCorrectionResult`, including
-  the observability gate, the smoothing-history update rule, and the causal
-  ordering where the scale applied at frame *k* comes from history up to *k-1*.
-- `core/odom_source.py` mirrors `inferComplementaryOdomTwist` — nearest-sample
-  matching rather than interpolation, the same 0.25 s gate, and the same
-  exclusion rule when two LiDAR stamps land on one odometry sample.
+  the smoothing-history update rule and the causal ordering where the scale
+  applied at frame *k* comes from history up to *k-1*. The window statistic is
+  the node's mean in its default `scaleSmoothingMode: mean`; the observability
+  gate is measured differently, see below.
+- `core/odom_source.py` mirrors `inferComplementaryOdomTwist` in its default
+  `match_mode: nearest` — nearest-sample matching rather than interpolation, the
+  same 0.25 s gate, and the same exclusion rule when two LiDAR stamps land on
+  one odometry sample. `match_mode: interpolate` is opt-in and deliberately not
+  parity; see [Matching a source that is not much faster than the
+  LiDAR](#matching-a-source-that-is-not-much-faster-than-the-lidar).
 
-Two intentional divergences, both noted in the source:
+Three intentional divergences, all noted in the source:
 
 - The degeneracy override additionally requires a complementary prediction to
   exist. The node leaves its prediction at the previous pose when a match fails
@@ -482,5 +757,11 @@ Two intentional divergences, both noted in the source:
   chained from the increments, which are referenced to the *online* corrected
   pose. Chaining them would accumulate orientation error the moment a replay
   departs from the online trajectory — which is the entire point of replaying.
+- `scaleMinNonDegenerateSpeed` is measured on the LiDAR displacement alone. The
+  node gates on `|t_lidar_nondeg_proj| / dt_complementary` — the LiDAR
+  displacement *projected onto the complementary non-degenerate direction*, over
+  the complementary window — so both the magnitude and the divisor carry the
+  odometry being tested. See [The observability
+  gate](#the-observability-gate).
 
 When the C++ changes, change it here too.

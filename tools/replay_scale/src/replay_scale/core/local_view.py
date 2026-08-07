@@ -53,11 +53,11 @@ WINDOW_STATES = (NO_WINDOW, WINDOW, GATE_OBSERVABLE)
 FRAMES = ("map", "anchor", "comp")
 
 #: How many earlier degenerate frames to overlay behind the current one.
-DEFAULT_HISTORY = 5
+DEFAULT_HISTORY = 50
 
 #: Stride through the earlier degenerate frames, so the overlay spans a useful
 #: interval instead of several near-identical consecutive lines.
-DEFAULT_HISTORY_STEP = 3
+DEFAULT_HISTORY_STEP = 4
 
 #: Below this the complementary vector is too short to normalize by.
 _MIN_COMP_NORM = 1e-6

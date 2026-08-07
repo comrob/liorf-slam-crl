@@ -10,7 +10,7 @@ import argparse
 import os
 import sys
 
-from .io.paths import expand_path, resolve_csv_path, resolve_output_dirs
+from .io.paths import DEFAULT_BASE_DIR, expand_path, resolve_output_dirs, resolve_run_input
 from .io.frames_csv import load_frames
 from .pipeline import apply_complementary_source, run_replay
 from .plotting import build_trajectory_figure, complementary_only_curve, curves_from_tum_dir
@@ -42,11 +42,15 @@ recomputed live from the CSV since it is not written to a file.
 
 def _add_common_arguments(parser):
     parser.add_argument("input", nargs="?", default="",
-                        help="Path to scale_replay_frames.csv or a run directory.")
+                        help="Path to scale_replay_frames.csv or a run directory. Omit to "
+                             "use replay_scale_tool.input_path, and the newest run under "
+                             "the base directory if that is empty too.")
     parser.add_argument("--latest", action="store_true",
-                        help="Use the newest run under --base-dir.")
-    parser.add_argument("--base-dir", default="~/.ros/lili_logs",
-                        help="Base directory holding run_* folders (default: %(default)s).")
+                        help="Use the newest run under the base directory, ignoring any "
+                             "configured input_path.")
+    parser.add_argument("--base-dir", default="",
+                        help="Base directory holding run_* folders. Overrides "
+                             f"replay_scale_tool.base_dir; default {DEFAULT_BASE_DIR}.")
     parser.add_argument("--ros-params-yaml", default=DEFAULT_CONFIG_PATH,
                         help="YAML config with complementaryOdom and replay_scale_tool settings "
                              "(default: bundled config/default.yaml).")
@@ -60,7 +64,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     settings, params = load_config(expand_path(args.ros_params_yaml))
-    csv_path = resolve_csv_path(args.input, args.latest, args.base_dir)
+    csv_path = resolve_run_input(settings, args.input, args.latest, args.base_dir)
 
     try:
         run_replay(csv_path, settings, params, write=True, on_progress=print)
@@ -93,7 +97,7 @@ def main_plot(argv=None):
 
     settings, params = load_config(expand_path(args.ros_params_yaml))
 
-    csv_path = resolve_csv_path(args.input, args.latest, args.base_dir)
+    csv_path = resolve_run_input(settings, args.input, args.latest, args.base_dir)
     frames = load_frames(csv_path)
     if not frames:
         print(f"No frames found in {csv_path}", file=sys.stderr)

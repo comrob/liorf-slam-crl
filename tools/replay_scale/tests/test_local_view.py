@@ -299,11 +299,11 @@ def test_history_step_one_takes_consecutive_frames():
     assert sorted(h.age for h in views[9].history_lines) == [1, 2, 3]
 
 
-def test_history_step_default_is_three():
+def test_history_step_default_is_four():
     from replay_scale.core.local_view import DEFAULT_HISTORY_STEP
-    assert DEFAULT_HISTORY_STEP == 3
+    assert DEFAULT_HISTORY_STEP == 4
     views = build_local_frame_views(_history_geometries(n=20), history=2)
-    assert sorted(h.age for h in views[19].history_lines) == [1, 4]
+    assert sorted(h.age for h in views[19].history_lines) == [1, 5]
 
 
 def test_history_step_below_one_is_rejected():
@@ -366,12 +366,12 @@ def test_history_zero_disables_the_overlay():
     assert all(v.history_lines == [] for v in views)
 
 
-def test_history_default_is_five():
+def test_history_default_is_fifty():
     from replay_scale.core.local_view import DEFAULT_HISTORY
-    assert DEFAULT_HISTORY == 5
-    views = build_local_frame_views(_history_geometries(n=30), history=DEFAULT_HISTORY,
+    assert DEFAULT_HISTORY == 50
+    views = build_local_frame_views(_history_geometries(n=100), history=DEFAULT_HISTORY,
                                     history_step=1)
-    assert len(views[-1].history_lines) == 5
+    assert len(views[-1].history_lines) == 50
 
 
 def test_history_line_is_re_referenced_to_the_current_anchor():

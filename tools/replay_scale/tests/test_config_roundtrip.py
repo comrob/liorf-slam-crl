@@ -34,7 +34,7 @@ def _edited():
         scale_mode="estimated", scales=[0.9, 1.1], output_subdir="replay",
         no_correction=True, validate=True, correction_mode="translation",
         complementary_source=ComplementarySourceSettings(
-            path="/tmp/t265.tum", max_match_dt_s=0.4),
+            path="/tmp/t265.tum", max_match_dt_s=0.4, match_mode="interpolate"),
         complementary_drift=ComplementaryDriftSettings(alpha=0.12, axis="y"))
     params = ReplayParams(
         translation_scale=1.5, scale_estimation_apply=False,
@@ -61,22 +61,39 @@ def test_every_edited_field_survives_a_round_trip():
     assert back_s.output_subdir == settings.output_subdir
     assert back_s.complementary_source.path == settings.complementary_source.path
     assert back_s.complementary_source.max_match_dt_s == pytest.approx(0.4)
+    assert back_s.complementary_source.match_mode == "interpolate"
     assert back_s.complementary_drift.alpha == pytest.approx(0.12)
     assert back_s.complementary_drift.axis == "y"
 
 
-def test_extrinsic_survives_as_translation_and_quaternion():
+def test_extrinsic_is_written_in_the_nodes_own_spelling():
+    """Saved as extrinsicTrans/extrinsicRot, so it can be pasted between configs."""
+    settings, params = _edited()
+    T = quat_to_matrix(0.1, -0.2, 0.3, 0.0, 0.0, 1.0, 0.0)
+    settings.complementary_source.extrinsic = T
+    source = config_to_mapping(settings, params)["replay_scale_tool"]["complementary_source"]
+
+    assert source["extrinsicTrans"] == pytest.approx([0.1, -0.2, 0.3])
+    assert len(source["extrinsicRot"]) == 9
+    np.testing.assert_allclose(np.array(source["extrinsicRot"]).reshape(3, 3),
+                               T[:3, :3], atol=1e-9)
+
+
+def test_extrinsic_survives_a_round_trip_exactly():
+    """The matrix is written as itself, so nothing is lost on the way out."""
     settings, params = _edited()
     T = quat_to_matrix(0.1, -0.2, 0.3, 0.0, 0.0, 1.0, 0.0)
     settings.complementary_source.extrinsic = T
     back_s, _ = _reload(config_to_mapping(settings, params))
-    np.testing.assert_allclose(back_s.complementary_source.extrinsic, T, atol=1e-9)
+    np.testing.assert_allclose(back_s.complementary_source.extrinsic, T, atol=1e-12)
 
 
 def test_absent_extrinsic_is_omitted_rather_than_written_as_identity():
     settings, params = _edited()
     assert settings.complementary_source.extrinsic is None
     source = config_to_mapping(settings, params)["replay_scale_tool"]["complementary_source"]
+    assert "extrinsicRot" not in source
+    assert "extrinsicTrans" not in source
     assert "extrinsic" not in source
 
 
@@ -96,6 +113,13 @@ def test_dump_is_plain_yaml_text():
     assert "replay_scale_tool" in text
     assert "ros__parameters" in text
     assert yaml.safe_load(text)["replay_scale_tool"]["correction_mode"] == "translation"
+
+
+def test_unknown_match_mode_is_rejected():
+    settings, _ = _edited()
+    settings.complementary_source.match_mode = "linear"
+    with pytest.raises(ValueError, match="match_mode"):
+        settings.validated()
 
 
 def test_unknown_drift_axis_is_rejected():

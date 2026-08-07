@@ -1,0 +1,44 @@
+/**:
+  ros__parameters:
+    complementaryOdom:
+      scaleEstimationApply: true
+      scaleMinNonDegenerateSpeed: 0.2
+      scaleBaselineFrameLag: 10
+      scaleSmoothingWindowSize: 10
+      scaleSmoothingMode: median
+      scaleMin: 0.0
+      scaleMax: .inf
+      ignore_dz: true
+      translationScale: 1.0
+replay_scale_tool:
+  scale_mode: estimated
+  scales:
+  - 1.0
+  input_path: /home/seva/.ros/lili_logs/run_20260805_161710_kdtree_lm
+  base_dir: ''
+  output_dir: ''
+  output_subdir: replay
+  no_correction: false
+  validate: false
+  correction_mode: twist6
+  complementary_source:
+    path: /home/seva/repos/deg-tunnel-tools/data/output/20degtrick_20260804_172149/20-aligned/vo.tum
+    max_match_dt_s: 0.25
+    match_mode: interpolate
+    extrinsicTrans:
+    - 0.0
+    - 0.0
+    - 0.0
+    extrinsicRot:
+    - 0.0
+    - 1.0
+    - 0.0
+    - -1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+  complementary_drift:
+    alpha: 0.0
+    axis: y

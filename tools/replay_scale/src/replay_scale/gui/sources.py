@@ -7,7 +7,7 @@ a second builder. See ``core/local_view.py``.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from ..core.local_view import (
     DEFAULT_HISTORY,
@@ -19,6 +19,7 @@ from ..core.local_view import (
 )
 from ..io.paths import resolve_csv_path
 from ..pipeline import run_replay
+from ..plotting import complementary_only_curve
 from ..settings import DEFAULT_CONFIG_PATH, load_config
 
 
@@ -35,6 +36,13 @@ class FrameData:
     #: The configuration this replay actually ran with, for the editor.
     settings: object = None
     params: object = None
+    #: (label, trajectory, kind) triples for the whole-run trajectory plot.
+    #: Taken from this replay rather than from the trajectories/ folder, so the
+    #: plot always shows the configuration currently applied -- the GUI runs
+    #: with write=False, so there may be no files to read.
+    curves: list = field(default_factory=list)
+    #: Run directory name, for plot titles.
+    run_name: str = ""
 
     @property
     def n_frames(self):
@@ -76,9 +84,15 @@ def load_from_run_dir(input_path="", *, latest=False, base_dir="~/.ros/lili_logs
                   f"correction: {settings.correction_mode}  ·  "
                   f"odom: {os.path.basename(source) if source else 'as recorded'}")
 
+    # The raw complementary curve is recomputed here rather than read back: it
+    # is never written to a file, and it is the odometry as replayed -- after
+    # any source swap or simulated drift run_replay already applied.
+    curves = result.curves() + [complementary_only_curve(result.frames, params)]
+
     return FrameData(csv_path=csv_path, views=views, geometries=geometries,
                      axis_extent=extent, provenance=provenance,
-                     settings=settings, params=params)
+                     settings=settings, params=params, curves=curves,
+                     run_name=os.path.basename(os.path.dirname(csv_path)))
 
 
 def find_run_dirs(base_dir="~/.ros/lili_logs"):
