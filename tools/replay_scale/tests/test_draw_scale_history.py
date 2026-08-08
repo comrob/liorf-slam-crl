@@ -155,3 +155,72 @@ def test_draw_scale_history_clears_the_axes_it_is_given():
     before = len(ax.lines)
     draw_scale_history(ax, _geometries(n=10))
     assert len(ax.lines) == before
+
+
+# ---------------------------------------------------------------------------
+# The cross-track coordinate, on its own plot
+# ---------------------------------------------------------------------------
+
+def _lateral_geometries(n=50, raw=0.2, applied=0.15):
+    geoms = _geometries(n)
+    for g in geoms:
+        g.lateral_instant_raw = raw
+        g.lateral_applied = applied
+    return geoms
+
+
+def test_a_run_without_a_lateral_correction_gets_one_plot():
+    fig = build_scale_history_figure(_geometries())
+    assert len(fig.axes) == 1
+    assert "lateral raw" not in _labels(fig.axes[0])
+
+
+def test_a_lateral_correction_gets_a_second_plot_under_the_first():
+    fig = build_scale_history_figure(_lateral_geometries())
+    assert len(fig.axes) == 2
+    scale_ax, lateral_ax = fig.axes
+    assert "lateral raw" not in _labels(scale_ax)
+    assert {"lateral raw", "lateral applied"} <= _labels(lateral_ax)
+
+
+def test_the_two_plots_share_one_timeline():
+    fig = build_scale_history_figure(_lateral_geometries())
+    scale_ax, lateral_ax = fig.axes
+    assert scale_ax.get_xlim() == pytest.approx(lateral_ax.get_xlim())
+    # Only the lower one is labelled, which is what shared means on screen.
+    assert scale_ax.get_xlabel() == ""
+    assert lateral_ax.get_xlabel() == "t [s]"
+
+
+def test_the_lateral_range_is_symmetric_about_zero():
+    """It is a direction: left and right are the same size of error."""
+    geoms = _lateral_geometries(raw=0.3, applied=0.2)
+    lateral_ax = build_scale_history_figure(geoms).axes[1]
+    lo, hi = lateral_ax.get_ylim()
+    assert lo == pytest.approx(-hi)
+    assert hi > 0.3
+
+
+def test_the_lateral_bound_is_drawn_on_both_sides():
+    geoms = _lateral_geometries()
+    lateral_ax = build_scale_history_figure(geoms, lateral_max=0.25).axes[1]
+    heights = sorted(round(float(l.get_ydata()[0]), 6) for l in lateral_ax.lines
+                     if len(l.get_ydata()) == 2 and len(set(l.get_ydata())) == 1)
+    assert -0.25 in heights and 0.25 in heights
+
+
+def test_the_lateral_plot_stays_linear_when_the_scale_goes_logarithmic():
+    """A signed quantity has no place on a log axis, and it has its own now."""
+    fig = build_scale_history_figure(_lateral_geometries(), log_y=True)
+    scale_ax, lateral_ax = fig.axes
+    assert scale_ax.get_yscale() == "log"
+    assert lateral_ax.get_yscale() == "linear"
+    assert {"lateral raw", "lateral applied"} <= _labels(lateral_ax)
+
+
+def test_overlaying_keeps_one_plot_and_lifts_the_floor_below_zero():
+    """split=False is for a figure too short for two panels."""
+    geoms = _lateral_geometries(raw=-0.3, applied=-0.2)
+    ax = build_scale_history_figure(geoms, split=False).axes[0]
+    assert {"lateral raw", "lateral applied"} <= _labels(ax)
+    assert ax.get_ylim()[0] < 0.0

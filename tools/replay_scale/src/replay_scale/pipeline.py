@@ -192,15 +192,23 @@ def reconstruct_replay_trajectories(frames, settings, params, collect_traces=Fal
 # ---------------------------------------------------------------------------
 
 def _format_params(params):
-    return ("  estimator params:\n"
-            f"    translationScale: {params.translation_scale}\n"
-            f"    scaleEstimationApply: {params.scale_estimation_apply}\n"
-            f"    scaleMinNonDegenerateSpeed: {params.scale_min_nondegenerate_speed}\n"
-            f"    scaleBaselineFrameLag: {params.scale_baseline_frame_lag}\n"
-            f"    scaleSmoothingWindowSize: {params.scale_smoothing_window_size}"
-            f"  ({params.scale_smoothing_mode})\n"
-            f"    scaleMin: {params.scale_min}  scaleMax: {params.scale_max}\n"
-            f"    ignore_dz: {params.ignore_dz}")
+    lines = ["  estimator params:",
+             f"    complementaryCorrection: {params.complementary_correction}",
+             f"    translationScale: {params.translation_scale}",
+             f"    scaleEstimationApply: {params.scale_estimation_apply}",
+             f"    scaleMinNonDegenerateSpeed: {params.scale_min_nondegenerate_speed}",
+             f"    scaleBaselineFrameLag: {params.scale_baseline_frame_lag}"]
+    if params.uses_lines:
+        lines.append(f"    scaleLineHistory: {params.scale_line_history}"
+                     f" x {params.scale_line_history_step}"
+                     f"  ({params.scale_line_fit_norm})")
+        if params.corrects_laterally:
+            lines.append(f"    scaleLateralMax: {params.scale_lateral_max}")
+    lines += [f"    scaleSmoothingWindowSize: {params.scale_smoothing_window_size}"
+              f"  ({params.scale_smoothing_mode})",
+              f"    scaleMin: {params.scale_min}  scaleMax: {params.scale_max}",
+              f"    ignore_dz: {params.ignore_dz}"]
+    return "\n".join(lines)
 
 
 def run_replay(csv_path, settings, params=None, *, write=True, on_progress=None):

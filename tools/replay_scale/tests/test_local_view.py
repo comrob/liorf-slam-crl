@@ -277,7 +277,8 @@ def test_history_lines_are_each_aligned_by_their_own_comp():
     geoms[0].t_comp_map = np.array([0.0, 1.0, 0.0])     # frame 0 points +y
     geoms[0].latest_p = np.array([0.0, 2.0, 0.0])
     geoms[0].anchor_p = np.zeros(3)
-    v = build_local_frame_views(geoms, frame="comp", history=1, history_step=1)[2]
+    # Frame 1, so the single line it looks back at is frame 0's.
+    v = build_local_frame_views(geoms, frame="comp", history=1, history_step=1)[1]
     (line,) = v.history_lines
     # Frame 0's own displacement was +y and its comp +y, so aligned it is +x.
     np.testing.assert_allclose(line.own_origin, [2.0, 0.0], atol=1e-12)
@@ -344,11 +345,16 @@ def test_normalizing_puts_lidar_at_the_scale_ratio():
 # ---------------------------------------------------------------------------
 
 def _history_geometries(n=6, spacing=1.0):
-    """n frames marching along +x, each degenerate along +y, anchor two back."""
+    """n frames marching along +x, each degenerate along +y, anchor two back.
+
+    Observable, so that ``observable_only`` has something to keep -- the tests
+    below take frames *away* from it.
+    """
     out = []
     for k in range(n):
         out.append(_geometry(
-            frame_idx=k, time=float(k), anchor_frame_idx=max(0, k - 2),
+            frame_idx=k, time=float(k), gate_observable=True,
+            anchor_frame_idx=max(0, k - 2),
             anchor_p=np.array([spacing * max(0, k - 2), 0.0, 0.0]),
             latest_p=np.array([spacing * k, 0.0, 0.0]),
             t_comp_map=np.array([spacing * min(k, 2), 0.0, 0.0]),

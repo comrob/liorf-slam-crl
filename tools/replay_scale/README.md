@@ -153,6 +153,149 @@ samples where the node's rule admits 3648; at 0.2 the two agree to within a
 couple of frames. The difference is small on well-aligned data and grows exactly
 where the complementary odometry is poor.
 
+**`complementaryCorrection`** — what the complementary displacement is corrected
+by before it is substituted into the degenerate directions. (Spelled
+`scaleSampleSource` before one of them stopped being a scale; the old key and
+its `line_meet` value still load, as `lines_meet_x`.)
+
+| Correction | What it measures | Applies |
+| --- | --- | --- |
+| `ratio` | Node parity: `\|lidar_nondeg projected on comp\| / \|comp_nondeg\|`. One frame measured against its own odometry. | a scale |
+| `line_x_axis` | Where that same frame's degenerate line crosses the complementary axis, in units of `\|comp\|`. | a scale |
+| `lines_meet_x` | The along-complementary coordinate of the point where the recent degenerate lines meet. | a scale |
+| `lines_meet_xy` | That whole point: the displacement is moved onto it. | a scale **and** a rotation |
+
+All four are read in the same normalized geometry — every frame divided by its
+own `|comp|` and rotated so that vector is +x, which is exactly what the viewer
+draws with `|comp| = 1`. In that frame the complementary displacement is
+`(1, 0)`, and each degenerate line is a statement about the same quantity: *the
+robot is somewhere along here, in units of what the odometry claimed*.
+
+**`line_x_axis`** is the ratio, measured on the picture. Follow one frame's own
+line to where it crosses `y = 0` and that x *is* the scale. With normal `n`
+perpendicular to the degenerate direction, the node computes `|p·n| / |comp·n|`
+and this computes `(p·n) / (comp·n)` — the same two numbers, quotiented in the
+same order. On 500 random planar geometries the two agree to `1e-11` wherever
+the crossing is positive. The difference is the sign: taking norms first folds a
+*backwards* crossing onto the positive side, so where the geometry says the
+robot moved the other way along the odometry's direction, the node reports the
+distance as a scale and this reports no sample at all. That is a third of the
+samples on the bundled run (2233 of 6480), and their median value is 2.34 — the
+population that pushes the node's estimate up. Use it to find out how much of an
+estimate is that artefact; it needs no history and no turn, so it costs nothing.
+
+**`lines_meet_*`** is a genuinely different measurement, not a smoothing of the
+first. The ratio needs the LiDAR displacement to be observable in the direction
+being scaled; where the lines *meet* needs them to have turned relative to each
+other, which is a property of the trajectory rather than of one frame. So it
+says nothing on a straight stretch (`nan`, no sample) and answers where the
+ratio is weakest.
+
+`scaleLineHistory` and `scaleLineHistoryStep` set which earlier lines the fit
+sees: `history` of them, taking every `step`-th, so the window reaches back
+`history × step` frames. **Span is what matters, not count** — consecutive
+frames' lines are nearly identical, and it is the turning between them that
+makes them meet at all. The same rule as the viewer's overlay controls, and
+`50 × 4` is the same window it draws. Per-frame samples on the bundled
+6519-frame run, all with `l1`:
+
+| Correction | history | step | span | lines | samples | median | p10–p90 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `ratio` | — | — | — | — | 6480 | 0.843 | 0.18–8.86 |
+| `line_x_axis` | — | — | — | 1 | 4247 | — | — |
+| `lines_meet_x` | 50 | 1 | 50 | 51 | 2225 | 1.552 | 0.21–9.47 |
+| `lines_meet_x` | 200 | 1 | 200 | 201 | 5983 | 0.443 | 0.17–1.38 |
+| `lines_meet_x` | 50 | 4 | 200 | 51 | 5959 | 0.444 | 0.17–1.35 |
+| `lines_meet_x` | 50 | 8 | 400 | 51 | 5908 | 0.432 | 0.15–1.24 |
+
+A stride of 4 reproduces the 200-frame result with a quarter of the lines, and
+a third off the replay time. Fifty consecutive frames barely turn at all, which
+is why that row is the worst of them.
+
+With enough span the two sources agree on the median (0.44 against 0.84 raw,
+0.48 against 0.49 once smoothed) while `lines_meet_x` produces a far tighter
+distribution — which is the point of it.
+
+### Correcting sideways as well: `lines_meet_xy`
+
+The meeting point has two coordinates and `lines_meet_x` reads one of them. The
+`y` is not noise: it is how far *sideways* of its own direction the lines say
+the robot went, and **no scale can express it** — a scale only makes the
+odometry's own vector longer or shorter.
+
+`lines_meet_xy` applies the whole point. With the frame's complementary
+displacement `v`, its in-plane length `d`, its own direction `ê_x = v/d` and the
+left normal `ê_y`:
+
+```
+(cx, cy)      = the meeting point, in units of |comp|
+v_corrected   = d · (cx · ê_x + cy · ê_y)
+```
+
+which is simply the vector *to the meeting point*, back in metres: the
+odometry's arrow moved onto where the lines say the robot ended up. Equivalently
+it scales `v` by `|(cx, cy)|` and turns it by `atan2(cy, cx)`. `cy = 0` recovers
+`lines_meet_x` exactly in the plane; `z` is left alone, since the fit is 2D and
+has nothing to say about it (a scale, by contrast, scales `z` too).
+
+It is applied per frame, to each one-frame step in that step's own frame — the
+same assumption the overlay it is read from already makes. Superimposing frames
+after normalizing each by its own `|comp|` and turning each by its own odometry
+angle is only meaningful if the error is a fixed multiple of `|comp|` in a fixed
+direction relative to the odometry, i.e. a per-step body-frame quantity. It is
+also exactly the form [the drift simulator](#simulating-a-complementary-odometry-error)
+injects an error in, which makes the two directly comparable.
+
+**The recovery check.** Inject `alpha = -0.2` on the body `y` axis and the
+odometry's direction is wrong by `atan(0.2) = 11.3°`. The lines see it: on the
+bundled run the median `cy` moves from `-0.005` to `+0.078`, and `cy / cx =
+0.078 / 0.408 = 0.19` — the injected `tan(11.3°) = 0.20`, recovered. (`cy`
+scales with `cx`, not with 1: the sideways offset is proportional to how far the
+robot actually went, not to how far the odometry claimed.) `lines_meet_x` reads
+the same geometry and can only report a slightly shorter scale.
+
+How much of the injected error each correction absorbs, as the distance between
+the drifted trajectory and its own undrifted one:
+
+| Correction | alpha | mean | rms | max | endpoint |
+| --- | --- | --- | --- | --- | --- |
+| `ratio` | −0.2 | 25.71 | 30.15 | 54.78 | 10.45 |
+| `ratio` | +0.2 | 22.39 | 27.23 | 52.08 | 6.21 |
+| `lines_meet_x` | −0.2 | 1.66 | 2.24 | 4.16 | 4.07 |
+| `lines_meet_x` | +0.2 | 1.58 | 1.86 | 3.60 | 2.17 |
+| `lines_meet_xy` | −0.2 | 2.30 | 2.53 | 4.10 | 3.05 |
+| `lines_meet_xy` | +0.2 | 1.01 | 1.26 | 2.47 | 0.26 |
+
+The ratio is an order of magnitude more sensitive than either line method, as
+the `axis: y` note predicts. Between the two line methods the result is honestly
+mixed: at `+0.2` the vector correction absorbs most of what is left (endpoint
+2.17 m → 0.26 m), at `−0.2` it helps at the endpoint (4.07 → 3.05) and is worse
+in the mean (1.66 → 2.30). It is a real effect and not a uniform improvement;
+sweep it on your own run before trusting it.
+
+**`scaleLateralMax`** bounds `|cy|` before it enters the smoothing filter, the
+way `scaleMin`/`scaleMax` bound the along-track coordinate, and clamps rather
+than drops for the same reason. It is a bound on *how far the correction may
+turn the displacement*: 0.2 is about 11°, 0.5 about 27°. Only `lines_meet_xy`
+reads it. The two coordinates go through the smoothing window **as a pair** —
+one observation of where the robot is, and smoothing the halves over different
+windows would apply a mixture of two answers.
+
+Where a frame produces no sample at all — the lines too parallel to meet, or the
+speed gate — nothing is appended and the filter keeps applying the last pair the
+window agreed on. Holding, not falling back to "no correction": a `cy` reset to
+zero would be an assertion that the sideways error had vanished.
+
+**`scaleLineFitNorm`** — what that fit minimises over the perpendicular
+distances: `l2` (least squares, closed form) or `l1` (least absolute deviations,
+by IRLS). These lines are not equally trustworthy — a frame whose degenerate
+direction came from a poor basis contributes a line that is simply wrong — and a
+squared cost lets such a line pull the answer in proportion to how wrong it is.
+`l1` bounds each line to one vote, the same argument as the median above. On ten
+lines through one point plus one badly wrong line, `l2` lands 0.5 away and `l1`
+lands on the point. It also decides how the anchor view draws the meeting point,
+so what you see is what the estimator would use.
+
 **`scaleSmoothingMode`** — which statistic the smoothing window collapses to.
 
 | Mode | Behaviour |
@@ -213,6 +356,10 @@ the bundled run, `[0.5, 2.0]` moves the median-filtered p90 not at all (1.690
 either way) and only caps the extreme (2.81 → 2.00). Under `mean` the same
 bounds matter a great deal (p90 4.73 → 1.70). Reach for the bounds when you need
 a hard guarantee on what can be applied; reach for the median first.
+
+`scaleLateralMax` is the same idea for the cross-track coordinate under
+`lines_meet_xy` — symmetric, since left and right are the same size of error.
+See [Correcting sideways as well](#correcting-sideways-as-well-lines_meet_xy).
 
 Set `validate: true` to additionally replay with the recorded scale and report
 position drift against the pose the online run used — a check that the replay
@@ -371,8 +518,8 @@ replay/
 │   ├── trajectory_replay_lidar_only.tum       only when no_correction: true
 │   └── trajectories_2d.png                    written by the plot command
 └── log/
-    ├── scale_replay_estimator_trace<src>.csv  per-frame gate / raw / smoothed / applied scale
-    └── scale_replay_vectors<src>.csv          per-frame geometry behind each scale sample
+    ├── scale_replay_estimator_trace<src>.csv  per-frame gate / raw / smoothed / applied
+    └── scale_replay_vectors<src>.csv          per-frame geometry behind each sample
 ```
 
 `<tag>` is `estimated_scale`, `recorded_scale`, or `scale_<value>` per fixed
@@ -383,7 +530,11 @@ of overwriting each other, which is what makes them plottable against one
 another.
 
 The two `log/` traces are only written in `estimated` mode; they are the raw
-material for diagnosing why the estimator settled where it did.
+material for diagnosing why the estimator settled where it did. Both carry the
+cross-track half of the correction alongside the scale (`lateral_*`, all `nan`
+unless `lines_meet_xy` is applying one), and the vector trace also carries
+`meet_x` / `meet_y` — where the lines met on that frame, recorded whenever there
+is a line history to fit through, whatever correction is being applied.
 
 ## GUI viewer
 
@@ -459,6 +610,51 @@ choices, selectable in the toolbar:
 | Green arrow | Complementary displacement over the lag window (`t_comp_map`), rooted at the anchor. Absent when the window did not close. |
 | Orange dashed line | Degenerate translational direction(s) through the latest position — where LiDAR constrains nothing and the complementary prediction is substituted. |
 | Orange dotted lines | The previous degenerate frames' lines (`history`, default 50, taking every `step`-th, default 4), fading with age. |
+| Dashed green arrow, ending in `×` | The point closest to every line drawn — where they agree the robot is. Absent when they are too parallel to say. |
+| Filled green ellipse | The 1σ uncertainty of that point, from how far the lines miss it. |
+| Small green dots (**meet trail**) | The point the *estimator* fitted on each earlier frame in the overlay — the trail of what the correction has been reading. Off by default. |
+
+**meet trail** is a different population from the `×`: one dot per earlier
+frame, each fitted from *that* frame's own line window, where the `×` is one fit
+through the lines currently on screen. It answers "is the point the correction
+reads jittering or drifting", which one frame cannot. Each dot is in units of
+its own frame's `|comp|`, so it is only drawn in the complementary-forward frame
+with `|comp| = 1`, and silently skipped anywhere else. It follows
+`scaleLineHistory: 0`, which turns the estimator's fit off altogether.
+
+**Where the lines meet.** Each degenerate line says only "the truth lies
+somewhere along here", but the direction rotates as the robot turns, so lines
+from different frames cross. The point with the least total squared distance to
+all of them — the current line plus every history line on screen — is what those
+statements agree on, and it is a position estimate LiDAR alone could not give.
+It is drawn as an arrow from the anchor, deliberately in the same green as the
+complementary arrow and dashed rather than solid: same kind of quantity, a
+displacement from the anchor, but inferred from the lines rather than measured.
+Reading the two against each other is the point — where the dashed arrow lands
+short of the solid one, the odometry claims more motion than the lines support.
+
+The **ellipse** around it is the 1σ covariance of the fit, `σ² A⁻¹`: `A` says how
+well the line directions pin each axis down, `σ` how far the lines miss the
+point. Its shape is the useful part — long and thin means one direction is
+pinned and the other is a guess, which a bare point would hide. It assumes the
+lines are independent, which consecutive frames are not, so read it as the
+spread of the lines rather than as a calibrated confidence region.
+`scaleLineFitNorm` selects the fit: `l1` is drawn with a MAD-based σ, so one
+wild line widens the ellipse as little as it moved the point.
+
+Both are computed from what is actually drawn, so they follow the `|comp| = 1`
+toggle and the history controls. Two refusals keep it honest: lines parallel to
+within `MIN_LINE_SPREAD` (about 3.6° for a pair) have no meaningful crossing and
+nothing is drawn, and a crossing further than three view half-widths away is
+dropped rather than drawn as an arrow off the edge. Both are the normal case on
+a straight stretch, where there is genuinely nothing to say.
+
+Expect it far more often normalized than in metres. Normalized, each line is
+drawn in its own frame's geometry, which de-rotates it and leaves a real spread
+of directions; in metres they are re-referenced onto the current anchor and stay
+nearly parallel through a straight tunnel. On the bundled 6519-frame run that is
+5665 frames with a meeting point (5661 inside the view) normalized, against 806
+in metres.
 
 The history overlay is not simply the last *N* frames redrawn — each earlier
 line was computed against **its own** anchor, and how it is placed depends on
@@ -550,8 +746,8 @@ The estimate over the run, as three curves per frame:
 
 | Curve | What it is |
 | --- | --- |
-| `instant raw` (grey) | `scale_instant_raw` — the ratio this frame's window alone argues for. Noisy by nature; it is a ratio of two short displacements. |
-| `smoothed estimate` (green) | `scale_smooth` — the `scaleSmoothingMode` statistic (mean or median) over the last `scaleSmoothingWindowSize` **observable** samples. |
+| `instant raw` (grey) | `scale_instant_raw` — what this frame's window alone argues for. Noisy by nature; it is a ratio of two short displacements. |
+| `smoothed estimate` (green) | `scale_smooth` — the `scaleSmoothingMode` statistic over the last `scaleSmoothingWindowSize` **observable** samples. |
 | `applied` (orange, dashed) | `scale_applied` — what the trajectory was actually built with. It is the smoothed value from *previous* frames, so it lags by one and steps rather than glides. |
 
 Frames that failed the observability gate are shaded, which is the answer to
@@ -560,29 +756,56 @@ the mean could not move. Configured `scaleMin` / `scaleMax` are drawn as dashed
 red lines: raw samples outside them are the ones entering the filter clamped,
 and the smoothed curve can never leave the band between them.
 
-The y-axis is **linear**, so a deviation reads as the number it is. The **log
-scale** checkbox switches to a logarithmic one, which is the axis a ratio
+Under `lines_meet_xy` the sample is a point rather than a number, and the
+cross-track coordinate gets **its own plot underneath, on the same timeline**
+(purple: `lateral raw` and `lateral applied`, with `scaleLateralMax` as its
+bounds). They are different quantities — one centred on 1, one on 0 — so
+stacking them beats sharing a y range that suits neither, and it lets the scale
+go logarithmic while the signed coordinate stays linear. The lower plot is
+absent entirely for the corrections that produce no such coordinate.
+
+The scale y-axis is **linear**, so a deviation reads as the number it is. The
+**log scale** checkbox switches to a logarithmic one, which is the axis a ratio
 deserves — 2 and 0.5 are the same error in opposite directions — and which keeps
 a run whose estimate spans decades readable near 1.
 
 Either way the range is fitted to the bulk of the estimate (its 1st–99th
 percentile) rather than to its extremes: the raw ratio reaches 60× on real runs
 and is allowed to clip, because otherwise it flattens everything worth reading
-into a single line. Zoom with the toolbar to follow a spike out of frame.
+into a single line. The lateral range is symmetric about 0, because that
+quantity is a direction and an axis that says otherwise reads as a trend. Zoom
+with the toolbar to follow a spike out of frame.
 
 A black vertical line marks the scrubbed frame here too, so the anchor view and
 this one always describe the same sample.
 
+### Seeing all three at once
+
+**All views**, next to the frame counter, replaces the tabs with all three
+panels at once: the anchor frame and the trajectory side by side, the scale
+curve across the bottom, on draggable splitters. Reading the scale curve against
+the trajectory it produced is the whole argument for having both, and on a wide
+screen there is no reason to alternate. It is the same widgets either way — Qt
+reparents them — so the frame you are on, the zoom you set and the figures
+themselves survive the switch.
+
 ### Editing the configuration
 
 The **Configuration** dock edits the same `complementaryOdom` parameters and
-`replay_scale_tool` settings the YAML carries — `translationScale`,
-`scaleMinNonDegenerateSpeed`, `scaleBaselineFrameLag`,
-`scaleSmoothingWindowSize`, `scaleSmoothingMode`, `scaleMin`, `scaleMax`,
-`scaleEstimationApply`,
-`ignore_dz`, `correction_mode`, and the complementary source path, `match_mode`
-and match gate. `scaleMax` shows **unbounded** at 0, which is how an infinite
-bound round-trips through a spin box.
+`replay_scale_tool` settings the YAML carries — `complementaryCorrection`,
+`translationScale`, `scaleMinNonDegenerateSpeed`, `scaleBaselineFrameLag`,
+`scaleSmoothingWindowSize`, `scaleSmoothingMode`, `scaleLineHistory`,
+`scaleLineHistoryStep`, `scaleLineFitNorm`, `scaleLateralMax`, `scaleMin`,
+`scaleMax`, `scaleEstimationApply`, `ignore_dz`, `correction_mode`, and the
+complementary source path, `match_mode` and match gate. `scaleMax` and
+`scaleLateralMax` show **unbounded** at 0, which is how an infinite bound
+round-trips through a spin box.
+
+It is **grouped the way the config file is**, and each group folds. Most of the
+form describes a method that is not running: selecting a correction unfolds the
+settings it reads and folds away the ones it does not, greying them out. Folding
+never edits — a folded section keeps its values and still contributes them, so
+switching methods and back loses nothing.
 
 - **Apply & re-run** replays with the edited values (on the worker thread, still
   writing nothing) and redraws.
@@ -763,5 +986,15 @@ Three intentional divergences, all noted in the source:
   the complementary window — so both the magnitude and the divisor carry the
   odometry being tested. See [The observability
   gate](#the-observability-gate).
+
+Everything else that is not the node is opt-in and defaults to off:
+`complementaryCorrection` other than `ratio`, `scaleSmoothingMode` other than
+`mean`, `scaleMin` / `scaleMax` / `scaleLateralMax` (the node has no bounds),
+and `match_mode: interpolate`. An unconfigured replay reproduces the node.
+
+`lines_meet_xy` is the one that is not a scale at all: it applies a 2D
+similarity to the complementary displacement, where the node's correction is a
+single multiplier. There is nothing in C++ to be parity with, and porting it
+back would mean the node applying a rotation it currently cannot express.
 
 When the C++ changes, change it here too.

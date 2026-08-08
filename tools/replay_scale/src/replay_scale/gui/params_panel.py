@@ -6,6 +6,12 @@ cannot express a configuration the CLI could not. "Load YAML" reads a file into
 those objects and "Save YAML" writes them back out, which is how a session
 starts from someone else's configuration and stays reproducible headlessly.
 
+Grouped the way the config file is: what the complementary displacement is
+corrected by, then the settings belonging to each method, then what every method
+shares. Each group folds, and the ones the selected method does not read fold
+themselves and grey out -- most of this form describes a method that is not
+running. Folding never edits: a folded section still contributes its values.
+
 ``scale_mode`` is not editable: the viewer needs the estimator's per-frame
 vectors, which only the estimated path produces.
 """
@@ -19,22 +25,30 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
-from ..core.model import CORRECTION_MODES, SMOOTHING_MODES
+from ..core.lines import LINE_FIT_NORMS
+from ..core.model import (
+    COMPLEMENTARY_CORRECTIONS,
+    CORRECTION_MODES,
+    LINES_MEET_CORRECTIONS,
+    SMOOTHING_MODES,
+)
 from ..core.odom_source import DRIFT_AXES, MATCH_MODES
 from ..settings import validate_replay_params
+from .collapsible import CollapsibleSection
 
-#: Largest finite scale bound the spin boxes offer; an infinite scaleMax shows
-#: as 0 ("unbounded") instead, since a spin box cannot hold infinity.
+#: Largest finite bound the spin boxes offer; an infinite scaleMax or
+#: scaleLateralMax shows as 0 ("unbounded") instead, since a spin box cannot
+#: hold infinity.
 UNBOUNDED_SCALE = 1000.0
 
 
@@ -58,9 +72,131 @@ class ParamsPanel(QWidget):
         self._source_label.setWordWrap(True)
         self._source_label.setStyleSheet("QLabel { color: palette(mid); }")
 
-        self._translation_scale = self._double(0.0, 100.0, 0.01, 3)
-        self._min_speed = self._double(0.0, 100.0, 0.01, 3)
+        # Open: what a session changes most. Folded: the rest, which is either
+        # method-specific (and folded/unfolded by the selector) or rarely touched.
+        self._lines_section = CollapsibleSection(
+            "lines_meet_x / lines_meet_xy", self._lines_box())
+        self._sections = [
+            CollapsibleSection("correction", self._correction_box()),
+            self._lines_section,
+            CollapsibleSection("smoothing and bounds", self._smoothing_box()),
+            CollapsibleSection("complementaryOdom (general)", self._general_box(),
+                               expanded=False),
+            CollapsibleSection("replay_scale_tool", self._tool_box(), expanded=False),
+            CollapsibleSection("simulated complementary drift", self._drift_box(),
+                               expanded=False),
+        ]
+
+        form = QVBoxLayout()
+        form.addWidget(self._source_label)
+        for section in self._sections:
+            form.addWidget(section)
+        form.addStretch(1)
+        inner = QWidget()
+        inner.setLayout(form)
+
+        # Folding is what usually keeps this inside the dock, but a screen can
+        # still be too short for the sections that are open.
+        scroll = QScrollArea()
+        scroll.setWidget(inner)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+
+        layout = QVBoxLayout()
+        layout.addWidget(scroll, 1)
+        layout.addLayout(self._button_rows())
+        self.setLayout(layout)
+        self.setEnabled(False)
+        self._update_enabled()
+
+    # -- groups -------------------------------------------------------------
+
+    @staticmethod
+    def _form(rows):
+        """A widget holding a label/field form, for a collapsible section."""
+        layout = QFormLayout()
+        layout.setContentsMargins(6, 0, 0, 0)
+        for row in rows:
+            layout.addRow(*row) if isinstance(row, tuple) else layout.addRow(row)
+        widget = QWidget()
+        widget.setLayout(layout)
+        return widget
+
+    def _correction_box(self):
+        """What the complementary displacement is corrected by, and when."""
+        self._correction = QComboBox()
+        for name in COMPLEMENTARY_CORRECTIONS:
+            self._correction.addItem(name, name)
+        self._correction.setToolTip(
+            "ratio — the node's: |lidar_nondeg projected on comp| / |comp_nondeg|,\n"
+            "one frame measured against its own odometry.\n"
+            "line_x_axis — where this frame's own degenerate line crosses the\n"
+            "complementary axis. The same measurement as the ratio, read off the\n"
+            "picture and signed: where the ratio reports the size of a negative\n"
+            "crossing, this reports no sample.\n"
+            "lines_meet_x — the along-complementary coordinate of the point where\n"
+            "the recent degenerate lines meet, in units of |comp|. Needs the lines\n"
+            "to have turned relative to each other.\n"
+            "lines_meet_xy — that whole point. The displacement is moved onto where\n"
+            "the lines say the robot ended up, so it is turned as well as stretched;\n"
+            "the only mode that can express a lateral odometry error.")
+        self._correction.currentIndexChanged.connect(lambda _i: self._update_enabled())
+
+        self._apply_scale = QCheckBox("scaleEstimationApply")
+        self._apply_scale.setToolTip(
+            "Off estimates and logs the correction without applying it.")
         self._baseline_lag = self._int(1, 10000)
+        self._min_speed = self._double(0.0, 100.0, 0.01, 3)
+        self._min_speed.setToolTip(
+            "Below this LiDAR speed [m/s] over the lag window a frame produces no\n"
+            "sample. Measured on the LiDAR displacement alone — see the README.")
+
+        return self._form([
+            ("complementaryCorrection", self._correction),
+            ("scaleBaselineFrameLag", self._baseline_lag),
+            ("scaleMinNonDegenerateSpeed", self._min_speed),
+            self._apply_scale,
+        ])
+
+    def _lines_box(self):
+        """Settings of the two lines-meet methods."""
+        self._line_history = self._int(0, 100000)
+        self._line_history.setToolTip(
+            "How many earlier frames' degenerate lines the meeting point is fitted\n"
+            "through. More span means more turn, which is what makes them meet.\n"
+            "0 fits nothing, and also turns off the trail the anchor view draws.")
+        self._line_history_step = self._int(1, 1000)
+        self._line_history_step.setToolTip(
+            "Take every Nth earlier line. Consecutive frames' lines are nearly\n"
+            "identical, so a stride buys span at the same cost: the window reaches\n"
+            "back scaleLineHistory x this many frames.")
+        self._line_fit_norm = QComboBox()
+        for name in LINE_FIT_NORMS:
+            self._line_fit_norm.addItem(name, name)
+        self._line_fit_norm.setToolTip(
+            "l2 — least squares: a wrong line pulls the point in proportion to\n"
+            "how wrong it is.\n"
+            "l1 — least absolute deviations, by IRLS: each line gets one vote\n"
+            "whatever its error. Also decides how the anchor view draws it.")
+        self._lateral_max = self._double(0.0, UNBOUNDED_SCALE, 0.05, 3)
+        self._lateral_max.setSpecialValueText("unbounded")
+        self._lateral_max.setToolTip(
+            "Symmetric bound on the cross-track coordinate, in units of |comp|,\n"
+            "before it enters the smoothing filter: 0.2 lets the correction turn\n"
+            "the displacement by at most about 11 degrees. Clamps, does not drop.\n"
+            "Only lines_meet_xy applies this coordinate. Set to 0 for no bound.")
+
+        lines = self._form([
+            ("scaleLineHistory", self._line_history),
+            ("scaleLineHistoryStep", self._line_history_step),
+            ("scaleLineFitNorm", self._line_fit_norm),
+            ("scaleLateralMax", self._lateral_max),
+        ])
+        self._lines_form = lines.layout()
+        return lines
+
+    def _smoothing_box(self):
+        """What every method's samples go through before being applied."""
         self._smoothing = self._int(1, 100000)
         # Which statistic the smoothing window collapses to. The samples are a
         # ratio with a heavy tail, so the choice is not cosmetic: a mean carries
@@ -77,38 +213,41 @@ class ParamsPanel(QWidget):
             "rest: the mean on a clean window, the mean of the inliers on a\n"
             "window with a tail.")
 
-        self._apply_scale = QCheckBox("scaleEstimationApply")
-        self._ignore_dz = QCheckBox("ignore_dz")
-
         # A sample outside [scaleMin, scaleMax] enters the filter clamped to the
         # bound. 0 on the upper bound reads as "unbounded", which is also how an
         # absent scaleMax loads.
         self._scale_min = self._double(0.0, UNBOUNDED_SCALE, 0.05, 3)
         self._scale_max = self._double(0.0, UNBOUNDED_SCALE, 0.05, 3)
         self._scale_max.setSpecialValueText("unbounded")
-        range_tip = ("Range a scale sample is clamped into before it enters the\n"
-                     "smoothing filter. An out-of-range sample is capped, not\n"
-                     "dropped, so it still counts — it just cannot pull the average\n"
-                     "past the bound. Not a node parameter — replay-time only.")
+        range_tip = ("Range the along-track sample is clamped into before it\n"
+                     "enters the smoothing filter. An out-of-range sample is\n"
+                     "capped, not dropped, so it still counts — it just cannot\n"
+                     "pull the average past the bound. Not a node parameter.")
         self._scale_min.setToolTip(range_tip)
         self._scale_max.setToolTip(range_tip + "\nSet to 0 for no upper bound.")
 
-        estimator = QFormLayout()
-        estimator.addRow("translationScale", self._translation_scale)
-        estimator.addRow("scaleMinNonDegenerateSpeed", self._min_speed)
-        estimator.addRow("scaleBaselineFrameLag", self._baseline_lag)
-        estimator.addRow("scaleSmoothingWindowSize", self._smoothing)
-        estimator.addRow("scaleSmoothingMode", self._smoothing_mode)
-        estimator.addRow("scaleMin", self._scale_min)
-        estimator.addRow("scaleMax", self._scale_max)
-        estimator.addRow(self._apply_scale)
-        estimator.addRow(self._ignore_dz)
-        estimator_box = QGroupBox("complementaryOdom")
-        estimator_box.setLayout(estimator)
+        return self._form([
+            ("scaleSmoothingWindowSize", self._smoothing),
+            ("scaleSmoothingMode", self._smoothing_mode),
+            ("scaleMin", self._scale_min),
+            ("scaleMax", self._scale_max),
+        ])
 
+    def _general_box(self):
+        self._translation_scale = self._double(0.0, 100.0, 0.01, 3)
+        self._ignore_dz = QCheckBox("ignore_dz")
+        return self._form([
+            ("translationScale", self._translation_scale),
+            self._ignore_dz,
+        ])
+
+    def _tool_box(self):
         self._correction_mode = QComboBox()
         for mode in CORRECTION_MODES:
             self._correction_mode.addItem(mode, mode)
+        self._correction_mode.setToolTip(
+            "How the corrected prediction is substituted into the degenerate\n"
+            "directions — a separate question from what corrected it.")
         self._source_path = QLineEdit()
         self._source_path.setPlaceholderText("(use the odometry recorded online)")
         browse = QPushButton("…")
@@ -137,29 +276,31 @@ class ParamsPanel(QWidget):
             "LiDAR interval. For a source sparser than the LiDAR; max_match_dt_s\n"
             "then limits how wide a gap may be interpolated across.")
 
-        tool = QFormLayout()
-        tool.addRow("correction_mode", self._correction_mode)
-        tool.addRow("complementary source", source_widget)
-        tool.addRow("match_mode", self._match_mode)
-        tool.addRow("max_match_dt_s", self._max_match_dt)
-        tool_box = QGroupBox("replay_scale_tool")
-        tool_box.setLayout(tool)
+        return self._form([
+            ("correction_mode", self._correction_mode),
+            ("complementary source", source_widget),
+            ("match_mode", self._match_mode),
+            ("max_match_dt_s", self._max_match_dt),
+        ])
 
-        # Injecting a known error is what makes the estimated scale checkable:
-        # you know what should come back out.
+    def _drift_box(self):
+        # Injecting a known error is what makes the correction checkable: you
+        # know what should come back out.
         self._drift_alpha = self._double(-1.0, 1.0, 0.01, 4)
         self._drift_axis = QComboBox()
         for name in DRIFT_AXES:
             self._drift_axis.addItem(name, name)
-        drift = QFormLayout()
-        drift.addRow("alpha (× distance)", self._drift_alpha)
-        drift.addRow("body axis", self._drift_axis)
-        drift_box = QGroupBox("simulated complementary drift")
-        drift_box.setToolTip(
+        box = self._form([
+            ("alpha (× distance)", self._drift_alpha),
+            ("body axis", self._drift_axis),
+        ])
+        box.setToolTip(
             "Adds alpha × |displacement| along the chosen body axis of the\n"
-            "complementary odometry, before any scaling. 0 disables.")
-        drift_box.setLayout(drift)
+            "complementary odometry, before any correction. 0 disables.\n"
+            "A lateral alpha is exactly what lines_meet_xy exists to undo.")
+        return box
 
+    def _button_rows(self):
         self._apply_button = QPushButton("Apply && re-run")
         self._apply_button.clicked.connect(self.applied.emit)
         self._revert_button = QPushButton("Revert")
@@ -183,16 +324,10 @@ class ParamsPanel(QWidget):
         files.addWidget(self._load_button)
         files.addWidget(self._save_button)
 
-        layout = QVBoxLayout()
-        layout.addWidget(self._source_label)
-        layout.addWidget(estimator_box)
-        layout.addWidget(tool_box)
-        layout.addWidget(drift_box)
-        layout.addLayout(buttons)
-        layout.addLayout(files)
-        layout.addStretch(1)
-        self.setLayout(layout)
-        self.setEnabled(False)
+        rows = QVBoxLayout()
+        rows.addLayout(buttons)
+        rows.addLayout(files)
+        return rows
 
     # -- widget helpers -----------------------------------------------------
 
@@ -216,6 +351,20 @@ class ParamsPanel(QWidget):
             self, "Complementary odometry (TUM)", start, "TUM trajectories (*.tum);;All files (*)")
         if path:
             self._source_path.setText(path)
+
+    def _update_enabled(self):
+        """Fold and grey out the settings the selected correction does not read.
+
+        They keep their values -- switching methods and back must not lose what
+        was typed -- so this only says which of them are in play.
+        """
+        correction = self._correction.currentData()
+        self._lines_section.set_relevant(correction in LINES_MEET_CORRECTIONS)
+        lateral = correction == "lines_meet_xy"
+        self._lateral_max.setEnabled(lateral)
+        label = self._lines_form.labelForField(self._lateral_max)
+        if label is not None:
+            label.setEnabled(lateral)
 
     # -- state --------------------------------------------------------------
 
@@ -241,16 +390,28 @@ class ParamsPanel(QWidget):
         if self._settings is None:
             return
         s, p = self._settings, self._params
-        self._translation_scale.setValue(p.translation_scale)
-        self._min_speed.setValue(p.scale_min_nondegenerate_speed)
+        self._correction.setCurrentIndex(
+            max(0, self._correction.findData(p.complementary_correction)))
         self._baseline_lag.setValue(p.scale_baseline_frame_lag)
+        self._min_speed.setValue(p.scale_min_nondegenerate_speed)
+        self._apply_scale.setChecked(p.scale_estimation_apply)
+
+        self._line_history.setValue(p.scale_line_history)
+        self._line_history_step.setValue(p.scale_line_history_step)
+        self._line_fit_norm.setCurrentIndex(
+            max(0, self._line_fit_norm.findData(p.scale_line_fit_norm)))
+        self._lateral_max.setValue(
+            0.0 if p.scale_lateral_max > UNBOUNDED_SCALE else p.scale_lateral_max)
+
         self._smoothing.setValue(p.scale_smoothing_window_size)
         self._smoothing_mode.setCurrentIndex(
             max(0, self._smoothing_mode.findData(p.scale_smoothing_mode)))
         self._scale_min.setValue(min(p.scale_min, UNBOUNDED_SCALE))
         self._scale_max.setValue(0.0 if p.scale_max > UNBOUNDED_SCALE else p.scale_max)
-        self._apply_scale.setChecked(p.scale_estimation_apply)
+
+        self._translation_scale.setValue(p.translation_scale)
         self._ignore_dz.setChecked(p.ignore_dz)
+
         self._correction_mode.setCurrentIndex(
             max(0, self._correction_mode.findData(s.correction_mode)))
         self._source_path.setText(s.complementary_source.path)
@@ -260,6 +421,7 @@ class ParamsPanel(QWidget):
         self._drift_alpha.setValue(s.complementary_drift.alpha)
         self._drift_axis.setCurrentIndex(
             max(0, self._drift_axis.findData(s.complementary_drift.axis)))
+        self._update_enabled()
 
     def edited_config(self):
         """(settings, params) reflecting the current widget values.
@@ -287,16 +449,22 @@ class ParamsPanel(QWidget):
         ).validated()
 
         scale_max = self._scale_max.value()
+        lateral_max = self._lateral_max.value()
         params = validate_replay_params(replace(
             self._params,
+            complementary_correction=self._correction.currentData(),
+            scale_baseline_frame_lag=self._baseline_lag.value(),
+            scale_min_nondegenerate_speed=self._min_speed.value(),
+            scale_estimation_apply=self._apply_scale.isChecked(),
+            scale_line_history=self._line_history.value(),
+            scale_line_history_step=self._line_history_step.value(),
+            scale_line_fit_norm=self._line_fit_norm.currentData(),
+            scale_lateral_max=lateral_max if lateral_max > 0.0 else float("inf"),
+            scale_smoothing_window_size=self._smoothing.value(),
+            scale_smoothing_mode=self._smoothing_mode.currentData(),
             scale_min=self._scale_min.value(),
             scale_max=scale_max if scale_max > 0.0 else float("inf"),
             translation_scale=self._translation_scale.value(),
-            scale_min_nondegenerate_speed=self._min_speed.value(),
-            scale_baseline_frame_lag=self._baseline_lag.value(),
-            scale_smoothing_window_size=self._smoothing.value(),
-            scale_smoothing_mode=self._smoothing_mode.currentData(),
-            scale_estimation_apply=self._apply_scale.isChecked(),
             ignore_dz=self._ignore_dz.isChecked(),
         ))
         return settings, params

@@ -14,7 +14,14 @@ from dataclasses import dataclass, field, replace
 
 import numpy as np
 
-from .core.model import CORRECTION_MODES, SCALE_MODES, SMOOTHING_MODES, ReplayParams
+from .core.model import (
+    COMPLEMENTARY_CORRECTIONS,
+    CORRECTION_MODES,
+    SCALE_MODES,
+    SMOOTHING_MODES,
+    ReplayParams,
+)
+from .core.lines import LINE_FIT_NORMS
 from .core.odom_source import DRIFT_AXES, MATCH_MODES
 from .core.se3 import quat_to_matrix
 
@@ -249,6 +256,19 @@ def validate_replay_params(params):
     GUI editor run, so neither can produce a configuration the other would
     reject. Raises ValueError.
     """
+    if params.complementary_correction not in COMPLEMENTARY_CORRECTIONS:
+        raise ValueError(f"complementaryOdom.complementaryCorrection must be one of "
+                         f"{COMPLEMENTARY_CORRECTIONS}, got "
+                         f"{params.complementary_correction!r}")
+    if params.scale_line_fit_norm not in LINE_FIT_NORMS:
+        raise ValueError(f"complementaryOdom.scaleLineFitNorm must be one of "
+                         f"{LINE_FIT_NORMS}, got {params.scale_line_fit_norm!r}")
+    if params.scale_line_history < 0:
+        raise ValueError(f"complementaryOdom.scaleLineHistory must be >= 0, got "
+                         f"{params.scale_line_history}")
+    if params.scale_line_history_step < 1:
+        raise ValueError(f"complementaryOdom.scaleLineHistoryStep must be >= 1, got "
+                         f"{params.scale_line_history_step}")
     if params.scale_smoothing_mode not in SMOOTHING_MODES:
         raise ValueError(f"complementaryOdom.scaleSmoothingMode must be one of "
                          f"{SMOOTHING_MODES}, got {params.scale_smoothing_mode!r}")
@@ -257,7 +277,21 @@ def validate_replay_params(params):
     if params.scale_max <= params.scale_min:
         raise ValueError(f"complementaryOdom.scaleMax must exceed scaleMin, got "
                          f"scaleMin={params.scale_min}, scaleMax={params.scale_max}")
+    # Symmetric, so a single non-negative number is the whole bound: the lines
+    # are as free to put the robot left of the odometry as right of it.
+    if params.scale_lateral_max < 0.0:
+        raise ValueError(f"complementaryOdom.scaleLateralMax must be >= 0, got "
+                         f"{params.scale_lateral_max}")
     return params
+
+
+#: Older spellings still accepted, mapped onto the current ones. The key was
+#: "scaleSampleSource" while every method produced a scalar scale; once one of
+#: them could also move the odometry sideways, what is being chosen is the
+#: correction, not the sample -- and "line_meet" had to say *which* part of the
+#: meeting point it meant.
+_LEGACY_CORRECTION_KEY = "scaleSampleSource"
+_LEGACY_CORRECTION_VALUES = {"line_meet": "lines_meet_x"}
 
 
 def replay_params_from_mapping(root):
@@ -266,14 +300,28 @@ def replay_params_from_mapping(root):
 
     comp = root.get("complementaryOdom", {}) if isinstance(root, dict) else {}
     if isinstance(comp, dict):
+        # -- every method ---------------------------------------------------
         params.translation_scale = float(comp.get("translationScale", params.translation_scale))
         params.scale_estimation_apply = bool(comp.get("scaleEstimationApply", params.scale_estimation_apply))
         params.scale_min_nondegenerate_speed = float(
             comp.get("scaleMinNonDegenerateSpeed", params.scale_min_nondegenerate_speed))
         params.scale_baseline_frame_lag = int(comp.get("scaleBaselineFrameLag", params.scale_baseline_frame_lag))
+        params.ignore_dz = bool(comp.get("ignore_dz", params.ignore_dz))
+        correction = str(comp.get("complementaryCorrection",
+                                  comp.get(_LEGACY_CORRECTION_KEY,
+                                           params.complementary_correction)))
+        params.complementary_correction = _LEGACY_CORRECTION_VALUES.get(correction, correction)
+
+        # -- lines_meet_x / lines_meet_xy ------------------------------------
+        params.scale_line_history = int(comp.get("scaleLineHistory", params.scale_line_history))
+        params.scale_line_history_step = int(
+            comp.get("scaleLineHistoryStep", params.scale_line_history_step))
+        params.scale_line_fit_norm = str(comp.get("scaleLineFitNorm", params.scale_line_fit_norm))
+        params.scale_lateral_max = float(comp.get("scaleLateralMax", params.scale_lateral_max))
+
+        # -- smoothing ------------------------------------------------------
         params.scale_smoothing_window_size = int(comp.get("scaleSmoothingWindowSize", params.scale_smoothing_window_size))
         params.scale_smoothing_mode = str(comp.get("scaleSmoothingMode", params.scale_smoothing_mode))
-        params.ignore_dz = bool(comp.get("ignore_dz", params.ignore_dz))
         params.scale_min = float(comp.get("scaleMin", params.scale_min))
         params.scale_max = float(comp.get("scaleMax", params.scale_max))
 
@@ -344,37 +392,52 @@ def config_to_mapping(settings, params):
         T = np.asarray(extrinsic, dtype=float)
         source["extrinsicTrans"] = [float(v) for v in T[:3, 3]]
         source["extrinsicRot"] = [float(v) for v in T[:3, :3].reshape(9)]
+    # Written in the same order the bundled config is grouped in -- what the
+    # correction is, then each method's own settings, then what they share --
+    # so a saved file reads like the documented one rather than like a dump.
     return {
         "/**": {
             "ros__parameters": {
                 "complementaryOdom": {
+                    # every method
+                    "complementaryCorrection": params.complementary_correction,
                     "scaleEstimationApply": bool(params.scale_estimation_apply),
                     "scaleMinNonDegenerateSpeed": float(params.scale_min_nondegenerate_speed),
                     "scaleBaselineFrameLag": int(params.scale_baseline_frame_lag),
+                    "ignore_dz": bool(params.ignore_dz),
+                    "translationScale": float(params.translation_scale),
+                    # lines_meet_x / lines_meet_xy
+                    "scaleLineHistory": int(params.scale_line_history),
+                    "scaleLineHistoryStep": int(params.scale_line_history_step),
+                    "scaleLineFitNorm": params.scale_line_fit_norm,
+                    "scaleLateralMax": float(params.scale_lateral_max),
+                    # smoothing and bounds
                     "scaleSmoothingWindowSize": int(params.scale_smoothing_window_size),
                     "scaleSmoothingMode": params.scale_smoothing_mode,
                     "scaleMin": float(params.scale_min),
                     "scaleMax": float(params.scale_max),
-                    "ignore_dz": bool(params.ignore_dz),
-                    "translationScale": float(params.translation_scale),
                 },
             },
         },
         "replay_scale_tool": {
-            "scale_mode": settings.scale_mode,
-            "scales": [float(s) for s in settings.scales],
+            # which run
             "input_path": settings.input_path,
             "base_dir": settings.base_dir,
-            "output_dir": settings.output_dir,
-            "output_subdir": settings.output_subdir,
+            # what to replay
+            "scale_mode": settings.scale_mode,
+            "scales": [float(s) for s in settings.scales],
+            "correction_mode": settings.correction_mode,
             "no_correction": bool(settings.no_correction),
             "validate": bool(settings.validate),
-            "correction_mode": settings.correction_mode,
+            # what to replay it against
             "complementary_source": source,
             "complementary_drift": {
                 "alpha": float(settings.complementary_drift.alpha),
                 "axis": settings.complementary_drift.axis,
             },
+            # where the output goes
+            "output_dir": settings.output_dir,
+            "output_subdir": settings.output_subdir,
         },
     }
 

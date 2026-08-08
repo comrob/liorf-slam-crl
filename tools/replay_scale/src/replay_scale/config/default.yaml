@@ -2,12 +2,58 @@
   ros__parameters:
     complementaryOdom:
 
-      # Whether to apply the estimated scale to the complementary odometry.
-      # If false, scale is still estimated and logged but not applied.
+      # ===================================================================
+      # What the complementary displacement is corrected by
+      # ===================================================================
+
+      # Every method answers the same question -- the odometry says the robot
+      # went there, where did it really go -- and each measures it differently:
+      #
+      #   ratio         - the node's own: the LiDAR's non-degenerate
+      #                   displacement projected on the complementary one, over
+      #                   the latter. Measures one frame against its own
+      #                   odometry, and can only make the displacement longer
+      #                   or shorter.
+      #   line_x_axis   - where this frame's own degenerate line crosses the
+      #                   complementary axis (y = 0) in the normalized frame the
+      #                   viewer draws. The same measurement as the ratio — in
+      #                   the plane with one degenerate direction the two are
+      #                   equal to 1e-11 — but signed: the node takes norms
+      #                   first, so where the geometry says the robot went
+      #                   *backwards* relative to the odometry it reports the
+      #                   distance as a positive scale, and this reports no
+      #                   sample. On the bundled run that is a third of them.
+      #                   Needs no history and no turn.
+      #   lines_meet_x  - normalize every recent frame by its own |comp| and
+      #                   rotate it so that vector is +x, and its degenerate
+      #                   line becomes a statement about the same quantity.
+      #                   Where the lines meet, the x coordinate *is* the scale.
+      #                   Needs the lines to have turned relative to each other,
+      #                   so it says nothing on a straight stretch — but where
+      #                   it does answer, it does not need the scaled direction
+      #                   to be observable in one frame.
+      #   lines_meet_xy - the whole meeting point, not just its x. In the frame
+      #                   where the displacement is (d, 0) the lines put the
+      #                   robot at (d*cx, d*cy), so the corrected displacement
+      #                   is that vector: the odometry's arrow moved onto where
+      #                   the lines say the robot ended up. It turns the
+      #                   displacement as well as stretching it, which is the
+      #                   only way a *lateral* odometry error can be undone —
+      #                   no scale can express one. Reduces to lines_meet_x
+      #                   exactly when the lines say cy = 0.
+      complementaryCorrection: lines_meet_xy
+
+      # Whether to apply the correction at all. If false it is still estimated
+      # and logged, just not applied.
       scaleEstimationApply: true
 
-      # Minimum non-degenerate speed [m/s] required for a scale sample to
-      # be considered observable. Samples below this threshold are discarded.
+      # Number of frames to lag the anchor pose for estimation.
+      # Larger values reduce sensitivity to per-frame noise at the cost of latency.
+      scaleBaselineFrameLag: 10
+
+      # Minimum non-degenerate speed [m/s] required for a sample to count as
+      # observable. Frames below it produce nothing, and the last value the
+      # filter agreed on keeps being applied.
       # Measured on the LiDAR displacement over the LiDAR window alone
       # (|t_lidar_nondeg| / dt_lidar) — no complementary quantity enters, so a
       # short or misaligned odometry vector cannot make an observed motion look
@@ -15,11 +61,55 @@
       # divides by the odometry's interval instead; see the README.
       scaleMinNonDegenerateSpeed: 0.1
 
-      # Number of frames to lag the anchor pose for scale estimation.
-      # Larger values reduce sensitivity to per-frame noise at the cost of latency.
-      scaleBaselineFrameLag: 10
+      # If true, the Z component of translations is zeroed before estimation
+      # (useful for ground-vehicle / planar-motion datasets). The lines-meet
+      # methods are in-plane in any case and never touch Z.
+      ignore_dz: true
 
-      # Number of recent observable samples the applied scale is taken over.
+      # Additional multiplier applied to complementary odometry translation.
+      # The recorded twists already include the online run's translationScale;
+      # this is an extra replay-time factor on top of that.
+      translationScale: 1.0
+
+      # ===================================================================
+      # lines_meet_x / lines_meet_xy
+      # ===================================================================
+
+      # How many earlier frames' degenerate lines the meeting point is fitted
+      # through, alongside the current one, and the stride through them.
+      # Consecutive frames' lines are nearly identical, so what matters is the
+      # span they cover -- history * step frames -- rather than their count:
+      # more span means more turn, which is what makes the lines meet at all.
+      # 50 x 4 is the viewer's own overlay, and a reasonable starting point.
+      # 0 fits nothing, which also turns off the meeting point the viewer draws
+      # its trail from — that is what makes "ratio" cost nothing extra.
+      scaleLineHistory: 50
+      scaleLineHistoryStep: 4
+
+      # What that fit minimises over the distances to those lines:
+      #   l2 - least squares. A wrong line pulls the point in proportion to how
+      #        wrong it is.
+      #   l1 - least absolute deviations (IRLS). Each line gets one vote whatever
+      #        its error, which suits lines whose direction came from a poor
+      #        degeneracy basis. Also decides how the viewer draws the point.
+      scaleLineFitNorm: l1
+
+      # Symmetric bound on the cross-track coordinate cy, in units of |comp|,
+      # before it enters the smoothing filter — the counterpart of scaleMin /
+      # scaleMax for the sideways half of the correction, and read only by
+      # lines_meet_xy. Clamps rather than drops, like those do. It bounds how
+      # far the correction may turn the displacement: 0.2 is about 11 degrees,
+      # 0.5 about 27. .inf does not bound it at all.
+      scaleLateralMax: .inf
+
+      # ===================================================================
+      # Smoothing and bounds — every method
+      # ===================================================================
+
+      # Number of recent observable samples the applied correction is taken
+      # over. Under lines_meet_xy the pair (cx, cy) goes through this window
+      # together: it is one observation of where the robot is, and smoothing
+      # the two halves separately would apply a mixture of two answers.
       scaleSmoothingWindowSize: 50
 
       # Which statistic that window collapses to. All three read the same
@@ -35,13 +125,13 @@
       #             tail it is the mean of the inliers.
       # The samples are a ratio of two short displacements and their spread is
       # heavy-tailed, so this is not a cosmetic choice.
-      scaleSmoothingMode: trimmed
+      scaleSmoothingMode: mean
 
-      # Range a scale sample is clamped into before it enters the smoothing
+      # Range the along-track sample is clamped into before it enters that
       # filter (replay tool only — the node has no such limit). An out-of-range
       # sample is capped at the bound, not discarded: it still says the LiDAR
       # moved further than the odometry claimed, so it keeps its vote, but one
-      # frame cannot pull the average past the bound. The applied scale is a
+      # frame cannot pull the average past the bound. The applied value is a
       # mean of clamped samples and therefore stays inside the range too.
       # scale_instant_raw is still logged as measured, so the trace and the
       # viewer's Scale tab show what each frame really produced.
@@ -49,25 +139,14 @@
       scaleMin: 0.0
       scaleMax: .inf
 
-      # If true, the Z component of translations is zeroed before scale
-      # estimation (useful for ground-vehicle / planar-motion datasets).
-      ignore_dz: true
-
-      # Additional multiplier applied to complementary odometry translation.
-      # The recorded twists already include the online run's translationScale;
-      # this is an extra replay-time factor on top of that.
-      translationScale: 1.0
-
 # Settings for the replay_scale tool itself (not a ROS
 # parameter tree; this key is ignored by any ROS node loading this file as
 # a parameters YAML since it does not match a node/wildcard name).
 replay_scale_tool:
 
-  # Scale source: fixed, recorded, or estimated. See replay-scale-trajectory --help.
-  scale_mode: estimated
-
-  # Constant translation scales to replay with when scale_mode is "fixed".
-  scales: [1.0]
+  # =====================================================================
+  # Which run
+  # =====================================================================
 
   # Which run to replay when no path is given on the command line: a run
   # directory or a scale_replay_frames.csv. Empty string means the newest run
@@ -79,19 +158,19 @@ replay_scale_tool:
   # Where run_* folders live. Empty string means ~/.ros/lili_logs.
   base_dir: ""
 
-  # Base directory for output files. Empty string means alongside the input CSV.
-  output_dir: ""
+  # =====================================================================
+  # What to replay
+  # =====================================================================
 
-  # Subfolder under output_dir for outputs; trajectories/ and log/ are created under it.
-  output_subdir: replay
+  # Scale source: fixed, recorded, or estimated. See replay-scale-trajectory --help.
+  scale_mode: estimated
 
-  # Also emit the LiDAR-only trajectory (no degeneracy override).
-  no_correction: false
+  # Constant translation scales to replay with when scale_mode is "fixed".
+  scales: [1.0]
 
-  # Replay with the recorded per-frame scale and report drift vs recorded effective.
-  validate: false
-
-  # How the degeneracy override is applied.
+  # How the corrected prediction is substituted into the degenerate directions.
+  # A separate question from complementaryCorrection above, which decides what
+  # corrected it.
   #   twist6      - node parity: projects the full 6D twist onto the basis. The
   #                 inner product mixes metres and radians, so residual angular
   #                 content in the basis turns the correction into a rotation.
@@ -99,22 +178,33 @@ replay_scale_tool:
   #                 and leaves orientation to LiDAR. Use where rotation is
   #                 observable (tunnel walls constrain yaw), so any injected
   #                 heading is spurious.
-  correction_mode: twist6 # translation 
+  correction_mode: twist6 # translation
+
+  # Also emit the LiDAR-only trajectory (no degeneracy override).
+  no_correction: false
+
+  # Replay with the recorded per-frame scale and report drift vs recorded effective.
+  validate: false
+
+  # =====================================================================
+  # What to replay it against
+  # =====================================================================
 
   # Simulate a systematic error in the complementary odometry, to check what
-  # the scale estimator does with an error whose size you already know.
+  # the correction does with an error whose size you already know.
   # Each frame's complementary displacement gains alpha * |displacement| along
   # the given body axis, applied to the raw twist before translationScale and
-  # before any estimated scale.
+  # before any estimated correction.
   #
-  #   axis: y  - lateral (default). The scale cannot express a sideways error,
-  #              but the sideways component is exactly what the estimate is
-  #              computed from, so the error re-emerges as a *longitudinal*
-  #              scale error. This tests the method's core assumption: that the
-  #              observable cross-tunnel motion is a good yardstick for the
-  #              unobservable along-tunnel motion.
+  #   axis: y  - lateral (default). No scale can express a sideways error, so
+  #              under ratio and lines_meet_x it re-emerges as a *longitudinal*
+  #              one — which is the test of the method's core assumption, that
+  #              the observable cross-tunnel motion is a good yardstick for the
+  #              unobservable along-tunnel motion. It is also exactly the error
+  #              lines_meet_xy exists to undo: with alpha = -0.2 the lines
+  #              should meet near (1.0, +0.2), and cy is what cancels it.
   #   axis: x  - along travel, a pure scale error: with alpha = 0.1 the odometry
-  #              reports 10% too far and the estimator should recover roughly
+  #              reports 10% too far and the estimate should recover roughly
   #              1/1.1 to cancel it. A recovery check rather than a stress test.
   #
   # In a tunnel the genuine lateral motion is small while |displacement| is
@@ -128,13 +218,14 @@ replay_scale_tool:
 
   # Replay against a complementary odometry source other than the one used
   # online. The replay re-synchronizes it against the same LiDAR frame stamps.
-  # complementary_source:
+  # Comment the whole block out to keep the twist the online run baked into
+  # scale_replay_frames.csv.
+  complementary_source:
 
     # TUM file of absolute odometry poses ("stamp tx ty tz qx qy qz qw").
-    # Empty keeps the twist the online run baked into scale_replay_frames.csv.
-    # The node logs its own raw stream to complementary_odom_stream.tum, which
-    # can be passed here directly.
-    # path: ""
+    # Empty keeps the recorded twist. The node logs its own raw stream to
+    # complementary_odom_stream.tum, which can be passed here directly.
+    path: "/home/seva/repos/deg-tunnel-tools/data/output/20degtrick_20260804_172149/20-aligned/vo.tum"
 
     # How the source pose at a LiDAR stamp is obtained:
     #   nearest     - the closest sample, as the node itself does. The twist is
@@ -143,44 +234,27 @@ replay_scale_tool:
     #                 bracketing it, so the interval is exactly the LiDAR one.
     #                 For a source slower than the LiDAR, where nearest matching
     #                 quantizes both ends of the window onto the sparse grid.
-    # match_mode: nearest
+    # vo.tum is 25 Hz against 10 Hz LiDAR, so nearest matching moves each end of
+    # the window by up to 20 ms — on a 100 ms window that is a 20% error in the
+    # displacement the correction is measured from. Set to nearest to reproduce
+    # what the node would have done with this stream.
+    match_mode: interpolate
 
-    # # nearest:     reject a frame when the nearest odometry sample to either of
-    # #              its two LiDAR stamps is farther away than this. Matches the
-    # #              node's 0.25 s gate.
-    # # interpolate: the widest gap between two samples that may be interpolated
-    # #              across. Must exceed the source's own sample period, so a
-    # #              sparse source needs this raised.
-    # max_match_dt_s: 0.25
+    # nearest:     reject a frame when the nearest odometry sample to either of
+    #              its two LiDAR stamps is farther away than this. Matches the
+    #              node's 0.25 s gate.
+    # interpolate: the widest gap between two samples that may be interpolated
+    #              across. Must exceed the source's own sample period, so a
+    #              sparse source needs this raised.
+    max_match_dt_s: 0.25
 
     # T_complementary_to_lidar override (odometry frame -> LiDAR frame). Omit
     # to reuse the extrinsic the run recorded in complementary_odom_meta.yaml;
     # set it when the alternative source sits on a different mounting point.
-    # Same spelling as complementaryOdom.extrinsicRot / .extrinsicTrans above:
+    # Same spelling as the node's complementaryOdom.extrinsicTrans / .extrinsicRot:
     # a 3-vector and a row-major 3x3. Either may be left out, defaulting to zero
     # translation and identity rotation as the node's parameters do.
-    # extrinsicTrans: [0.0, 0.0, 0.0]
-    # extrinsicRot: [1.0, 0.0, 0.0,
-    #                0.0, 1.0, 0.0,
-    #                0.0, 0.0, 1.0]
     #
-    # The quaternion form the run's meta file records is also accepted:
-    # extrinsic:
-    #   translation: [0.0, 0.0, 0.0]
-    #   rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0]
-
-  # replay_scale_tool:
-  # scale_mode: estimated
-
-  complementary_source:
-    path: "/home/seva/repos/deg-tunnel-tools/data/output/20degtrick_20260804_172149/20-aligned/vo.tum"
-    # vo.tum is 25 Hz against 10 Hz LiDAR, so nearest matching moves each end of
-    # the window by up to 20 ms — on a 100 ms window that is a 20% error in the
-    # displacement the scale ratio is taken from. Set to nearest to reproduce
-    # what the node would have done with this stream.
-    match_mode: interpolate
-    max_match_dt_s: 0.25
-
     # REQUIRED here — the VO -> LiDAR mount.
     extrinsicTrans: [0.0, 0.0, 0.0]
     extrinsicRot:   [0.0, 1.0, 0.0,
@@ -189,3 +263,18 @@ replay_scale_tool:
     # extrinsicRot: #[-1.0, -0.005344, -0.0,
                   #  -0.0, 0.263597, 0.035874,
                   #   0.263205, 0.964618, 1.0]
+    #
+    # The quaternion form the run's meta file records is also accepted:
+    # extrinsic:
+    #   translation: [0.0, 0.0, 0.0]
+    #   rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+
+  # =====================================================================
+  # Where the output goes
+  # =====================================================================
+
+  # Base directory for output files. Empty string means alongside the input CSV.
+  output_dir: ""
+
+  # Subfolder under output_dir for outputs; trajectories/ and log/ are created under it.
+  output_subdir: replay

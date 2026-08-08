@@ -39,7 +39,10 @@ def _edited():
     params = ReplayParams(
         translation_scale=1.5, scale_estimation_apply=False,
         scale_min_nondegenerate_speed=0.25, scale_baseline_frame_lag=7,
-        scale_smoothing_window_size=33, ignore_dz=True)
+        scale_smoothing_window_size=33, ignore_dz=True,
+        complementary_correction="lines_meet_xy", scale_line_history=40,
+        scale_line_history_step=4, scale_line_fit_norm="l1",
+        scale_lateral_max=0.3)
     return settings, params
 
 
@@ -113,6 +116,33 @@ def test_dump_is_plain_yaml_text():
     assert "replay_scale_tool" in text
     assert "ros__parameters" in text
     assert yaml.safe_load(text)["replay_scale_tool"]["correction_mode"] == "translation"
+
+
+def test_a_config_written_before_the_rename_still_loads():
+    """scaleSampleSource: line_meet predates the correction being a vector."""
+    params = replay_params_from_mapping(
+        {"complementaryOdom": {"scaleSampleSource": "line_meet"}})
+    assert params.complementary_correction == "lines_meet_x"
+
+
+def test_the_current_key_wins_over_the_old_one():
+    params = replay_params_from_mapping({"complementaryOdom": {
+        "complementaryCorrection": "lines_meet_xy",
+        "scaleSampleSource": "ratio"}})
+    assert params.complementary_correction == "lines_meet_xy"
+
+
+def test_an_unknown_correction_is_rejected():
+    with pytest.raises(ValueError, match="complementaryCorrection"):
+        replay_params_from_mapping(
+            {"complementaryOdom": {"complementaryCorrection": "lines_meet"}})
+
+
+def test_a_negative_lateral_bound_is_rejected():
+    """It is symmetric, so the bound is a distance and cannot be negative."""
+    with pytest.raises(ValueError, match="scaleLateralMax"):
+        replay_params_from_mapping(
+            {"complementaryOdom": {"scaleLateralMax": -0.5}})
 
 
 def test_unknown_match_mode_is_rejected():

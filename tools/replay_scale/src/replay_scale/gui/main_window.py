@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSlider,
     QSpinBox,
+    QSplitter,
+    QStackedWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -193,6 +195,18 @@ class MainWindow(QMainWindow):
             "as a multiple of the complementary displacement.")
         self._normalize.toggled.connect(lambda _c: self._redraw())
 
+        # Off by default: it is a second population on a plot that already has
+        # lines, an arrow and an ellipse on it. On, it answers "is the point the
+        # correction reads jittering or drifting", which one frame cannot.
+        self._meet_history = QCheckBox("meet trail")
+        self._meet_history.setToolTip(
+            "Scatter the meeting point the estimator fitted on each frame the\n"
+            "history looks back at — the trail of what the correction has been\n"
+            "reading, one point per frame rather than one per line.\n"
+            "Each point is in units of its own frame's |comp|, so it is only\n"
+            "drawn in the complementary-forward frame with |comp| = 1.")
+        self._meet_history.toggled.connect(lambda _c: self._redraw())
+
         # Only the anchor view's own drawing options live inside its tab; the
         # scrubber below is shared, so what it selects means the same thing on
         # every tab.
@@ -200,6 +214,7 @@ class MainWindow(QMainWindow):
         view_options.addWidget(self._history_spin)
         view_options.addWidget(self._history_step_spin)
         view_options.addWidget(self._normalize)
+        view_options.addWidget(self._meet_history)
         view_options.addWidget(self._frame)
         view_options.addWidget(self._zoom)
         view_options.addStretch(1)
@@ -212,13 +227,36 @@ class MainWindow(QMainWindow):
 
         # Same replay, whole-run views: where the scrubbed frame sits, and what
         # the estimator made of it.
+        self._frame_panel = frame_panel
         self._trajectory = TrajectoryView()
         self._scale = ScaleView()
+        self._panels = ((frame_panel, "Anchor frame"),
+                        (self._trajectory, "Trajectory"),
+                        (self._scale, "Scale"))
 
         self._tabs = QTabWidget()
-        self._tabs.addTab(frame_panel, "Anchor frame")
-        self._tabs.addTab(self._trajectory, "Trajectory")
-        self._tabs.addTab(self._scale, "Scale")
+
+        # The same three views, side by side instead of one at a time. Reading
+        # the scale curve against the trajectory it produced is the whole
+        # argument for it; on a wide screen there is no reason to alternate.
+        # The two anchor/trajectory plots are square and share the top row; the
+        # scale curve is wide and short, so it gets the bottom.
+        self._tiles_top = QSplitter(Qt.Horizontal)
+        self._tiles = QSplitter(Qt.Vertical)
+        self._tiles.addWidget(self._tiles_top)
+        self._tiles.setStretchFactor(0, 3)
+        self._tiles.setStretchFactor(1, 2)
+
+        self._views = QStackedWidget()
+        self._views.addWidget(self._tabs)
+        self._views.addWidget(self._tiles)
+
+        self._show_all = QCheckBox("All views")
+        self._show_all.setToolTip(
+            "Show the anchor frame, the trajectory and the scale at once\n"
+            "instead of one tab at a time. The scrubber is shared either way.")
+        self._show_all.toggled.connect(self._set_view_layout)
+        self._set_view_layout(False)
 
         # One scrubber under the tabs rather than one per tab: the frame index
         # is a property of the session, not of the view looking at it, so
@@ -228,9 +266,10 @@ class MainWindow(QMainWindow):
         scrubber.addWidget(self._slider, 1)
         scrubber.addWidget(self._spin)
         scrubber.addWidget(self._observable_only)
+        scrubber.addWidget(self._show_all)
 
         right = QVBoxLayout()
-        right.addWidget(self._tabs, 1)
+        right.addWidget(self._views, 1)
         right.addWidget(self._coverage)
         right.addLayout(scrubber)
         right.addWidget(self._frame_status)
@@ -261,6 +300,26 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Select a run to load.")
         if initial_input or self._runs.count():
             self._start_load(initial_input or self._runs.item(0).data(Qt.UserRole))
+
+    # -- how the views are arranged ----------------------------------------
+
+    def _set_view_layout(self, all_at_once):
+        """Move the three views between the tab widget and the tiled splitters.
+
+        The same widget objects either way -- Qt reparents on insert -- so
+        neither the figures nor the deferred-draw state is rebuilt, and the
+        frame you were on survives the switch.
+        """
+        if all_at_once:
+            while self._tabs.count():
+                self._tabs.removeTab(0)
+            self._tiles_top.addWidget(self._frame_panel)
+            self._tiles_top.addWidget(self._trajectory)
+            self._tiles.addWidget(self._scale)
+        else:
+            for widget, name in self._panels:
+                self._tabs.addTab(widget, name)
+        self._views.setCurrentWidget(self._tiles if all_at_once else self._tabs)
 
     # -- loading ------------------------------------------------------------
 
@@ -601,7 +660,9 @@ class MainWindow(QMainWindow):
         else:
             extent = choice          # None means auto-snap per frame
         draw_local_frame(self._ax, view, extent=extent, n_frames=self._data.n_frames,
-                         normalize=normalize)
+                         normalize=normalize,
+                         line_fit_norm=self._data.params.scale_line_fit_norm,
+                         meet_history=self._meet_history.isChecked())
         self._canvas.draw_idle()
         self._coverage.set_index(self._index)
         # The other tabs mark the same frame: its replayed position, and where

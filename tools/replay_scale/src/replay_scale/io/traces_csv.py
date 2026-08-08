@@ -5,7 +5,13 @@ import csv
 import numpy as np
 
 
+def _num(x):
+    return f"{float(x):.9f}" if np.isfinite(x) else "nan"
+
+
 def write_scale_trace_csv(path, scale_trace):
+    # The lateral_* columns are the cross-track half of the same sample, in
+    # units of |comp|; they are all nan unless the correction applies one.
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
         writer.writerow([
@@ -16,16 +22,24 @@ def write_scale_trace_csv(path, scale_trace):
             "scale_filtered",
             "scale_smooth",
             "scale_applied",
+            "lateral_instant_raw",
+            "lateral_filtered",
+            "lateral_smooth",
+            "lateral_applied",
         ])
         for s in scale_trace:
             writer.writerow([
                 s.frame_idx,
                 f"{s.time:.9f}",
                 1 if s.gate_observable else 0,
-                f"{s.scale_instant_raw:.9f}" if np.isfinite(s.scale_instant_raw) else "nan",
-                f"{s.scale_filtered:.9f}" if np.isfinite(s.scale_filtered) else "nan",
-                f"{s.scale_smooth:.9f}" if np.isfinite(s.scale_smooth) else "nan",
-                f"{s.scale_applied:.9f}" if np.isfinite(s.scale_applied) else "nan",
+                _num(s.scale_instant_raw),
+                _num(s.scale_filtered),
+                _num(s.scale_smooth),
+                _num(s.scale_applied),
+                _num(s.lateral_instant_raw),
+                _num(s.lateral_filtered),
+                _num(s.lateral_smooth),
+                _num(s.lateral_applied),
             ])
 
 
@@ -47,10 +61,13 @@ def write_scale_vector_csv(path, vector_trace):
     for _, col in _vec_fields:
         for ax in ("x", "y", "z"):
             header.append(f"{col}/{ax}")
-    header += ["scale_instant_raw", "scale_smooth", "scale_applied"]
+    # meet_point is 2D and in units of |comp|, not metres in the map frame, so
+    # it is not one of the vector fields above.
+    header += ["meet_x", "meet_y",
+               "scale_instant_raw", "scale_smooth", "scale_applied",
+               "lateral_instant_raw", "lateral_smooth", "lateral_applied"]
 
-    def _fs(x):
-        return f"{float(x):.9f}" if np.isfinite(x) else "nan"
+    _fs = _num
 
     def _fv(v):
         return [_fs(c) for c in v]
@@ -67,5 +84,10 @@ def write_scale_vector_csv(path, vector_trace):
             ]
             for attr, _ in _vec_fields:
                 row.extend(_fv(getattr(vf, attr)))
-            row += [_fs(vf.scale_instant_raw), _fs(vf.scale_smooth), _fs(vf.scale_applied)]
+            meet = getattr(vf, "meet_point", None)
+            row += _fv(meet if meet is not None else (np.nan, np.nan))
+            row += [_fs(vf.scale_instant_raw), _fs(vf.scale_smooth), _fs(vf.scale_applied),
+                    _fs(getattr(vf, "lateral_instant_raw", np.nan)),
+                    _fs(getattr(vf, "lateral_smooth", np.nan)),
+                    _fs(getattr(vf, "lateral_applied", np.nan))]
             writer.writerow(row)

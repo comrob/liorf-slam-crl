@@ -23,7 +23,7 @@ class MarkerPlotView(QWidget):
     def __init__(self, parent=None, *, figsize=(7, 7)):
         super().__init__(parent)
         self._figure = Figure(figsize=figsize)
-        self._ax = self._figure.add_subplot(111)
+        self._axes = [self._figure.add_subplot(111)]
         self._canvas = FigureCanvasQTAgg(self._figure)
         # True when the figure changed while hidden; redrawn on showEvent.
         self._dirty = False
@@ -39,7 +39,31 @@ class MarkerPlotView(QWidget):
 
     @property
     def ax(self):
-        return self._ax
+        return self._axes[0]
+
+    @property
+    def axes(self):
+        return self._axes
+
+    def set_rows(self, n, *, height_ratios=None):
+        """Rebuild the figure as ``n`` stacked axes sharing their x axis.
+
+        A no-op when the figure already has that many, so a subclass may call it
+        on every draw. Rebuilding drops every artist, which is why it is not
+        done unconditionally: the marker would go with them.
+
+        ``height_ratios`` is ignored unless it has one entry per row -- a caller
+        that decides its row count per draw should not have to keep a matching
+        ratio tuple in step with it.
+        """
+        if len(self._axes) == n:
+            return self._axes
+        self._figure.clear()
+        gridspec = ({"height_ratios": height_ratios}
+                    if height_ratios and len(height_ratios) == n else None)
+        self._axes = list(self._figure.subplots(
+            n, 1, sharex=n > 1, squeeze=False, gridspec_kw=gridspec)[:, 0])
+        return self._axes
 
     def tight_layout(self):
         self._figure.tight_layout()

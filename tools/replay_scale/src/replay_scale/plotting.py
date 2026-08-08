@@ -29,6 +29,18 @@ KINDS = ("reference", "replay", "auxiliary")
 ANCHOR_COLOR = "tab:blue"
 COMP_COLOR = "tab:green"
 DEGENERATE_COLOR = "tab:orange"
+#: The point the degenerate lines agree on. Green like the complementary arrow
+#: because it is the same kind of quantity -- a displacement from the anchor --
+#: and dashed because it is inferred from the lines rather than measured.
+MEETING_COLOR = "tab:green"
+
+#: How far outside the view the lines may meet before the arrow is dropped, in
+#: view half-widths. Near-parallel lines do meet, but hundreds of metres away
+#: and wherever noise put them; an arrow to that says nothing and moves wildly.
+MEETING_MAX_EXTENTS = 3.0
+
+#: Confidence ellipse drawn around the meeting point, in standard deviations.
+ELLIPSE_SIGMA = 1.0
 
 
 def _screen(v):
@@ -136,7 +148,8 @@ def build_trajectory_figure(curves, *, title="", figsize=(9, 9)):
 # Anchor-frame vector view
 # ---------------------------------------------------------------------------
 
-def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False):
+def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
+                     line_fit_norm="l2", meet_history=False):
     """Draw one :class:`LocalFrameView` into an existing axes.
 
     Clears and redraws ``ax``. ``extent`` is the half-width of the square view;
@@ -149,7 +162,18 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False):
     Frames with no complementary window cannot be normalized and are drawn in
     metres with a note. Applied at draw time, so the view itself is untouched
     and toggling costs a redraw rather than a rebuild.
+
+    ``line_fit_norm`` selects how the degenerate lines' meeting point is fitted,
+    and should be whatever the estimator is configured with, so the point drawn
+    is the one a "lines_meet_*" correction would be read from.
+
+    ``meet_history`` additionally scatters the *estimator's own* meeting point
+    for each frame the overlay looks back at, which is the trail of what the
+    correction has been reading. Those points are each in units of their own
+    frame's |comp|, so they are only comparable in the normalized
+    complementary-aligned view and are silently skipped in any other.
     """
+    from .core.lines import covariance_ellipse, fit_lines
     from .core.local_view import snap_extent
 
     divisor = view.comp_norm if normalize else None
@@ -174,6 +198,10 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False):
     # Normalized, each earlier line is drawn in *its own* normalized geometry so
     # every overlaid frame has its own complementary vector at unit length;
     # frames that had no window cannot be normalized and are dropped.
+    # Collected as they are drawn, so the meeting point below is the one for
+    # the lines actually on screen -- normalized or not, history or not.
+    line_origins, line_directions = [], []
+
     if view.history_lines:
         oldest = max(h.age for h in view.history_lines)
         drawn = 0
@@ -189,6 +217,8 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False):
             ax.plot([sx[0], sy[0]], [sx[1], sy[1]],
                     color=DEGENERATE_COLOR, linewidth=0.9, linestyle=":",
                     alpha=0.15 + 0.35 * fade, zorder=1)
+            line_origins.append(origin)
+            line_directions.append(direction)
             drawn += 1
         if drawn:
             ax.plot([], [], color=DEGENERATE_COLOR, linewidth=0.9, linestyle=":",
@@ -199,6 +229,62 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False):
         ax.plot([sx[0], sy[0]], [sx[1], sy[1]],
                 color=DEGENERATE_COLOR, linewidth=1.4, linestyle="--", zorder=2,
                 label="degenerate direction" if i == 0 else None)
+        line_origins.append(latest_pos)
+        line_directions.append(d)
+
+    # The trail of what the estimator has been reading: one point per earlier
+    # frame in the overlay, each fitted from *that* frame's own line window
+    # rather than from what is on screen. Scattered rather than joined -- they
+    # are independent readings of the same quantity, not a path -- and drawn
+    # under the current frame's point, which is the one being applied.
+    if meet_history and normalized and view.frame == "comp" and view.comp_aligned:
+        points = [(age, p) for age, p in view.meet_history if p is not None]
+        if points:
+            from matplotlib.colors import to_rgba
+
+            oldest = max(age for age, _ in points)
+            xy = np.array([_screen(p) for _, p in points])
+            r, g, b, _ = to_rgba(MEETING_COLOR)
+            # Per-point RGBA rather than an alpha array: same fading rule as the
+            # lines above, without depending on how old the matplotlib is.
+            colors = [(r, g, b, 0.15 + 0.45 * (1.0 - age / (oldest + 1)))
+                      for age, _ in points]
+            ax.scatter(xy[:, 0], xy[:, 1], s=9, marker="o", color=colors,
+                       linewidths=0.0, zorder=2,
+                       label=f"previous meets ({len(points)})")
+
+    # Each line says the truth lies somewhere along it; where they agree is a
+    # position the LiDAR alone could not give, and the arrow to it is directly
+    # comparable with the complementary one it is drawn like. Absent when the
+    # lines are too parallel to meet anywhere in particular -- a straight
+    # stretch of tunnel, where there is genuinely nothing to say.
+    fit = fit_lines(line_origins, line_directions, norm=line_fit_norm)
+    if fit is not None and np.linalg.norm(fit.point) <= MEETING_MAX_EXTENTS * extent:
+        ax.annotate("", xy=_screen(fit.point), xytext=(0.0, 0.0),
+                    arrowprops=dict(arrowstyle="->", color=MEETING_COLOR,
+                                    linewidth=1.6, linestyle="--"),
+                    zorder=3)
+        ax.plot(*_screen(fit.point), marker="x", markersize=8, markeredgewidth=1.6,
+                color=MEETING_COLOR, linestyle="none", zorder=4)
+
+        # How much the lines disagree, drawn where they disagree: a long thin
+        # ellipse means one direction is pinned and the other is a guess, which
+        # a single point would hide entirely.
+        ellipse = covariance_ellipse(fit.covariance, n_sigma=ELLIPSE_SIGMA)
+        if ellipse is not None:
+            screen = np.array([_screen(fit.point + offset) for offset in ellipse])
+            # Filled rather than another dotted outline: normalized frames already
+            # carry a dotted green unit circle, and two green rings would read as
+            # the same kind of thing.
+            ax.fill(screen[:, 0], screen[:, 1], color=MEETING_COLOR, alpha=0.18,
+                    linewidth=0.0, zorder=2,
+                    label=f"{ELLIPSE_SIGMA:g}$\\sigma$ uncertainty")
+            ax.plot(screen[:, 0], screen[:, 1], color=MEETING_COLOR, linewidth=0.8,
+                    alpha=0.8, zorder=3)
+
+        # annotate() arrows never reach the legend, so a proxy carries the label.
+        ax.plot([], [], color=MEETING_COLOR, linewidth=1.6, linestyle="--",
+                label=f"lines meet ({fit.n_lines}, {line_fit_norm})")
 
     if view.has_comp_vec:
         ax.annotate("", xy=_screen(view.comp_vec * k), xytext=(0.0, 0.0),
@@ -251,12 +337,13 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False):
 
 
 def build_local_frame_figure(view, *, extent=None, n_frames=None, normalize=False,
-                             figsize=(7, 7)):
+                             line_fit_norm="l2", meet_history=False, figsize=(7, 7)):
     """Standalone figure for one frame view; for tests and headless use."""
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=figsize)
-    draw_local_frame(ax, view, extent=extent, n_frames=n_frames, normalize=normalize)
+    draw_local_frame(ax, view, extent=extent, n_frames=n_frames, normalize=normalize,
+                     line_fit_norm=line_fit_norm, meet_history=meet_history)
     fig.tight_layout()
     return fig
 
@@ -273,6 +360,11 @@ APPLIED_SCALE_COLOR = "tab:orange"
 UNOBSERVABLE_COLOR = "#d9534f"
 BOUND_COLOR = "tab:red"
 
+#: The cross-track half of the same sample, in its own colour family so the two
+#: coordinates of one point never read as two unrelated scales.
+RAW_LATERAL_COLOR = "#c5b0d5"
+APPLIED_LATERAL_COLOR = "tab:purple"
+
 #: Percentile windows the y-axis is fitted to. The raw ratio reaches 60x on real
 #: runs, so it never sets the limits; the estimate is what has to stay readable.
 #: A linear axis has no decades to absorb the scatter, so it shows less of it.
@@ -281,8 +373,15 @@ _RAW_PERCENTILES_LINEAR = (5.0, 75.0)
 _ESTIMATE_PERCENTILES = (1.0, 99.0)
 
 
+def has_lateral(geometries):
+    """True when any frame carries a cross-track sample worth its own axes."""
+    return any(np.isfinite(getattr(g, "lateral_instant_raw", np.nan))
+               or np.isfinite(getattr(g, "lateral_applied", np.nan))
+               for g in geometries)
+
+
 def draw_scale_history(ax, geometries, *, title="", scale_min=None, scale_max=None,
-                       log_y=False):
+                       lateral_max=None, log_y=False, lateral_ax=None):
     """Draw the scale estimate over the run into an existing axes.
 
     Three curves per frame, all as the estimator produced them: the raw
@@ -290,6 +389,12 @@ def draw_scale_history(ax, geometries, *, title="", scale_min=None, scale_max=No
     the trajectory was actually built with. Frames whose sample failed the
     observability gate are shaded, since that is why the smoothed curve holds
     flat instead of following the raw one.
+
+    Under ``complementaryCorrection: lines_meet_xy`` the sample is a point
+    rather than a number, and its cross-track coordinate is drawn alongside in
+    purple -- raw and applied, against a zero line, since 0 is what "no sideways
+    correction" means there as 1 is for the scale. It is skipped on a log axis,
+    where a signed quantity cannot be drawn.
 
     The axis is linear, so a deviation reads as the number it is. ``log_y``
     switches to a logarithmic one, which is the axis a *ratio* deserves -- 2 and
@@ -299,6 +404,12 @@ def draw_scale_history(ax, geometries, *, title="", scale_min=None, scale_max=No
 
     ``scale_min``/``scale_max`` draw the configured sample bounds when finite.
     Clears and redraws ``ax``; returns it.
+
+    ``lateral_ax`` moves the cross-track curves onto their own axes instead of
+    sharing these -- the two coordinates are different quantities, one centred
+    on 1 and one on 0, and stacking them under a shared time axis reads better
+    than overlaying them. Pass None to overlay, which is what a single-axes
+    figure does.
     """
     ax.clear()
 
@@ -308,6 +419,19 @@ def draw_scale_history(ax, geometries, *, title="", scale_min=None, scale_max=No
     smooth = np.array([g.scale_smooth for g in geometries], dtype=float)
     applied = np.array([g.scale_applied for g in geometries], dtype=float)
     observable = np.array([bool(g.gate_observable) for g in geometries])
+
+    def _series(attr):
+        return np.array([getattr(g, attr, np.nan) for g in geometries], dtype=float)
+
+    lateral_raw = _series("lateral_instant_raw")
+    lateral_applied = _series("lateral_applied")
+    # Only worth drawing when something produced one; the other corrections
+    # leave these all-NaN. On its own axes it survives a log scale change,
+    # which a signed quantity sharing a log axis could not.
+    have_lateral = bool(np.any(np.isfinite(lateral_applied))
+                        or np.any(np.isfinite(lateral_raw)))
+    show_lateral = have_lateral and (lateral_ax is not None or not log_y)
+    overlaid = show_lateral and lateral_ax is None
 
     if t.size:
         # One artist rather than a span per frame: runs have thousands of them.
@@ -335,29 +459,101 @@ def draw_scale_history(ax, geometries, *, title="", scale_min=None, scale_max=No
     ax.plot(t, applied, color=APPLIED_SCALE_COLOR, linewidth=1.3, linestyle="--",
             zorder=3, label="applied")
 
+    if overlaid:
+        # 0 is this coordinate's 1: the odometry pointing exactly where the
+        # lines say the robot went.
+        ax.axhline(0.0, color="0.45", linewidth=0.9, zorder=0)
+        ax.plot(t, lateral_raw, color=RAW_LATERAL_COLOR, linewidth=0.7, zorder=1,
+                label="lateral raw")
+        ax.plot(t, lateral_applied, color=APPLIED_LATERAL_COLOR, linewidth=1.3,
+                linestyle="--", zorder=3, label="lateral applied")
+
     if log_y:
         ax.set_yscale("log")
-    ax.set_xlabel("t [s]")
-    ax.set_ylabel("scale" + ("  (log)" if log_y else ""))
+    # The shared time axis belongs to whichever plot is at the bottom.
+    ax.set_xlabel("" if show_lateral and not overlaid else "t [s]")
+    ax.set_ylabel(("scale / lateral [|comp|]" if overlaid else "scale")
+                  + ("  (log)" if log_y else ""))
     ax.set_title(title)
     ax.grid(True, which="both", linestyle=":", linewidth=0.5)
     if t.size:
         ax.set_xlim(float(t[0]), float(t[-1]) if t[-1] > t[0] else float(t[0]) + 1.0)
     ax.set_ylim(*scale_axis_limits(raw, smooth, applied,
+                                   lateral=((lateral_raw, lateral_applied)
+                                            if overlaid else ()),
                                    bounds=(scale_min, scale_max), log=log_y))
-    # Duplicate labels: both bounds share one, and every curve is one artist.
-    handles, labels = ax.get_legend_handles_labels()
-    unique = dict(zip(labels, handles))
-    ax.legend(unique.values(), unique.keys(), loc="upper right", fontsize="small", ncol=2)
+    _legend(ax)
+
+    if show_lateral and not overlaid:
+        draw_lateral_history(lateral_ax, geometries, lateral_max=lateral_max)
     return ax
 
 
-def scale_axis_limits(raw, smooth, applied, *, bounds=(None, None), log=False):
+def draw_lateral_history(ax, geometries, *, lateral_max=None):
+    """Draw the cross-track half of the correction into its own axes.
+
+    The companion of :func:`draw_scale_history` under a shared time axis: same
+    frames, same observability shading, the other coordinate of the same point.
+    Read against 0 rather than 1 -- zero is the odometry already pointing where
+    the lines say the robot went -- and always linear, since it is signed.
+
+    Clears and redraws ``ax``; returns it.
+    """
+    ax.clear()
+
+    t = np.array([g.time for g in geometries], dtype=float)
+    t = t - t[0] if t.size else t
+    raw = np.array([getattr(g, "lateral_instant_raw", np.nan) for g in geometries],
+                   dtype=float)
+    applied = np.array([getattr(g, "lateral_applied", np.nan) for g in geometries],
+                       dtype=float)
+    observable = np.array([bool(g.gate_observable) for g in geometries])
+
+    if t.size:
+        from matplotlib.transforms import blended_transform_factory
+
+        ax.fill_between(t, 0.0, 1.0, where=~observable, step="mid",
+                        transform=blended_transform_factory(ax.transData, ax.transAxes),
+                        color=UNOBSERVABLE_COLOR, alpha=0.10, linewidth=0,
+                        label="not observable")
+
+    ax.axhline(0.0, color="0.45", linewidth=0.9, zorder=0)
+    for bound in (lateral_max, -lateral_max if lateral_max is not None else None):
+        if bound is not None and np.isfinite(bound):
+            ax.axhline(bound, color=BOUND_COLOR, linewidth=0.9, linestyle="--",
+                       alpha=0.7, zorder=0, label="sample bound")
+
+    ax.plot(t, raw, color=RAW_LATERAL_COLOR, linewidth=0.7, zorder=1,
+            label="lateral raw")
+    ax.plot(t, applied, color=APPLIED_LATERAL_COLOR, linewidth=1.3, linestyle="--",
+            zorder=3, label="lateral applied")
+
+    ax.set_xlabel("t [s]")
+    ax.set_ylabel("lateral [|comp|]")
+    ax.grid(True, which="both", linestyle=":", linewidth=0.5)
+    if t.size:
+        ax.set_xlim(float(t[0]), float(t[-1]) if t[-1] > t[0] else float(t[0]) + 1.0)
+    ax.set_ylim(*lateral_axis_limits(raw, applied, bound=lateral_max))
+    _legend(ax)
+    return ax
+
+
+def _legend(ax):
+    """Legend without the duplicates two bounds and one shading produce."""
+    handles, labels = ax.get_legend_handles_labels()
+    unique = dict(zip(labels, handles))
+    ax.legend(unique.values(), unique.keys(), loc="upper right", fontsize="small", ncol=2)
+
+
+def scale_axis_limits(raw, smooth, applied, *, lateral=(), bounds=(None, None), log=False):
     """A y-range that keeps the estimate readable, letting the raw ratio clip.
 
     Fitted to the bulk of each series rather than to its extremes -- one 60x
     sample would otherwise squash the rest flat -- and always including 1.0,
     which is what the curves are read against.
+
+    ``lateral`` are cross-track series, which are signed: including any of them
+    lifts the floor at zero that a scale-only axis keeps.
     """
     def percentiles(series, window):
         finite = series[np.isfinite(series)]
@@ -369,6 +565,11 @@ def scale_axis_limits(raw, smooth, applied, *, bounds=(None, None), log=False):
     for series in (smooth, applied):
         values += percentiles(series, _ESTIMATE_PERCENTILES)
     values += percentiles(raw, _RAW_PERCENTILES_LOG if log else _RAW_PERCENTILES_LINEAR)
+    signed = False
+    for series in lateral:
+        found = percentiles(np.asarray(series, dtype=float), _ESTIMATE_PERCENTILES)
+        values += found
+        signed = signed or bool(found)
     for bound in bounds:
         if bound is not None and np.isfinite(bound) and bound > 0.0:
             values.append(float(bound))
@@ -380,16 +581,49 @@ def scale_axis_limits(raw, smooth, applied, *, bounds=(None, None), log=False):
     if hi - lo < 1e-9:
         lo, hi = lo - 0.5, hi + 0.5
     margin = 0.1 * (hi - lo)
-    return max(0.0, lo - margin), hi + margin
+    floor = lo - margin if signed else max(0.0, lo - margin)
+    return floor, hi + margin
+
+
+def lateral_axis_limits(raw, applied, *, bound=None):
+    """A symmetric y-range around 0 for the cross-track curves.
+
+    Symmetric because the quantity is a direction: left and right are the same
+    size of error, and an axis that says otherwise reads as a trend. Fitted to
+    the bulk of the raw samples, which have the same heavy tail the scale does.
+    """
+    values = [0.05]
+    for series, window in ((applied, _ESTIMATE_PERCENTILES), (raw, (5.0, 95.0))):
+        finite = np.asarray(series, dtype=float)
+        finite = finite[np.isfinite(finite)]
+        if finite.size:
+            values += [abs(float(v)) for v in np.percentile(finite, window)]
+    if bound is not None and np.isfinite(bound):
+        values.append(abs(float(bound)))
+    reach = max(values) * 1.15
+    return -reach, reach
 
 
 def build_scale_history_figure(geometries, *, title="", scale_min=None, scale_max=None,
-                               log_y=False, figsize=(9, 5)):
-    """Standalone figure of the scale history; for tests and headless use."""
+                               lateral_max=None, log_y=False, split=True,
+                               figsize=(9, 5)):
+    """Standalone figure of the scale history; for tests and headless use.
+
+    Two stacked plots on a shared time axis when the correction produced a
+    cross-track coordinate, one otherwise. ``split=False`` overlays them on one
+    axes instead, which is what a figure too short for two panels wants.
+    """
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=figsize)
+    if split and has_lateral(geometries):
+        fig, (ax, lateral_ax) = plt.subplots(
+            2, 1, figsize=figsize, sharex=True,
+            gridspec_kw={"height_ratios": [2, 1]})
+    else:
+        fig, ax = plt.subplots(figsize=figsize)
+        lateral_ax = None
     draw_scale_history(ax, geometries, title=title, scale_min=scale_min,
-                       scale_max=scale_max, log_y=log_y)
+                       scale_max=scale_max, lateral_max=lateral_max, log_y=log_y,
+                       lateral_ax=lateral_ax)
     fig.tight_layout()
     return fig

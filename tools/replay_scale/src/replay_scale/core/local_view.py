@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from .lines import closest_point_to_lines  # noqa: F401  (re-exported for the view's users)
 from .se3 import orthonormal_translation_basis
 
 #: Below this the in-plane part of a degenerate axis is meaningless to draw.
@@ -111,9 +112,17 @@ class FrameGeometry:
     # Degenerate translational directions, map frame, unit length. Empty when
     # the frame carries no usable basis -- independent of has_window.
     degenerate_axes_map: list = field(default_factory=list)
+    # (cx, cy) where this frame's degenerate lines met, in its own
+    # complementary-aligned |comp| = 1 geometry. None when they did not meet, or
+    # when the estimator was not fitting them. Not a map-frame quantity: it only
+    # means anything in that normalized frame, which is where the view draws it.
+    meet_point: np.ndarray = None      # 2
     scale_instant_raw: float = float("nan")
     scale_smooth: float = float("nan")
     scale_applied: float = float("nan")
+    lateral_instant_raw: float = float("nan")
+    lateral_smooth: float = float("nan")
+    lateral_applied: float = float("nan")
 
     @property
     def t_lidar_map(self):
@@ -157,6 +166,13 @@ class LocalFrameView:
     degenerate_dirs: list = field(default_factory=list)
     #: Earlier frames' degenerate lines, re-expressed in this view's frame.
     history_lines: list = field(default_factory=list)
+    #: Where the estimator's fit put the robot on this frame, as (cx, cy) in the
+    #: complementary-aligned |comp| = 1 geometry. None when it did not fit one.
+    meet_point: np.ndarray = None          # 2
+    #: The same for the frames the overlay looks back at, as (age, point) pairs,
+    #: newest first. Only comparable in that normalized frame -- each pair is in
+    #: units of its own frame's |comp| -- so it is drawn nowhere else.
+    meet_history: list = field(default_factory=list)
     #: Degenerate axes that exist but are too close to vertical to draw.
     n_out_of_plane_axes: int = 0
     #: True when frame == "comp" and there was a complementary vector to align
@@ -164,6 +180,9 @@ class LocalFrameView:
     comp_aligned: bool = False
     scale_applied: float = float("nan")
     scale_instant_raw: float = float("nan")
+    #: Cross-track part of what was applied, in units of |comp|. NaN unless the
+    #: correction actually applies one.
+    lateral_applied: float = float("nan")
 
     @property
     def has_comp_vec(self):
@@ -205,7 +224,10 @@ class LocalFrameView:
         else:
             bits.append("not degenerate")
         if np.isfinite(self.scale_applied):
-            bits.append(f"scale applied = {self.scale_applied:.4f}")
+            applied = f"scale applied = {self.scale_applied:.4f}"
+            if np.isfinite(self.lateral_applied):
+                applied += f"  (lateral {self.lateral_applied:+.4f})"
+            bits.append(applied)
         return "  |  ".join(bits)
 
 
@@ -238,6 +260,9 @@ def geometry_from_replay(frames, trajectory, vector_trace):
         axes_map = [T_latest[:3, :3] @ u for u in orthonormal_translation_basis(basis)]
 
         has_window = bool(np.all(np.isfinite(vf.t_comp_map)))
+        meet_point = getattr(vf, "meet_point", None)
+        if meet_point is not None and not np.all(np.isfinite(meet_point)):
+            meet_point = None
         out.append(FrameGeometry(
             frame_idx=k,
             time=float(f.time),
@@ -251,9 +276,14 @@ def geometry_from_replay(frames, trajectory, vector_trace):
             latest_p=T_latest[:3, 3].copy(),
             t_comp_map=np.array(vf.t_comp_map, dtype=float),
             degenerate_axes_map=axes_map,
+            meet_point=(np.array(meet_point, dtype=float)
+                        if meet_point is not None else None),
             scale_instant_raw=float(vf.scale_instant_raw),
             scale_smooth=float(vf.scale_smooth),
             scale_applied=float(vf.scale_applied),
+            lateral_instant_raw=float(getattr(vf, "lateral_instant_raw", np.nan)),
+            lateral_smooth=float(getattr(vf, "lateral_smooth", np.nan)),
+            lateral_applied=float(getattr(vf, "lateral_applied", np.nan)),
         ))
     return out
 
@@ -391,7 +421,12 @@ def _build_view(g, t0, frame, geometries, past_indices):
 
     # Each earlier frame's line was computed against *its own* anchor, so it has
     # to be re-referenced to this frame's anchor before it can share the axes.
+    # Their meeting points cannot be: each is already in units of its own
+    # frame's |comp|, which is the one frame they are all comparable in.
     history_lines = []
+    meet_history = [(g.frame_idx - geometries[j].frame_idx, geometries[j].meet_point)
+                    for j in reversed(past_indices)
+                    if geometries[j].meet_point is not None]
     for j in past_indices:
         gj = geometries[j]
         to_local_j = _to_local(gj.anchor_R, frame)
@@ -433,8 +468,11 @@ def _build_view(g, t0, frame, geometries, past_indices):
         latest_pos=latest_pos,
         degenerate_dirs=dirs,
         history_lines=history_lines,
+        meet_point=g.meet_point,
+        meet_history=meet_history,
         comp_aligned=align is not None,
         n_out_of_plane_axes=out_of_plane,
         scale_applied=g.scale_applied,
         scale_instant_raw=g.scale_instant_raw,
+        lateral_applied=g.lateral_applied,
     )

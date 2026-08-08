@@ -11,13 +11,23 @@ from collections import deque
 
 import numpy as np
 
-from .model import SMOOTHING_MODES, ScaleEstimateFrame, ScaleVectorFrame
+from .lines import fit_lines
+from .model import (
+    LINES_MEET_CORRECTIONS,
+    SMOOTHING_MODES,
+    ScaleEstimateFrame,
+    ScaleVectorFrame,
+)
 from .se3 import (
     exp_map,
+    orthonormal_translation_basis,
     project_degenerate_correction,
     project_degenerate_correction_translation,
     project_onto_basis_translation,
 )
+
+#: Below this an in-plane degenerate direction is numerically meaningless.
+_MIN_INPLANE_DIR = 1e-6
 
 
 #: Tukey fence width for the "trimmed" mode, in interquartile ranges. The
@@ -28,6 +38,161 @@ IQR_FENCE_K = 1.5
 #: Below this many samples the quartiles are not meaningful and "trimmed"
 #: cannot distinguish a tail from the data.
 _MIN_TRIM_SAMPLES = 4
+
+
+def own_normalized_line(t_lidar_local, t_comp_local, basis):
+    """One frame's degenerate line, expressed so frames can be compared.
+
+    Rotated so the complementary displacement points along +x and divided by its
+    length, which puts every frame in the same units and the same orientation --
+    the geometry the viewer draws with ``|comp| = 1`` in the complementary frame.
+    The line runs through the LiDAR's latest position along the degenerate
+    direction. Returns ``(origin, direction)`` as 2-vectors, or None when the
+    frame has no complementary vector to align to, or no in-plane degenerate
+    direction to draw.
+    """
+    axes = orthonormal_translation_basis(basis)
+    if not axes:
+        return None
+
+    c = np.asarray(t_comp_local, dtype=float)[:2]
+    comp_norm = float(np.linalg.norm(c))
+    if comp_norm < 1e-6:
+        return None
+
+    # Rotation taking the complementary displacement onto +x.
+    cos_a, sin_a = c / comp_norm
+    R = np.array([[cos_a, sin_a], [-sin_a, cos_a]])
+
+    direction = R @ np.asarray(axes[0], dtype=float)[:2]
+    dir_norm = float(np.linalg.norm(direction))
+    if dir_norm < _MIN_INPLANE_DIR:
+        return None
+
+    origin = (R @ np.asarray(t_lidar_local, dtype=float)[:2]) / comp_norm
+    return origin, direction / dir_norm
+
+
+def strided_lines(history, size, step):
+    """The most recent ``size`` lines from ``history``, every ``step``-th.
+
+    Newest first, which is the order the fit is least surprised by and the same
+    rule the viewer's history overlay uses. Consecutive frames' lines are nearly
+    identical, so the stride is what turns a fixed number of lines into a long
+    span -- and span, not count, is what makes lines meet.
+    """
+    return list(history)[::-1][::max(1, int(step))][:max(0, int(size))]
+
+
+def line_x_axis_scale(line):
+    """Where one frame's own degenerate line crosses the complementary axis.
+
+    The same normalized geometry as everything else here: the complementary
+    displacement is (1, 0), and the line runs through the LiDAR's position along
+    the degenerate direction. Where it crosses y = 0 it is saying "if the robot
+    went straight along the odometry's own direction, it went this far per unit
+    the odometry claimed" -- a scale, from one frame, with no history at all.
+
+    This is the ratio measured on the picture instead of in the node's algebra.
+    In the plane with a single degenerate direction the two agree exactly, up
+    to one thing: with normal ``n`` perpendicular to the direction ``u``, the
+    node computes ``|p.n| / |comp.n|`` while this is ``(p.n) / (comp.n)``. Both
+    quotients are of the same two numbers; taking the norms first throws away
+    the sign. So where the geometry says the robot went *backwards* relative to
+    the odometry, the node reports the distance as a positive scale and this
+    reports nan -- a negative scale is not a scale.
+
+    nan also when the line is parallel to the axis and never crosses it, which
+    is the frame saying nothing about how far along the odometry's direction
+    the robot went.
+    """
+    if line is None:
+        return np.nan
+    origin, direction = line
+    if abs(float(direction[1])) < _MIN_INPLANE_DIR:
+        return np.nan
+    crossing = float(origin[0]) - float(origin[1]) * float(direction[0]) / float(direction[1])
+    return crossing if crossing > 0.0 else np.nan
+
+
+def line_meet_point(lines, *, norm="l2"):
+    """Where the recent degenerate lines put the robot, or None.
+
+    Each line is one frame saying "the truth lies somewhere along here", drawn
+    in units of that frame's own complementary displacement. Where they meet is
+    therefore the robot's position from the anchor *in units of |comp|*, in the
+    frame where the complementary displacement is (1, 0):
+
+    ``x``
+        how far the robot really went along the odometry's own direction, per
+        unit it claimed -- which is exactly what a scale means.
+    ``y``
+        how far it went *sideways* of that direction. No scale can express
+        this: a scale can only make the odometry's own vector longer or
+        shorter. It is what a lateral odometry error looks like.
+
+    Unlike the ratio, this does not need the LiDAR displacement to be observable
+    in the direction being scaled. It needs the lines to have turned relative to
+    each other, which is a property of the trajectory rather than of one frame.
+
+    None when the lines are too parallel to meet anywhere, or when they meet
+    behind the anchor: a negative along-track coordinate is not a scale, it is
+    the fit telling you the lines disagree with the direction of travel.
+    """
+    fit = fit_lines([o for o, _ in lines], [d for _, d in lines], norm=norm)
+    if fit is None or fit.point[0] <= 0.0:
+        return None
+    return fit.point
+
+
+def line_meet_scale(lines, *, norm="l2"):
+    """The along-complementary coordinate of :func:`line_meet_point`, or nan."""
+    point = line_meet_point(lines, norm=norm)
+    return np.nan if point is None else float(point[0])
+
+
+def apply_scale_correction(t_comp, scale):
+    """The node's own correction: the whole displacement, scaled.
+
+    Direction untouched, including the vertical component -- the scale is a
+    single number and cannot say anything about direction.
+    """
+    return np.asarray(t_comp, dtype=float) * float(scale)
+
+
+def apply_similarity_correction(t_comp, scale, lateral):
+    """Correct a complementary displacement with a whole meeting point.
+
+    ``scale`` and ``lateral`` are the meeting point ``(cx, cy)``: where the
+    lines put the robot, in units of |comp|, in the frame where this
+    displacement is ``(d, 0)``. Carrying that back into metres gives
+    ``(d*cx, d*cy)`` in the same frame, so with the displacement's own in-plane
+    direction ``e_x`` and its left normal ``e_y``:
+
+        t_corrected = d * (cx * e_x + cy * e_y)
+
+    which is the vector to the meeting point -- the odometry's arrow moved onto
+    where the lines say the robot ended up. It both stretches and *turns* the
+    displacement, and ``lateral = 0`` recovers the scale-only correction in the
+    plane exactly.
+
+    z is left as it was: the fit is a 2D one and has nothing to say about it.
+    A displacement with no in-plane direction to align to is returned unchanged
+    for the same reason -- there is no frame to read (cx, cy) in.
+    """
+    t = np.array(t_comp, dtype=float)
+    inplane = t[:2]
+    d = float(np.linalg.norm(inplane))
+    if d < _MIN_INPLANE_DIR:
+        return t
+    e_x = inplane / d
+    e_y = np.array([-e_x[1], e_x[0]])       # +90 degrees, i.e. to the left
+    t[:2] = d * (float(scale) * e_x + float(lateral) * e_y)
+    return t
+
+
+def _clamped(value, low, high):
+    return min(max(value, low), high)
 
 
 def smoothed_scale(history, mode="mean"):
@@ -230,6 +395,12 @@ def build_additional_odom_scale_sample(
     if comp_nondeg_norm > 1e-6:
         scale_instant_raw = lidar_proj_norm / comp_nondeg_norm
 
+    # This frame's degenerate line in its own complementary-aligned, |comp| = 1
+    # geometry -- the same one the viewer superimposes when normalized, which is
+    # what makes lines from different frames comparable at all. Returned whether
+    # or not anything wants it; see line_meet_scale for what it is for.
+    own_line = own_normalized_line(t_lidar_latest_local, t_comp_latest_local, basis)
+
     # Intentional divergence from the node. It gates on
     # |t_lidar_nondeg_proj| / dt_complementary: the LiDAR displacement projected
     # onto the *complementary* non-degenerate direction, over the complementary
@@ -266,6 +437,9 @@ def build_additional_odom_scale_sample(
         "gate_observable": bool(gate_observable),
         "scale_instant_raw": float(scale_instant_raw),
         "scale_filtered": float(scale_filtered),
+        # (origin, direction) in this frame's own |comp| = 1 geometry, or None
+        # when it has no drawable degenerate line to contribute.
+        "own_line": own_line,
     }
     if debug:
         result["debug"] = {
@@ -290,6 +464,15 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
       accumulated up to frame k-1.
     - In replay, estimation is always on; only application is gated by
       ``scaleEstimationApply``.
+
+    ``params.complementary_correction`` decides what is applied to the
+    complementary displacement: the node's ratio, the along-track coordinate of
+    the lines' meeting point, or that whole point -- see
+    :data:`~replay_scale.core.model.COMPLEMENTARY_CORRECTIONS`. Only the last
+    can turn the displacement as well as stretch it; all three go through the
+    same gate, the same clamp and the same smoothing window, and all three fall
+    back to the last value that window agreed on when a frame produces no
+    sample.
     """
     if not frames:
         return [], [], []
@@ -303,6 +486,23 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
     baseline_lag = max(1, int(params.scale_baseline_frame_lag))
     lidar_pose_buffer = deque()  # tuples: (frame_idx, stamp, T_effective)
     lagged_scale_filtered_history = deque()
+    # The cross-track half of the same samples, kept in lockstep with it: the
+    # pair is one observation of where the lines put the robot, and smoothing
+    # the two over different windows would apply a mixture of two answers.
+    lagged_lateral_filtered_history = deque()
+    # Earlier frames' degenerate lines, each in its own |comp| = 1 geometry.
+    # Past frames only, like every other window here: the line for frame k is
+    # appended after frame k's sample is taken.
+    line_history = deque()
+    line_history_size = max(0, int(params.scale_line_history))
+    line_history_step = max(1, int(params.scale_line_history_step))
+
+    correction = params.complementary_correction
+    uses_lines = correction in LINES_MEET_CORRECTIONS
+    uses_own_line = correction == "line_x_axis"
+    corrects_laterally = correction == "lines_meet_xy"
+    scale_min, scale_max = float(params.scale_min), float(params.scale_max)
+    lateral_max = abs(float(params.scale_lateral_max))
 
     n = len(frames)
     comp_step_rel = [None] * n  # index k stores rel transform from k-1 -> k.
@@ -321,6 +521,16 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
         has_applied_scale = scale_apply_enabled and np.isfinite(smoothed_scale_for_apply)
         scale_applied = float(smoothed_scale_for_apply) if has_applied_scale else 1.0
 
+        # Zero is this one's identity, as 1 is the scale's: no sideways
+        # correction at all. Held from the same window, so a stretch where the
+        # lines say nothing keeps applying the last pair they did agree on.
+        smoothed_lateral_for_apply = np.nan
+        if corrects_laterally and scale_apply_enabled and len(lagged_lateral_filtered_history) > 0:
+            smoothed_lateral_for_apply = smoothed_scale(
+                lagged_lateral_filtered_history, params.scale_smoothing_mode)
+        lateral_applied = (float(smoothed_lateral_for_apply)
+                           if np.isfinite(smoothed_lateral_for_apply) else 0.0)
+
         T_optimized = T_prev @ exp_map(f.lidar_increment, 1.0)
         _pin_logged_orientation(T_optimized, f)
         T_comp_scaled_abs = T_prev.copy()
@@ -336,7 +546,20 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
 
             T_comp_rel_unscaled = exp_map(xi_comp, dt_pred)
             T_comp_rel_scaled = T_comp_rel_unscaled.copy()
-            T_comp_rel_scaled[:3, 3] *= scale_applied
+            # Applied to this one frame's step in its own frame, not to the
+            # window the pair was measured over. That is what the overlay the
+            # pair comes from already assumes: every frame is normalized by its
+            # own |comp| and turned so its own odometry is +x before the lines
+            # are superimposed, which only means anything if the error is a
+            # fixed multiple of |comp| in a fixed direction relative to the
+            # odometry -- i.e. a per-step, body-frame quantity. It is also the
+            # form apply_complementary_drift injects an error in.
+            if corrects_laterally:
+                T_comp_rel_scaled[:3, 3] = apply_similarity_correction(
+                    T_comp_rel_unscaled[:3, 3], scale_applied, lateral_applied)
+            else:
+                T_comp_rel_scaled[:3, 3] = apply_scale_correction(
+                    T_comp_rel_unscaled[:3, 3], scale_applied)
 
             T_comp_scaled_abs = T_prev @ T_comp_rel_scaled
 
@@ -362,6 +585,9 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
         gate_observable = False
         scale_instant_raw = np.nan
         scale_filtered = np.nan
+        lateral_instant_raw = np.nan
+        lateral_filtered = np.nan
+        meet_point = None
         debug_vecs = None
 
         # Port of lagged scale update path: if buffer has anchor/current pair,
@@ -395,25 +621,74 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                     bool(params.ignore_dz),
                     dt_comp_window,
                     float(params.scale_min_nondegenerate_speed),
-                    scale_min=float(params.scale_min),
-                    scale_max=float(params.scale_max),
+                    scale_min=scale_min,
+                    scale_max=scale_max,
                     dt_lidar_s=dt_lidar_window,
                     debug=collect_vectors,
                 )
                 gate_observable = sample["gate_observable"]
                 scale_instant_raw = sample["scale_instant_raw"]
                 scale_filtered = sample["scale_filtered"]
+
+                own_line = sample["own_line"]
+                # Where this frame's line and the recent ones agree. Fitted
+                # whenever there is a history to fit through, whatever the
+                # correction is: the viewer draws its trail as a diagnostic
+                # even while the ratio is what gets applied. scaleLineHistory: 0
+                # is what turns it off.
+                if line_history_size:
+                    past = strided_lines(line_history, line_history_size,
+                                         line_history_step)
+                    lines = ([own_line] if own_line else []) + past
+                    meet_point = line_meet_point(
+                        lines, norm=params.scale_line_fit_norm)
+
+                if uses_lines or uses_own_line:
+                    # The ratio computed above is replaced, not blended: they
+                    # are two answers to the same question and mixing them would
+                    # hide which one is speaking.
+                    if uses_own_line:
+                        scale_instant_raw = line_x_axis_scale(own_line)
+                    else:
+                        scale_instant_raw = (float(meet_point[0])
+                                             if meet_point is not None else np.nan)
+                    # A line that met nowhere -- or never crossed the axis -- is
+                    # no sample at all; saying it was observable would make the
+                    # coverage strip lie. Nothing is appended, so the filter
+                    # keeps applying what the last frames that did answer said.
+                    gate_observable = gate_observable and np.isfinite(scale_instant_raw)
+                    scale_filtered = (_clamped(scale_instant_raw, scale_min, scale_max)
+                                      if gate_observable else np.nan)
+                    if corrects_laterally and meet_point is not None:
+                        lateral_instant_raw = float(meet_point[1])
+                        if gate_observable:
+                            lateral_filtered = _clamped(
+                                lateral_instant_raw, -lateral_max, lateral_max)
+
+                if own_line is not None and line_history_size:
+                    line_history.append(own_line)
+                    # Deep enough that the stride can reach back the full span.
+                    while len(line_history) > line_history_size * line_history_step:
+                        line_history.popleft()
                 if collect_vectors:
                     debug_vecs = sample.get("debug")
 
                 if np.isfinite(scale_filtered):
                     lagged_scale_filtered_history.append(float(scale_filtered))
-                while len(lagged_scale_filtered_history) > max(1, int(params.scale_smoothing_window_size)):
+                    if corrects_laterally:
+                        lagged_lateral_filtered_history.append(float(lateral_filtered))
+                window = max(1, int(params.scale_smoothing_window_size))
+                while len(lagged_scale_filtered_history) > window:
                     lagged_scale_filtered_history.popleft()
+                while len(lagged_lateral_filtered_history) > window:
+                    lagged_lateral_filtered_history.popleft()
 
         scale_smooth = (smoothed_scale(lagged_scale_filtered_history,
                                         params.scale_smoothing_mode)
                         if lagged_scale_filtered_history else np.nan)
+        lateral_smooth = (smoothed_scale(lagged_lateral_filtered_history,
+                                         params.scale_smoothing_mode)
+                          if lagged_lateral_filtered_history else np.nan)
         scale_trace.append(ScaleEstimateFrame(
             frame_idx=k,
             time=float(f.time),
@@ -422,6 +697,12 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
             scale_filtered=float(scale_filtered),
             scale_smooth=float(scale_smooth),
             scale_applied=float(scale_applied),
+            lateral_instant_raw=float(lateral_instant_raw),
+            lateral_filtered=float(lateral_filtered),
+            lateral_smooth=float(lateral_smooth),
+            # NaN rather than 0 when nothing is being corrected sideways: 0 is a
+            # measurement ("the lines say straight ahead"), absence is not.
+            lateral_applied=(float(lateral_applied) if corrects_laterally else np.nan),
         ))
         if collect_vectors:
             _nan3 = np.full(3, np.nan)
@@ -449,9 +730,14 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                               "t_lidar_nondeg_map", "t_comp_nondeg_map",
                               "t_lidar_nondeg_proj_map", "nondeg_axis_map"):
                     setattr(vf, _attr, _nan3.copy())
+            vf.meet_point = (np.array(meet_point, dtype=float)
+                             if meet_point is not None else np.full(2, np.nan))
             vf.scale_instant_raw = float(scale_instant_raw)
             vf.scale_smooth = float(scale_smooth)
             vf.scale_applied = float(scale_applied)
+            vf.lateral_instant_raw = float(lateral_instant_raw)
+            vf.lateral_smooth = float(lateral_smooth)
+            vf.lateral_applied = (float(lateral_applied) if corrects_laterally else np.nan)
             vector_trace.append(vf)
 
         T_prev = T_effective
