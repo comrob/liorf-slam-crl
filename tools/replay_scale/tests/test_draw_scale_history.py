@@ -1,8 +1,10 @@
 """What the scale tab puts on the axes.
 
-Uses the Agg backend and inspects artists rather than pixels. The y-range is
-the part worth pinning: on a real run the raw ratio reaches 60x, and a naive
-fit to the data flattens the curves that are actually being read into one line.
+Uses the Agg backend and inspects artists rather than pixels -- and never their
+label text, which is wording and changes whenever the plot is explained better.
+Series are found by the colour constant they are drawn with. The y-range is the
+part worth pinning: on a real run the raw ratio reaches 60x, and a naive fit to
+the data flattens the curves that are actually being read into one line.
 """
 
 import matplotlib
@@ -13,6 +15,12 @@ matplotlib.use("Agg")
 
 from replay_scale.core.local_view import FrameGeometry  # noqa: E402
 from replay_scale.plotting import (  # noqa: E402
+    APPLIED_LATERAL_COLOR,
+    APPLIED_SCALE_COLOR,
+    BOUND_COLOR,
+    RAW_LATERAL_COLOR,
+    RAW_SCALE_COLOR,
+    SMOOTH_SCALE_COLOR,
     build_scale_history_figure,
     draw_scale_history,
     scale_axis_limits,
@@ -38,8 +46,15 @@ def _axes(geometries, **kwargs):
     return fig.axes[0]
 
 
-def _labels(ax):
-    return {t.get_text() for t in ax.get_legend().get_texts()}
+def _series(ax, color):
+    """The drawn curve in this colour, or None."""
+    return next((l for l in ax.lines if l.get_color() == color), None)
+
+
+def _legend_entries(ax, color):
+    """How many legend rows are drawn in this colour."""
+    return sum(1 for handle in ax.get_legend().legend_handles
+               if getattr(handle, "get_color", lambda: None)() == color)
 
 
 # ---------------------------------------------------------------------------
@@ -47,15 +62,16 @@ def _labels(ax):
 # ---------------------------------------------------------------------------
 
 def test_all_three_series_are_drawn():
+    """Raw, smoothed and applied: reading them against each other is the plot."""
     ax = _axes(_geometries())
-    assert {"instant raw", "smoothed estimate", "applied"} <= _labels(ax)
+    for color in (RAW_SCALE_COLOR, SMOOTH_SCALE_COLOR, APPLIED_SCALE_COLOR):
+        assert _series(ax, color) is not None
 
 
 def test_the_x_axis_is_time_from_the_start_of_the_run():
     """Frame indices would not line up with anything else the run is read by."""
     ax = _axes(_geometries(n=50))          # 0.1 s apart, starting at t = 0
-    line = next(l for l in ax.lines if l.get_label() == "applied")
-    xs = line.get_xdata()
+    xs = _series(ax, APPLIED_SCALE_COLOR).get_xdata()
     assert xs[0] == pytest.approx(0.0)
     assert xs[-1] == pytest.approx(4.9)
 
@@ -64,7 +80,7 @@ def test_time_is_relative_even_when_stamps_are_absolute():
     geoms = _geometries(n=10)
     for g in geoms:
         g.time += 1_700_000_000.0
-    line = next(l for l in _axes(geoms).lines if l.get_label() == "applied")
+    line = _series(_axes(geoms), APPLIED_SCALE_COLOR)
     assert line.get_xdata()[0] == pytest.approx(0.0)
 
 
@@ -75,20 +91,23 @@ def test_unobservable_frames_are_shaded_as_one_artist():
         g.gate_observable = False
     ax = _axes(geoms)
     assert len(ax.collections) == 1
-    assert "not observable" in _labels(ax)
+
+
+def _bounds(ax):
+    return [l for l in ax.lines if l.get_color() == BOUND_COLOR]
 
 
 def test_configured_bounds_are_drawn_once_each():
     ax = _axes(_geometries(), scale_min=0.5, scale_max=2.0)
-    bounds = [l for l in ax.lines if l.get_linestyle() == "--" and l.get_label() == "sample bound"]
+    bounds = _bounds(ax)
     assert len(bounds) == 2
-    # One legend entry, not two identical ones.
-    assert sum(1 for t in ax.get_legend().get_texts() if t.get_text() == "sample bound") == 1
+    # One legend row for the pair, not two identical ones.
+    assert _legend_entries(ax, BOUND_COLOR) == 1
 
 
 def test_absent_bounds_draw_nothing():
     ax = _axes(_geometries(), scale_min=0.0, scale_max=float("inf"))
-    assert "sample bound" not in _labels(ax)
+    assert _bounds(ax) == []
 
 
 # ---------------------------------------------------------------------------
@@ -169,27 +188,33 @@ def _lateral_geometries(n=50, raw=0.2, applied=0.15):
     return geoms
 
 
+def _lateral_series(ax):
+    return [_series(ax, color)
+            for color in (RAW_LATERAL_COLOR, APPLIED_LATERAL_COLOR)]
+
+
 def test_a_run_without_a_lateral_correction_gets_one_plot():
     fig = build_scale_history_figure(_geometries())
     assert len(fig.axes) == 1
-    assert "lateral raw" not in _labels(fig.axes[0])
+    assert _lateral_series(fig.axes[0]) == [None, None]
 
 
 def test_a_lateral_correction_gets_a_second_plot_under_the_first():
     fig = build_scale_history_figure(_lateral_geometries())
     assert len(fig.axes) == 2
     scale_ax, lateral_ax = fig.axes
-    assert "lateral raw" not in _labels(scale_ax)
-    assert {"lateral raw", "lateral applied"} <= _labels(lateral_ax)
+    assert _lateral_series(scale_ax) == [None, None]
+    assert None not in _lateral_series(lateral_ax)
 
 
 def test_the_two_plots_share_one_timeline():
     fig = build_scale_history_figure(_lateral_geometries())
     scale_ax, lateral_ax = fig.axes
     assert scale_ax.get_xlim() == pytest.approx(lateral_ax.get_xlim())
-    # Only the lower one is labelled, which is what shared means on screen.
+    # Only the lower one carries the time label, which is what sharing a
+    # timeline means on screen. What it says is wording, not behaviour.
     assert scale_ax.get_xlabel() == ""
-    assert lateral_ax.get_xlabel() == "t [s]"
+    assert lateral_ax.get_xlabel() != ""
 
 
 def test_the_lateral_range_is_symmetric_about_zero():
@@ -215,12 +240,12 @@ def test_the_lateral_plot_stays_linear_when_the_scale_goes_logarithmic():
     scale_ax, lateral_ax = fig.axes
     assert scale_ax.get_yscale() == "log"
     assert lateral_ax.get_yscale() == "linear"
-    assert {"lateral raw", "lateral applied"} <= _labels(lateral_ax)
+    assert None not in _lateral_series(lateral_ax)
 
 
 def test_overlaying_keeps_one_plot_and_lifts_the_floor_below_zero():
     """split=False is for a figure too short for two panels."""
     geoms = _lateral_geometries(raw=-0.3, applied=-0.2)
     ax = build_scale_history_figure(geoms, split=False).axes[0]
-    assert {"lateral raw", "lateral applied"} <= _labels(ax)
+    assert None not in _lateral_series(ax)
     assert ax.get_ylim()[0] < 0.0

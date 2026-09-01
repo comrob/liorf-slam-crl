@@ -1,6 +1,9 @@
 """What the drawer puts on the axes: orientation, normalization, history.
 
-Uses the Agg backend and inspects artists rather than pixels.
+Uses the Agg backend and inspects artists rather than pixels -- and never their
+label text. Legends and titles are wording, changed whenever the picture is
+explained better, and a test that pins them turns rewording into a failure.
+Artists are found by what they are: colour, style, geometry.
 """
 
 import matplotlib
@@ -82,6 +85,12 @@ def _straight_lines(ax):
     return out
 
 
+def _history_lines(ax):
+    """How many earlier frames' lines were overlaid: the dotted straight ones."""
+    return sum(1 for line in ax.lines
+               if line.get_linestyle() == ":" and len(line.get_xdata()) == 2)
+
+
 def _horizontal_line_heights(ax):
     """Vertical positions of screen-horizontal degenerate lines."""
     return sorted({round(float(yd[0]), 6) for xd, yd in _straight_lines(ax)
@@ -114,15 +123,20 @@ def test_plus_y_is_drawn_towards_the_left():
     assert ax.get_xlim()[0] > arrow[0] > ax.get_xlim()[1]
 
 
-def test_axis_labels_name_the_right_axes():
-    ax = build_local_frame_figure(_view(), extent=4.0).axes[0]
-    assert ax.get_ylabel().startswith("x [m]")
-    assert ax.get_xlabel().startswith("y [m]")
+def _frame_axis_tips(ax):
+    """Where the drawn coordinate arrows point, in plot coordinates."""
+    return [np.asarray(patch._posA_posB[1], dtype=float) for patch in ax.patches
+            if hasattr(patch, "_posA_posB")]
 
 
-def test_latest_lidar_marker_is_not_drawn():
-    ax = build_local_frame_figure(_view(), extent=4.0).axes[0]
-    assert not any("latest" in str(l.get_label()).lower() for l in ax.lines)
+def test_the_frame_axes_are_drawn_up_the_page_and_to_the_left():
+    """The convention, drawn: one arrow up for x, one to the left for y."""
+    tips = _frame_axis_tips(build_local_frame_figure(_view(), extent=4.0).axes[0])
+    assert len(tips) == 2
+    up = [t for t in tips if t[1] > 0 and t[0] == 0.0]
+    # Positive horizontal on the reversed axis renders to the left.
+    left = [t for t in tips if t[0] > 0 and t[1] == 0.0]
+    assert len(up) == 1 and len(left) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -133,8 +147,6 @@ def test_normalized_puts_comp_at_unit_length():
     ax = build_local_frame_figure(_view(), extent=NORMALIZED_EXTENT,
                                   normalize=True).axes[0]
     np.testing.assert_allclose(_comp_arrow(ax), [0.0, 1.0], atol=1e-9)
-    assert "|comp|" in ax.get_ylabel()
-    assert "normalized" in ax.get_title()
 
 
 def test_normalized_degenerate_line_sits_at_the_scale_ratio():
@@ -148,8 +160,7 @@ def test_normalized_degenerate_line_sits_at_the_scale_ratio():
 def test_normalize_falls_back_to_metres_without_a_window():
     view = _view(has_window=False, t_comp_map=np.full(3, np.nan))
     ax = build_local_frame_figure(view, extent=4.0, normalize=True).axes[0]
-    assert "cannot normalize" in ax.get_title()
-    assert "[m]" in ax.get_ylabel()
+    # In metres, where normalizing would have put the line at 3/|comp|.
     assert 3.0 in _horizontal_line_heights(ax)
 
 
@@ -203,8 +214,7 @@ def test_unnormalizable_history_lines_are_dropped_when_normalizing():
     assert view.history_lines[0].comp_norm is None
 
     ax = build_local_frame_figure(view, extent=NORMALIZED_EXTENT, normalize=True).axes[0]
-    assert not any(str(l.get_label()).startswith("previous degenerate")
-                   for l in ax.lines)
+    assert _history_lines(ax) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -268,22 +278,17 @@ def test_a_meeting_point_far_outside_the_view_is_not_drawn():
     assert _meeting_arrow(ax) is None
 
 
-def test_the_meeting_point_counts_the_lines_it_used_and_names_the_fit():
-    ax = build_local_frame_figure(_view_with_history(_crossing_frames()),
-                                  extent=6.0, line_fit_norm="l1").axes[0]
-    assert any(str(l.get_label()) == "lines meet (2, l1)" for l in ax.lines)
-
-
 # ---------------------------------------------------------------------------
 # The trail of earlier meeting points
 # ---------------------------------------------------------------------------
 
 def _meet_trail(ax):
-    """The scattered previous meeting points, or None."""
-    for coll in ax.collections:
-        if str(coll.get_label()).startswith("previous meets"):
-            return coll
-    return None
+    """The scattered previous meeting points, or None.
+
+    The only scatter on these axes: the ellipse is a filled polygon and every
+    other mark is a line.
+    """
+    return ax.collections[0] if ax.collections else None
 
 
 def _normalized_view_with_meets(points=((0.9, 0.1), (0.8, -0.2))):

@@ -57,13 +57,22 @@ def write_scale_vector_csv(path, vector_trace):
         ("t_lidar_nondeg_proj_map", "t_lidar_nondeg_proj_map"),
         ("nondeg_axis_map",         "nondeg_axis_map"),
     )
-    header = ["frame_idx", "time", "degeneracy_detected", "gate_observable"]
+    # speed_gate_observable is the observability gate on its own; under a
+    # lines-meet correction gate_observable is additionally narrowed by whether
+    # the fit was accepted, so only the former says which frames' lines the fit
+    # was made of.
+    header = ["frame_idx", "time", "degeneracy_detected", "gate_observable",
+              "speed_gate_observable"]
     for _, col in _vec_fields:
         for ax in ("x", "y", "z"):
             header.append(f"{col}/{ax}")
     # meet_point is 2D and in units of |comp|, not metres in the map frame, so
     # it is not one of the vector fields above.
-    header += ["meet_x", "meet_y",
+    # window_rotation_rad is how far the lag window turned. It is the axis to
+    # plot the samples against: in the LiDAR frame the two are correlated
+    # through the lever arm, and that correlation is the artefact the
+    # complementary estimation frame exists to remove.
+    header += ["meet_x", "meet_y", "window_rotation_rad",
                "scale_instant_raw", "scale_smooth", "scale_applied",
                "lateral_instant_raw", "lateral_smooth", "lateral_applied"]
 
@@ -81,11 +90,13 @@ def write_scale_vector_csv(path, vector_trace):
                 f"{vf.time:.9f}",
                 1 if vf.degeneracy_detected else 0,
                 1 if vf.gate_observable else 0,
+                1 if getattr(vf, "speed_gate_observable", vf.gate_observable) else 0,
             ]
             for attr, _ in _vec_fields:
                 row.extend(_fv(getattr(vf, attr)))
             meet = getattr(vf, "meet_point", None)
             row += _fv(meet if meet is not None else (np.nan, np.nan))
+            row += [_fs(getattr(vf, "window_rotation_rad", np.nan))]
             row += [_fs(vf.scale_instant_raw), _fs(vf.scale_smooth), _fs(vf.scale_applied),
                     _fs(getattr(vf, "lateral_instant_raw", np.nan)),
                     _fs(getattr(vf, "lateral_smooth", np.nan)),

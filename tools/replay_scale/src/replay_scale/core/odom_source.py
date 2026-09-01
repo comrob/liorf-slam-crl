@@ -35,7 +35,7 @@ a stream the node had to consume live.
 
 import numpy as np
 
-from .se3 import exp_map, matrix_to_twist
+from .se3 import BodyFrame, exp_map, matrix_to_twist
 
 # Gates from mapOptimization_degeneracy.cpp.
 _MIN_DT_COMPLEMENTARY_S = 1e-3
@@ -182,7 +182,7 @@ def sync_odom_to_frames(odom_stream, frames, T_comp_to_lidar, max_match_dt_s=0.2
 DRIFT_AXES = ("x", "y", "z")
 
 
-def apply_complementary_drift(frames, alpha, axis="y"):
+def apply_complementary_drift(frames, alpha, axis="y", body_frame=None):
     """Inject a distance-proportional error into the complementary odometry.
 
     Each frame's complementary displacement gains ``alpha * ||displacement||``
@@ -200,6 +200,14 @@ def apply_complementary_drift(frames, alpha, axis="y"):
     comes back out as a longitudinal scale error. Along travel (``x``) is a pure
     scale error the estimator should be able to recover.
 
+    ``body_frame`` is which body's axes those are, and which displacement the
+    distance is measured on: the same frame the estimator works in, so that
+    "we put in alpha along x, did we get it back" stays an exact question. It
+    matters as soon as the extrinsic turns -- the ANYmal mount is a 180 degree
+    yaw, so a lateral drift injected in the LiDAR frame and one injected at the
+    base point opposite ways. Defaults to the LiDAR frame, which is where this
+    injected before there was anywhere else to inject.
+
     Frames mutate in place; returns the count modified.
     """
     if axis not in DRIFT_AXES:
@@ -207,6 +215,7 @@ def apply_complementary_drift(frames, alpha, axis="y"):
     if not alpha:
         return 0
 
+    body_frame = body_frame if body_frame is not None else BodyFrame()
     component = DRIFT_AXES.index(axis)
     modified = 0
     for f in frames:
@@ -218,13 +227,13 @@ def apply_complementary_drift(frames, alpha, axis="y"):
         if not np.isfinite(dt) or dt <= 0.0:
             continue
 
-        distance = float(np.linalg.norm(f.complementary_twist[:3] * dt))
+        twist = body_frame.twist(f.complementary_twist)
+        distance = float(np.linalg.norm(twist[:3] * dt))
         if distance <= 0.0:
             continue
 
-        twist = f.complementary_twist.copy()
         twist[component] += alpha * distance / dt
-        f.complementary_twist = twist
+        f.complementary_twist = body_frame.untwist(twist)
         modified += 1
     return modified
 

@@ -3,14 +3,17 @@
 from PySide6.QtCore import QObject, Signal
 
 from ..pipeline import run_replay
-from .sources import load_from_run_dir
+from .sources import load_from_run_dir, preview_run_dir
 
 
 class LoadWorker(QObject):
-    """Runs one :func:`load_from_run_dir` on a worker thread.
+    """Runs one load on a worker thread: a replay, or a preview of one.
 
-    A replay of a few thousand frames takes about a second, which is short
-    enough to be tempting to do inline and long enough to feel like a freeze.
+    A replay of a few thousand frames takes several seconds -- long enough that
+    doing it on the event loop would read as a hang, and long enough that the
+    viewer offers a preview instead when all you did was click a run. Both
+    return the same :class:`~replay_scale.gui.sources.FrameData`, so the window
+    shows one the way it shows the other.
     """
 
     progress = Signal(str)
@@ -19,8 +22,9 @@ class LoadWorker(QObject):
 
     def __init__(self, input_path, base_dir, *, settings=None, params=None,
                  config_path=None, frame="map", history=None,
-                 history_step=None, observable_only=False):
+                 history_step=None, observable_only=False, preview=False):
         super().__init__()
+        self._preview = preview
         self._input_path = input_path
         self._base_dir = base_dir
         self._settings = settings
@@ -33,6 +37,16 @@ class LoadWorker(QObject):
 
     def run(self):
         try:
+            if self._preview:
+                # None of the view options apply: a preview builds no per-frame
+                # views, having nothing to build them from.
+                data = preview_run_dir(
+                    self._input_path, base_dir=self._base_dir,
+                    settings=self._settings, params=self._params,
+                    on_progress=self.progress.emit,
+                    **({"config_path": self._config_path} if self._config_path else {}))
+                self.loaded.emit(data)
+                return
             kwargs = {}
             if self._history is not None:
                 kwargs["history"] = self._history

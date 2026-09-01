@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from .lines import closest_point_to_lines  # noqa: F401  (re-exported for the view's users)
-from .se3 import orthonormal_translation_basis
+from .se3 import BodyFrame, orthonormal_translation_basis
 
 #: Below this the in-plane part of a degenerate axis is meaningless to draw.
 _MIN_INPLANE_NORM = 1e-3
@@ -117,6 +117,13 @@ class FrameGeometry:
     # when the estimator was not fitting them. Not a map-frame quantity: it only
     # means anything in that normalized frame, which is where the view draws it.
     meet_point: np.ndarray = None      # 2
+    #: Whether the frame passed the observability *speed* gate alone. Under a
+    #: lines-meet correction ``gate_observable`` is narrowed further by whether
+    #: the fit was accepted, so it no longer answers "did this frame contribute
+    #: a line to the estimate" -- this does, and it is the set the estimator
+    #: admits into its line history. None means an adapter did not record it,
+    #: in which case ``gate_observable`` is the best answer available.
+    speed_gate_observable: bool = None
     scale_instant_raw: float = float("nan")
     scale_smooth: float = float("nan")
     scale_applied: float = float("nan")
@@ -138,6 +145,21 @@ class FrameGeometry:
         if not self.has_window:
             return NO_WINDOW
         return GATE_OBSERVABLE if self.gate_observable else WINDOW
+
+    @property
+    def line_observable(self):
+        """Whether this frame's degenerate line fed the estimator's fit.
+
+        The window has to have closed and the speed gate to have passed, which
+        is exactly what the estimator requires before appending the line to its
+        history. Deliberately *not* window_state: under a lines-meet correction
+        gate_observable also carries whether the resulting fit was accepted,
+        and filtering the overlay on that would hide the very lines the
+        rejected fit was made of.
+        """
+        gate = (self.gate_observable if self.speed_gate_observable is None
+                else self.speed_gate_observable)
+        return bool(self.has_window and gate)
 
 
 @dataclass
@@ -235,7 +257,7 @@ class LocalFrameView:
 # Adapters: data source -> FrameGeometry
 # ---------------------------------------------------------------------------
 
-def geometry_from_replay(frames, trajectory, vector_trace):
+def geometry_from_replay(frames, trajectory, vector_trace, body_frame=None):
     """Adapt a completed in-memory replay into per-frame geometry.
 
     ``trajectory`` is the estimated-scale trajectory as returned by
@@ -243,8 +265,17 @@ def geometry_from_replay(frames, trajectory, vector_trace):
     buffers as anchor and latest. Passing the optimized poses instead would
     tilt every degenerate line in ``twist6`` mode.
 
+    ``body_frame`` is the replay's estimation frame, and everything here is
+    carried into it: the anchor and latest origins, and the degenerate
+    directions through the adjoint. The view exists to show what the estimator
+    saw, so it has to be drawn where the estimator was looking -- with the
+    origins left on the LiDAR while the complementary vector came from the
+    sensor, the picture would show a displacement the estimate was never made
+    of, and the lever arm would appear as a gap between the two arrows.
+
     All three sequences are indexed by frame and must be the same length.
     """
+    body_frame = body_frame if body_frame is not None else BodyFrame()
     n = len(frames)
     if not (len(trajectory) == len(vector_trace) == n):
         raise ValueError(
@@ -252,11 +283,12 @@ def geometry_from_replay(frames, trajectory, vector_trace):
             f"{len(vector_trace)} vector records")
 
     out = []
-    for k, (f, (_, T_latest), vf) in enumerate(zip(frames, trajectory, vector_trace)):
+    for k, (f, (_, T_latest_lidar), vf) in enumerate(zip(frames, trajectory, vector_trace)):
         anchor_idx = int(vf.anchor_frame_idx)
-        T_anchor = trajectory[anchor_idx][1]
+        T_anchor = body_frame.pose(trajectory[anchor_idx][1])
+        T_latest = body_frame.pose(T_latest_lidar)
 
-        basis = f.basis if (f.has_basis and len(f.basis) > 0) else []
+        basis = [body_frame.twist(b) for b in f.basis] if (f.has_basis and f.basis) else []
         axes_map = [T_latest[:3, :3] @ u for u in orthonormal_translation_basis(basis)]
 
         has_window = bool(np.all(np.isfinite(vf.t_comp_map)))
@@ -268,6 +300,8 @@ def geometry_from_replay(frames, trajectory, vector_trace):
             time=float(f.time),
             degeneracy_detected=bool(vf.degeneracy_detected),
             gate_observable=bool(vf.gate_observable),
+            speed_gate_observable=bool(getattr(vf, "speed_gate_observable",
+                                               vf.gate_observable)),
             has_window=has_window,
             anchor_frame_idx=anchor_idx,
             anchor_R=T_anchor[:3, :3].copy(),
@@ -384,7 +418,7 @@ def build_local_frame_views(geometries, *, frame="map", history=DEFAULT_HISTORY,
     degenerate_idx = [
         i for i, g in enumerate(geometries)
         if g.degenerate_axes_map
-        and (not observable_only or g.window_state == GATE_OBSERVABLE)]
+        and (not observable_only or g.line_observable)]
 
     views = []
     for k, g in enumerate(geometries):

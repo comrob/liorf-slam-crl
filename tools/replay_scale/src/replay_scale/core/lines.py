@@ -177,3 +177,83 @@ def covariance_ellipse(covariance, *, n_sigma=1.0, n_points=181):
     theta = np.linspace(0.0, 2.0 * np.pi, n_points)
     unit = np.stack([np.cos(theta), np.sin(theta)])
     return (vectors @ (n_sigma * np.sqrt(values)[:, None] * unit)).T
+
+
+@dataclass
+class LegSplit:
+    """How a set of undirected line orientations divides into two groups.
+
+    A meeting point is only pinned down by lines that point different ways, and
+    on a zig-zag the ways they point come in two clusters -- one per leg of the
+    trajectory. This measures that: the lines are split about their own
+    principal orientation, and what matters is how many landed on the *sparser*
+    side, far enough from the principal orientation to be a genuinely different
+    direction rather than noise about a single one.
+    """
+
+    #: Lines on the sparser side of the principal orientation.
+    weaker: int = 0
+    #: Lines on the denser side.
+    stronger: int = 0
+    #: Angle between the two sides' median orientations, radians. nan when one
+    #: side is empty, which is the single-direction case.
+    separation: float = float("nan")
+    #: The orientation the split was taken about, radians in [-pi/2, pi/2).
+    principal: float = float("nan")
+
+
+def leg_split(directions, *, min_separation):
+    """Divide line orientations into two groups; see :class:`LegSplit`.
+
+    Lines are undirected -- a direction and its opposite are the same line -- so
+    the orientations live on a half circle, and their mean is taken by doubling
+    the angles, averaging on the full circle, and halving back.
+
+    ``min_separation`` (radians) is the angle two groups must span to count as
+    two. It enters as a deadband of half that on either side of the principal
+    orientation: two groups exactly ``min_separation`` apart sit symmetrically
+    at plus and minus half of it, so a line nearer the middle than that belongs
+    to neither. This makes the returned ``separation`` at least
+    ``min_separation`` whenever both sides are non-empty, which is why the
+    caller only has to test the counts, and it means orientations spanning less
+    than ``min_separation`` in total always return ``weaker = 0``.
+
+    No cluster structure is assumed: a smooth fan of headings splits at its own
+    middle and counts, which is right, because what a meeting point needs is
+    spread rather than two discrete groups. The mean is pulled by the denser
+    side, so a set that is both very lopsided and barely spread can put its own
+    majority inside the deadband and return zero. That direction of error is the
+    safe one -- it declines to answer -- and it cannot happen the other way
+    round.
+    """
+    angles = _orientations(directions)
+    if angles.size == 0:
+        return LegSplit()
+
+    # Doubling maps the half circle onto the full one, where a circular mean is
+    # well defined; the sum of unit vectors vanishes only when the orientations
+    # are perfectly balanced, in which case any principal direction is as good.
+    principal = 0.5 * float(np.arctan2(np.sum(np.sin(2.0 * angles)),
+                                       np.sum(np.cos(2.0 * angles))))
+    # Signed offsets in (-pi/2, pi/2], the range in which two orientations can
+    # differ at all.
+    deltas = (angles - principal + np.pi / 2.0) % np.pi - np.pi / 2.0
+
+    half = max(0.0, float(min_separation)) / 2.0
+    upper, lower = deltas[deltas >= half], deltas[deltas <= -half]
+    counts = sorted((len(upper), len(lower)))
+    separation = (float(np.median(upper) - np.median(lower))
+                  if len(upper) and len(lower) else float("nan"))
+    return LegSplit(weaker=counts[0], stronger=counts[1], separation=separation,
+                    principal=principal)
+
+
+def _orientations(directions):
+    """Angles of the in-plane directions, mod pi; directionless ones dropped."""
+    angles = []
+    for d in directions:
+        d = np.asarray(d, dtype=float)[:2]
+        if float(np.linalg.norm(d)) < 1e-12:
+            continue
+        angles.append(np.arctan2(d[1], d[0]) % np.pi)
+    return np.asarray(angles, dtype=float)

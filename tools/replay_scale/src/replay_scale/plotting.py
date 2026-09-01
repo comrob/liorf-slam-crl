@@ -20,19 +20,29 @@ REPLAY_COLORS = ("tab:orange", "tab:red", "tab:purple", "tab:brown",
                  "tab:pink", "tab:gray", "tab:olive")
 REFERENCE_COLOR = "tab:blue"
 AUXILIARY_COLOR = "tab:green"
+#: An external trajectory -- ground truth, a survey, another system's output.
+#: Black rather than another hue: it is not one of the things being compared,
+#: it is what they are being compared against.
+EXTERNAL_COLOR = "black"
 
 #: Curve kinds accepted by build_trajectory_figure.
-KINDS = ("reference", "replay", "auxiliary")
+KINDS = ("reference", "replay", "auxiliary", "external")
 
 
 #: Anchor-frame view colors.
 ANCHOR_COLOR = "tab:blue"
 COMP_COLOR = "tab:green"
 DEGENERATE_COLOR = "tab:orange"
-#: The point the degenerate lines agree on. Green like the complementary arrow
-#: because it is the same kind of quantity -- a displacement from the anchor --
-#: and dashed because it is inferred from the lines rather than measured.
-MEETING_COLOR = "tab:green"
+#: The point the degeneracy spaces agree on. Its own color rather than the
+#: complementary arrow's: it is the same kind of quantity -- a displacement from
+#: the anchor -- but not a measured one, and telling the inferred point apart
+#: from what the odometry claimed is the whole reading. Dashed for the same
+#: reason.
+MEETING_COLOR = "tab:purple"
+
+#: The view frame's own axes, drawn faint so they read as the ground the rest
+#: sits on rather than as another quantity.
+AXIS_COLOR = "0.55"
 
 #: How far outside the view the lines may meet before the arrow is dropped, in
 #: view half-widths. Near-parallel lines do meet, but hundreds of metres away
@@ -42,6 +52,17 @@ MEETING_MAX_EXTENTS = 3.0
 #: Confidence ellipse drawn around the meeting point, in standard deviations.
 ELLIPSE_SIGMA = 1.0
 
+#: The least a cropped view may keep, as a fraction of its full span. Cropping
+#: is for cutting away the empty half of a picture, not for emptying it.
+MIN_VIEW_SPAN = 0.1
+
+#: Type sizes in the anchor view. Sized to be read in a figure rather than only
+#: on the screen it was scrubbed on, so they are larger than matplotlib's
+#: defaults and set in one place.
+LEGEND_FONTSIZE = "large"
+ANNOTATION_FONTSIZE = "large"
+AXIS_NAME_FONTSIZE = "medium"
+
 
 def _screen(v):
     """View-frame (x, y) -> plot (horizontal, vertical).
@@ -50,6 +71,67 @@ def _screen(v):
     axis therefore carries y, and is inverted so +y lands on the left.
     """
     return float(v[1]), float(v[0])
+
+
+def _lower_limit(value, extent):
+    """The low edge of one axis: ``-extent``, or where the caller cropped it.
+
+    Clamped so a crop can never collapse the view: asking to start above the
+    top of it is a slip, and an empty axes is a worse answer than a small one.
+    """
+    if value is None:
+        return -extent
+    return min(float(value), extent - MIN_VIEW_SPAN * extent)
+
+
+def _upper_limit(value, extent):
+    """The high edge of one axis: ``extent``, or where the caller cropped it."""
+    if value is None:
+        return extent
+    return max(float(value), -extent + MIN_VIEW_SPAN * extent)
+
+
+def _draw_frame_axes(ax, *, x_lo, x_hi, y_lo, y_hi):
+    """Draw the view frame's axes through the origin: x up the page, y left.
+
+    The convention is in the axis labels too, but a reader following the
+    picture should not have to leave it: the arrows say which way the robot
+    faces and which way is sideways. Each label sits beside its own arrow --
+    the x one clear of the legend in the top right, the y one above the axis
+    line rather than down beside the vertical axis's own label, where the two
+    would read as a contradiction.
+
+    Drawn only where the origin is actually in view: a cropped view may not
+    contain it, and an axis cross pinned to an edge would be a lie about where
+    the anchor is.
+    """
+    from matplotlib.patches import FancyArrowPatch
+
+    if not (x_lo <= 0.0 <= x_hi and y_lo <= 0.0 <= y_hi):
+        return
+
+    ax.plot([y_hi, y_lo], [0.0, 0.0], color="0.85", linewidth=0.8, zorder=0)
+    ax.plot([0.0, 0.0], [x_lo, x_hi], color="0.85", linewidth=0.8, zorder=0)
+
+    # Each arrow reaches the visible end of its own positive half, which a crop
+    # may have moved.
+    x_tip, y_tip = 0.97 * x_hi, 0.97 * y_hi
+    off = 0.03 * min(x_hi, y_hi)
+    # Each label rides beside its own arrow rather than at the tip: the legend
+    # sits in the top corner and the vertical axis's own label runs down the
+    # left edge, and a name landing on either of those reads as a contradiction.
+    # (label, arrow tip, label anchor, alignment) in plot coordinates -- the
+    # horizontal axis is reversed, so +y (screen-left) is a positive tip and
+    # ha="right" puts a label further to the screen-left of its anchor.
+    axes = (("$x$", (0.0, x_tip), (off, 0.55 * x_hi), "right", "center"),
+            ("$y$", (y_tip, 0.0), (0.55 * y_hi, off), "center", "bottom"))
+    for label, xy, text_xy, ha, va in axes:
+        ax.add_patch(FancyArrowPatch((0.0, 0.0), xy, arrowstyle="-|>",
+                                     mutation_scale=9, color=AXIS_COLOR,
+                                     linewidth=0.8, shrinkA=0.0, shrinkB=0.0,
+                                     zorder=0))
+        ax.text(*text_xy, label, color=AXIS_COLOR, fontsize=AXIS_NAME_FONTSIZE,
+                ha=ha, va=va, zorder=3)
 
 
 def _xy(trajectory):
@@ -87,14 +169,16 @@ def curves_from_tum_dir(traj_dir):
     return curves
 
 
-def complementary_only_curve(frames, params):
+def complementary_only_curve(frames, params, body_frame=None):
     """The raw complementary odometry integrated on its own, as an aux curve.
 
     Not written to a file by the replay, so it is recomputed from the frames
-    whenever it is plotted.
+    whenever it is plotted. ``body_frame`` is the replay's estimation frame, so
+    that translationScale stretches here what it stretches there.
     """
     traj = reconstruct_complementary_only(
-        frames, translation_scale_multiplier=params.translation_scale)
+        frames, translation_scale_multiplier=params.translation_scale,
+        body_frame=body_frame)
     return ("additional odometry (complementary, raw)", traj, "auxiliary")
 
 
@@ -118,6 +202,9 @@ def draw_trajectories(ax, curves, *, title=""):
             ax.plot(xs, ys, label=f"replay ({label})", color=color, linewidth=1.5, linestyle="--")
         elif kind == "auxiliary":
             ax.plot(xs, ys, label=label, color=AUXILIARY_COLOR, linewidth=1.0, alpha=0.8)
+        elif kind == "external":
+            ax.plot(xs, ys, label=f"reference ({label})", color=EXTERNAL_COLOR,
+                    linewidth=1.2, linestyle=(0, (6, 2, 1, 2)), alpha=0.9)
         else:
             raise ValueError(f"Unknown curve kind {kind!r}; expected one of {KINDS}")
 
@@ -149,7 +236,7 @@ def build_trajectory_figure(curves, *, title="", figsize=(9, 9)):
 # ---------------------------------------------------------------------------
 
 def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
-                     line_fit_norm="l2", meet_history=False):
+                     line_fit_norm="l2", meet_history=False, x_min=None, y_max=None):
     """Draw one :class:`LocalFrameView` into an existing axes.
 
     Clears and redraws ``ax``. ``extent`` is the half-width of the square view;
@@ -166,6 +253,12 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
     ``line_fit_norm`` selects how the degenerate lines' meeting point is fitted,
     and should be whatever the estimator is configured with, so the point drawn
     is the one a "lines_meet_*" correction would be read from.
+
+    ``x_min`` and ``y_max`` crop the square view to the two edges worth moving:
+    ``x_min`` is the bottom of the page, ``y_max`` the left-hand side, since +y
+    is drawn to the left. Both are in view-frame coordinates, in whatever unit
+    the axes are currently in, and the other two edges stay at ``extent``. Omit
+    them for the symmetric view centred on the anchor.
 
     ``meet_history`` additionally scatters the *estimator's own* meeting point
     for each frame the overlay looks back at, which is the trail of what the
@@ -185,8 +278,8 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
 
     ax.clear()
 
-    ax.axhline(0.0, color="0.85", linewidth=0.8, zorder=0)
-    ax.axvline(0.0, color="0.85", linewidth=0.8, zorder=0)
+    x_lo, y_hi = _lower_limit(x_min, extent), _upper_limit(y_max, extent)
+    _draw_frame_axes(ax, x_lo=x_lo, x_hi=extent, y_lo=-extent, y_hi=y_hi)
 
     latest_pos = view.latest_pos * k
 
@@ -222,13 +315,13 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
             drawn += 1
         if drawn:
             ax.plot([], [], color=DEGENERATE_COLOR, linewidth=0.9, linestyle=":",
-                    alpha=0.4, label=f"previous degenerate ({drawn})")
+                    alpha=0.4, label=f"previous degeneracy spaces ({drawn})")
 
     for i, d in enumerate(view.degenerate_dirs):
         sx, sy = _screen(latest_pos - half_len * d), _screen(latest_pos + half_len * d)
         ax.plot([sx[0], sy[0]], [sx[1], sy[1]],
                 color=DEGENERATE_COLOR, linewidth=1.4, linestyle="--", zorder=2,
-                label="degenerate direction" if i == 0 else None)
+                label="degeneracy space" if i == 0 else None)
         line_origins.append(latest_pos)
         line_directions.append(d)
 
@@ -267,10 +360,21 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
         ax.plot(*_screen(fit.point), marker="x", markersize=8, markeredgewidth=1.6,
                 color=MEETING_COLOR, linestyle="none", zorder=4)
 
+        # What the point *means*, next to it: in units of the complementary
+        # displacement it is (1 + alpha, beta) -- how much longer than the
+        # odometry claimed, and how far sideways of its own direction. Those
+        # are the picture's own coordinates in the normalized
+        # complementary-forward view, and the same two numbers scaled by
+        # |comp| in any other.
+        ax.annotate(r"$(1+\alpha,\ \beta)$", xy=_screen(fit.point),
+                    xytext=(7, 7), textcoords="offset points",
+                    color=MEETING_COLOR, fontsize=ANNOTATION_FONTSIZE, zorder=4)
+
         # How much the lines disagree, drawn where they disagree: a long thin
         # ellipse means one direction is pinned and the other is a guess, which
         # a single point would hide entirely.
         ellipse = covariance_ellipse(fit.covariance, n_sigma=ELLIPSE_SIGMA)
+        ellipse = None
         if ellipse is not None:
             screen = np.array([_screen(fit.point + offset) for offset in ellipse])
             # Filled rather than another dotted outline: normalized frames already
@@ -284,7 +388,7 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
 
         # annotate() arrows never reach the legend, so a proxy carries the label.
         ax.plot([], [], color=MEETING_COLOR, linewidth=1.6, linestyle="--",
-                label=f"lines meet ({fit.n_lines}, {line_fit_norm})")
+                label=f"estimated actual displacement")
 
     if view.has_comp_vec:
         ax.annotate("", xy=_screen(view.comp_vec * k), xytext=(0.0, 0.0),
@@ -292,11 +396,11 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
                     zorder=3)
         # Proxy artist: annotate() arrows do not appear in the legend.
         ax.plot([], [], color=COMP_COLOR, linewidth=1.8,
-                label="complementary (unit)" if normalized else "complementary")
+                label="complementary odometry displacement (normalized)" if normalized else "complementary odometry displacement")
 
     ax.plot([0.0], [0.0], marker="o", markersize=8, color=ANCHOR_COLOR,
             linestyle="none", zorder=4,
-            label=f"anchor (frame {view.anchor_frame_idx})")
+            label="anchor (previous position)")
 
     if normalized:
         # The unit circle the complementary arrow now lands on, as a ruler.
@@ -304,9 +408,10 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
         ax.plot(np.cos(theta), np.sin(theta), color=COMP_COLOR, linewidth=0.8,
                 linestyle=":", alpha=0.5, zorder=0)
 
-    # Horizontal axis reversed so +y is on the left, with x up the page.
-    ax.set_xlim(extent, -extent)
-    ax.set_ylim(-extent, extent)
+    # Horizontal axis reversed so +y is on the left, with x up the page. A crop
+    # moves the bottom edge and the left one; the other two stay at the extent.
+    ax.set_xlim(y_hi, -extent)
+    ax.set_ylim(x_lo, extent)
     ax.set_aspect("equal", adjustable="box")
     unit = "|comp|" if normalized else "m"
     if view.frame == "anchor":
@@ -317,8 +422,11 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
                       else "complementary-aligned (no vector — map orientation)")
     else:
         forward, frame_note = "map", "map frame, origin at anchor"
-    ax.set_ylabel(f"x [{unit}] ({forward})")
-    ax.set_xlabel(f"y [{unit}] (left)")
+    # The arrows repeat these two lines inside the picture, so the arrow
+    # direction is spelled out here as well: nothing should have to be inferred
+    # from which of the two names ended up on which side of the axes.
+    ax.set_ylabel(f"x [{unit}] ↑ up the page ({forward})")
+    ax.set_xlabel(f"y [{unit}] ← to the left")
     ax.grid(True, linestyle=":", linewidth=0.5)
 
     if normalized:
@@ -332,18 +440,20 @@ def draw_local_frame(ax, view, *, extent=None, n_frames=None, normalize=False,
     flag = " · degenerate" if view.degeneracy_detected else ""
     ax.set_title(f"frame {view.frame_idx}{total}  ·  t +{view.time_rel:.2f} s{flag}\n"
                  f"{frame_note}  ·  view ±{extent:g} {unit}{scale_note}", fontsize="medium")
-    ax.legend(loc="upper right", fontsize="small")
+    ax.legend(loc="upper right", fontsize=LEGEND_FONTSIZE)
     return ax
 
 
 def build_local_frame_figure(view, *, extent=None, n_frames=None, normalize=False,
-                             line_fit_norm="l2", meet_history=False, figsize=(7, 7)):
+                             line_fit_norm="l2", meet_history=False, x_min=None,
+                             y_max=None, figsize=(7, 7)):
     """Standalone figure for one frame view; for tests and headless use."""
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=figsize)
     draw_local_frame(ax, view, extent=extent, n_frames=n_frames, normalize=normalize,
-                     line_fit_norm=line_fit_norm, meet_history=meet_history)
+                     line_fit_norm=line_fit_norm, meet_history=meet_history,
+                     x_min=x_min, y_max=y_max)
     fig.tight_layout()
     return fig
 

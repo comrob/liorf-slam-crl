@@ -53,7 +53,7 @@ holds:
 | File | Role |
 | --- | --- |
 | `scale_replay_frames.csv` | **Required.** One row per LiDAR frame: poses, LiDAR increment, complementary twist, degeneracy flags and basis, applied scale. |
-| `complementary_odom_meta.yaml` | `T_complementary_to_lidar` extrinsic, used when replaying an alternative odometry source. |
+| `complementary_odom_meta.yaml` | The recorded odometry's mount. Read on every replay: it places [the estimation frame](#the-estimation-frame) unless the config names a mount of its own. See [the two mounts](#the-two-mounts). |
 | `complementary_odom_stream.tum` | The raw odometry stream the online run consumed. Can be fed back in as an alternative source. |
 
 Both positional forms work: pass the run directory, or the CSV itself.
@@ -62,6 +62,7 @@ Both positional forms work: pass the run directory, or the CSV itself.
 
 ```
 replay-scale-trajectory [input] [--latest] [--base-dir DIR] [--ros-params-yaml YAML]
+                        [--estimation-frame {lidar,complementary}]
 replay-scale-plot-trajectories [same] [--output PNG] [--show]
 ```
 
@@ -71,6 +72,8 @@ replay-scale-plot-trajectories [same] [--output PNG] [--show]
 | `--latest` | Use `<base-dir>/latest`, else the newest `run_*` by mtime. Ignores a configured `input_path`. |
 | `--base-dir` | Where `run_*` folders live. Overrides the config's `base_dir`; default `~/.ros/lili_logs`. |
 | `--ros-params-yaml` | Config file. Default: bundled [`config/default.yaml`](src/replay_scale/config/default.yaml). |
+| `--estimation-frame` | Override `complementaryOdom.estimationFrame` — see [the estimation frame](#the-estimation-frame). The one setting with a flag of its own, because A/B-ing it against the same config is the way to see what it does. |
+| `--no-run-config` | Ignore the run's own `replay_scale.yaml` — see [per-run configuration](#per-run-configuration). |
 | `--output` | Plot only. PNG destination. Default `<out>/trajectories/trajectories_2d.png`. |
 | `--show` | Plot only. Also open an interactive window. |
 
@@ -99,6 +102,89 @@ cp src/replay_scale/config/default.yaml my_replay.yaml
 replay-scale-trajectory --latest --ros-params-yaml my_replay.yaml
 ```
 
+## Per-run configuration
+
+Most of what a replay needs is a method setting you sweep across runs. A few
+things are facts about *one* run — its mounts, its reference trajectory, the
+clock offset that lines that up — and those belong with the run:
+
+```
+<run>/
+├── scale_replay_frames.csv
+├── complementary_odom_meta.yaml
+└── replay_scale.yaml          ← this run's own configuration
+```
+
+It is **merged over** the base configuration whenever that run is replayed, by
+the viewer and the CLI alike, and holds only what differs:
+
+```yaml
+/**:
+  ros__parameters:
+    complementaryOdom: {estimationFrame: complementary}
+replay_scale_tool:
+  recorded_odometry:
+    extrinsicTrans: [-0.310, 0.0, 0.159]
+  reference_trajectory: {path: /data/total_station.tum, time_offset_s: 1786388866.070}
+```
+
+Precedence, lowest to highest:
+
+```
+bundled default.yaml  →  --ros-params-yaml  →  <run>/replay_scale.yaml  →  CLI flags
+   method defaults        what you sweep         what this run is
+```
+
+The viewer adds one layer on top of the run's file — what you last applied to
+that run, kept in its state directory — so that clicking between runs neither
+loses your settings nor spreads them. The CLI has no such layer and never reads
+it: a replay stays reproducible from what is written down. See [What each run
+remembers](#what-each-run-remembers).
+
+The merge is a deep one on the raw mappings, before anything is parsed: a run
+file naming one parameter does not reset its siblings to their defaults, and no
+loader or validator had to learn that a configuration can come from two files.
+
+The **reference trajectory is per run and only per run**: it is a file recorded
+alongside *that* run, on *that* run's clock, so it belongs in that run's file and
+nowhere else. The viewer enforces this from its side — it remembers what you
+applied *per run*, so a reference set on one run is there when you come back to
+it and never appears on another. See [What each run
+remembers](#what-each-run-remembers). Press *Save to run* to make it permanent
+and visible to the CLI. (A configuration named explicitly —
+`--ros-params-yaml`, *Load YAML…* — is a deliberate act and may still set one
+for every run it is applied to.)
+
+It is picked up **automatically** — that is what makes it useful — so it is
+never silent about it:
+
+```
+config: src/replay_scale/config/default.yaml
+    + ~/.ros/lili_logs/run_20260826_155741/replay_scale.yaml  (complementaryOdom, replay_scale_tool)
+```
+
+`--no-run-config` ignores it for one replay, which is what you want when
+sweeping a single configuration across runs that each carry their own. Deleting
+the file falls back to the base entirely.
+
+`input_path` and `base_dir` in a run file are **ignored**, with a note: the run
+is the directory the file is in, and a run file that replays a different run is
+a trap rather than a feature.
+
+### Writing one from the viewer
+
+**Save to run** in the Configuration dock writes the settings on screen into the
+loaded run's `replay_scale.yaml`. Only what differs from the base is written, so
+the run keeps what is specific to it and inherits the rest — a full copy would
+pin every method setting, and a later change to a shared default would never
+reach that run.
+
+It is a separate button from **Save YAML…** (whole configuration, anywhere, for
+sharing or for `--ros-params-yaml`), and separate from **Apply & replay**, which
+stays transient. Otherwise every parameter dragged while exploring would rewrite
+the run's config, and the file would stop recording a decision and start
+recording a fidget.
+
 ## Configuration
 
 The file carries two independent trees. `/**: ros__parameters:
@@ -126,6 +212,67 @@ comes from.
 | --- | --- |
 | `twist6` | Node parity: projects the full 6D twist onto the degenerate basis. The inner product mixes metres and radians, so residual angular content in the basis turns the correction into a rotation. |
 | `translation` | Projects only translation onto the degenerate directions, leaving orientation to LiDAR. Use where rotation is observable (tunnel walls constrain yaw) and any injected heading is therefore spurious. |
+
+### The estimation frame
+
+**`estimationFrame`** decides which body frame the correction is measured and
+applied in. The odometry being corrected does not sit on the LiDAR: on the
+ANYmal mount the two origins are 0.348 m apart. A body rotation about anything
+other than the LiDAR therefore swings the LiDAR around it — real motion, present
+in both displacements the estimate is a ratio of, but not motion of the odometry
+sensor.
+
+| Frame | Behaviour |
+| --- | --- |
+| `lidar` | The node's own. Everything happens in the LiDAR frame, so the lever arm is measured as odometry error and then multiplied by the estimated scale — stretching a mount whose length is fixed by the robot's geometry. |
+| `complementary` | Measure and apply at the odometry sensor's own origin, placed by [the mount](#the-two-mounts) of whichever odometry is being corrected: `base_link` for a legged state estimator, the camera for visual odometry. An in-place rotation about that origin carries no translation there, so it yields no sample and takes no correction. |
+
+The trajectory is the LiDAR's either way. The frame changes what the scale is a
+scale *of*, not what is being tracked: a step arrives as a motion of the LiDAR,
+is re-expressed at the sensor, corrected, and put back.
+
+On the bundled ANYmal run the difference is not subtle. Over the 10-frame
+baseline window, the lever arm accounts for 75 % of the LiDAR's displacement at
+the p90 and 96 % at its worst; 520 windows turn more than 5° while the sensor
+itself moves under 5 cm. Switching the frame:
+
+| | `lidar` | `complementary` |
+| --- | --- | --- |
+| samples accepted | 615 | 558 |
+| accepted from windows turning > 5° | 92 | 43 |
+| correlation of the sample with how far the window turned | **+0.35** | **−0.01** |
+
+That correlation is the artefact itself — a scale sample has no business
+tracking how much the robot turned — and it is the single most useful check
+that the frame is doing what it claims. `scale_replay_vectors.csv` carries
+`window_rotation_rad` for exactly this plot.
+
+**`estimationFrameUseExtrinsicRot`** decides whether that frame adopts the
+extrinsic's rotation as well as its origin. Off by default, and the default is
+the one to keep unless you know otherwise:
+
+- The **origin** is what removes the lever arm. That is the whole mechanism.
+- The **axes** decide something else entirely — the plane the degenerate lines
+  are fitted in, what `ignore_dz` drops, and which way a simulated drift points.
+
+For a `base_link` sharing the robot's convention, adopting the rotation is
+harmless. For a camera optical frame it is not: those are z-forward, so the
+lines would be fitted in the *vertical* plane, and the failure is quiet —
+plausible numbers, wrong geometry.
+
+Two consequences worth knowing:
+
+- A mount is now read on **every** replay, not only when
+  `complementary_source.path` swaps the odometry stream — the mount of whichever
+  odometry is being corrected; see [the two mounts](#the-two-mounts). A run with
+  no `complementary_odom_meta.yaml` and no configured mount falls back to the
+  identity, which puts the estimation frame back on the LiDAR; the replay says
+  which of those happened on its `estimation frame:` line.
+- A simulated drift is injected in the estimation frame too, so that
+  "we put in alpha, did we get it back" stays exact. The ANYmal mount is a 180°
+  yaw, so a lateral alpha injected at the base and one injected at the LiDAR
+  point opposite ways — sweeps run before and after this change are not
+  comparable.
 
 ### The observability gate
 
@@ -196,7 +343,17 @@ sees: `history` of them, taking every `step`-th, so the window reaches back
 `history × step` frames. **Span is what matters, not count** — consecutive
 frames' lines are nearly identical, and it is the turning between them that
 makes them meet at all. The same rule as the viewer's overlay controls, and
-`50 × 4` is the same window it draws. Per-frame samples on the bundled
+`50 × 4` is the same window it draws.
+
+Only frames that passed the observability gate contribute a line. Below it the
+LiDAR displacement is too short for its direction to mean anything, so the
+line's angle is noise — and an arbitrary line is not a weak vote in the fit but
+a wrong one. It is the *speed* gate alone, deliberately: whether the resulting
+fit is accepted (`scaleLineMaxScaleSigma`, `scaleLineMinLegLines`) is read from
+the fit that the history feeds, so gating the history on that too would be
+circular and could never start. This is the same set the viewer's **Observable
+only** overlay draws, which is what makes the meeting point on the anchor frame
+the one the estimate was actually read from. Per-frame samples on the bundled
 6519-frame run, all with `l1`:
 
 | Correction | history | step | span | lines | samples | median | p10–p90 |
@@ -296,6 +453,40 @@ lines through one point plus one badly wrong line, `l2` lands 0.5 away and `l1`
 lands on the point. It also decides how the anchor view draws the meeting point,
 so what you see is what the estimator would use.
 
+**`scaleLineMaxScaleSigma`**, **`scaleLineMinLegLines`** and
+**`scaleLineMinLegSeparationDeg`** decide when the fitted point counts as an
+answer at all. A point the lines did not really determine is not a wrong scale,
+it is no scale, and taking it as one is what puts the wild samples in the trace.
+A frame that fails either test contributes nothing — the same "hold, do not fall
+back" rule as above.
+
+The first is the fit's own uncertainty along the scale axis, `sqrt(Σ[0,0])`, in
+units of `|comp|`: *only answer when the lines pin the scale to better than
+this*. It generalises, because it needs no notion of what the trajectory was
+doing, and lines that turned relative to each other are exactly what makes it
+small. `.inf` takes whatever the fit returns.
+
+The other two count *directions*, which is geometry the sigma cannot see. Under
+`l1` the sigma is built on a median absolute deviation, so a bundle of
+near-parallel lines that agree closely with each other reports a small spread
+while crossing at a glancing angle. The orientations are split about their own
+circular mean (doubled, since lines are undirected), and at least
+`scaleLineMinLegLines` must land on the sparser side. The separation enters as a
+deadband of half of it either side of that mean, so a line nearer the middle
+belongs to neither side — which guarantees that orientations spanning less than
+`scaleLineMinLegSeparationDeg` in total never pass, at any count. `0` lines turns
+the test off.
+
+On a zig-zag run the sigma gate is what pays: at `0.05` it drops 5% of the
+samples and takes the worst of them from 2.82 down to 1.11, cutting their
+standard deviation from 0.193 to 0.066. On a run with a long straight stretch it
+was the leg test that paid instead, lifting the worst sample from 0.497 to 0.960
+for 4% of them. They catch different things, which is why both are on by default.
+
+The viewer keeps drawing every point the lines produced, rejected or not, so the
+anchor view shows the geometry while the coverage strip shows which frames were
+actually used.
+
 **`scaleSmoothingMode`** — which statistic the smoothing window collapses to.
 
 | Mode | Behaviour |
@@ -384,21 +575,59 @@ replay_scale_tool:
                    0.0, 0.0, 1.0]
 ```
 
-### The extrinsic
+### The two mounts
 
-Set it when the alternative sensor sits on a different mount than the one the
-run recorded; omit it and the run's own `complementary_odom_meta.yaml` is used.
+There are two complementary odometries in a configuration and they are
+**different sensors**: the one the node recorded into the CSV, and an
+alternative stream that replaces it. Each has its own mount, and neither may
+stand in for the other — a mount taken from the wrong sensor does not fail, it
+comes back out as a scale.
 
-`extrinsicTrans` / `extrinsicRot` are spelled and read exactly as the node's
-`complementaryOdom.extrinsicRot` parameters in `config/anymal.yaml` — a
-3-vector and a **row-major** 3×3, nine numbers (nested rows also accepted) —
-so a mount can be pasted between the two configs unchanged. Either key may be
-left out, defaulting to zero translation and identity rotation as the ROS
-parameter declarations do. They may sit directly in `complementary_source` as
-above, or inside an `extrinsic:` sub-mapping.
+So each gets its own block, and which one applies follows from which odometry is
+being replayed rather than from a precedence rule:
 
-The quaternion form the node writes into `complementary_odom_meta.yaml` is
-accepted too:
+```yaml
+replay_scale_tool:
+
+  # The odometry the node recorded. Empty = the run's complementary_odom_meta.yaml.
+  recorded_odometry:
+    extrinsicTrans: [-0.310, 0.0, 0.159]
+    extrinsicRot:   [-1.0, 0.0, 0.0,  0.0, -1.0, 0.0,  0.0, 0.0, 1.0]
+
+  # A stream replacing it. Its mount is required whenever its path is set.
+  complementary_source:
+    path: "…/vo.tum"
+    extrinsic: run          # `run` | `identity` | an explicit mount
+```
+
+| Being replayed | Mount used |
+| --- | --- |
+| the recorded twist (no source path) | `recorded_odometry.extrinsic`, else the run's `complementary_odom_meta.yaml`, else identity |
+| a `complementary_source` | that block's mount — **never** the recorded one, unless it says `extrinsic: run` |
+
+A source path with no mount is a **hard error** naming the three ways to write
+one. It is not inherited and not defaulted to identity: stated, or nothing.
+
+`extrinsic: run` exists for the one case where sharing is correct —
+`complementary_odom_stream.tum` is the recorded sensor's own raw log — and it
+puts that in the file rather than leaving it to be inferred.
+
+Anything configured for a source that is not being replayed is inert, and the
+replay says so rather than quietly using it:
+
+```
+note: complementary_source.extrinsic is set but no source path is: it describes
+      a stream this replay does not read, and is ignored. Put a mount for the
+      recorded odometry under recorded_odometry.
+```
+
+Both mounts are spelled exactly as the node's `complementaryOdom.extrinsicTrans`
+/ `.extrinsicRot` in `config/anymal.yaml` — a 3-vector and a **row-major** 3×3,
+nine numbers, nested rows also accepted — so a mount can be pasted between the
+two configs unchanged. Either key may be left out, defaulting to zero
+translation and identity rotation as the ROS parameter declarations do. The
+quaternion form the node writes into `complementary_odom_meta.yaml` is accepted
+too:
 
 ```yaml
     extrinsic:
@@ -407,11 +636,12 @@ accepted too:
 ```
 
 An `extrinsic:` block that holds neither pair is a **hard error**, as is a
-rotation that is not nine numbers, not orthonormal to 1e-3, or a reflection.
-A wrong mount never fails loudly on its own — it silently rotates every
-complementary displacement, and comes back out as a scale — so a spelling the
-loader does not understand is refused rather than dropped in favour of the run's
-recorded mount. Saving from the GUI writes the matrix form, unconverted.
+rotation that is not nine numbers, not orthonormal to 1e-3, or a reflection. A
+spelling the loader does not understand is refused rather than dropped in favour
+of some other mount.
+
+Whichever mount applies also places [the estimation
+frame](#the-estimation-frame), and the replay prints which one it used.
 
 ### Matching a source that is not much faster than the LiDAR
 
@@ -504,6 +734,93 @@ Outputs are tagged with the alpha used (`_drift_xp0.1`), so a sweep over alpha
 leaves one trajectory per value instead of overwriting itself. The GUI exposes
 the same two fields, so you can sweep alpha and watch the estimate move.
 
+## Drawing against a reference trajectory
+
+An external trajectory — ground truth, a survey, another system's output —
+drawn alongside the replayed ones on the trajectory plot and in the viewer:
+
+```yaml
+replay_scale_tool:
+  reference_trajectory:
+    path: "~/datasets/quebec/2balls/total_station.tum"
+    label: ""                    # "" derives one from the filename
+    align: first_position_yaw    # see below
+    time_offset_s: 0.0           # added to its stamps before matching
+```
+
+TUM form, the same as every other trajectory this tool reads and writes. The
+replay never reads it: it is drawn, not measured against, so a reference in the
+wrong frame can mislead the eye but cannot move an estimate. It is drawn in
+black, and listed first in the legend — it is not one of the things being
+compared, it is what they are being compared against.
+
+**`align`** decides how it is placed. A reference logged separately shares
+neither an origin nor a clock nor a heading with the run, and two trajectories
+that do not start together cannot be compared by eye at all.
+
+| Mode | Behaviour |
+| --- | --- |
+| `first_position_yaw` | Anchor its first matched position on the replay's, then turn it about the vertical by the angle that best fits the replayed trajectory. The default. |
+| `first_position_rotation` | The same with the full 3D rotation fitted, for a reference frame that is not levelled. |
+| `first_pose` | Anchor its *pose* — position and orientation — at the replay's first. No fit, but it trusts the orientation in the file. |
+| `none` | Draw it in its own coordinates. For a reference already in the run's map frame. |
+
+`first_position_yaw` is the default because it is what a **total station**
+wants. Such a reference tracks a prism: it measures positions and nothing else,
+so the quaternions in its file are placeholders and `first_pose` would anchor
+the comparison to a fabricated orientation. What is genuinely unknown between
+its frame and the run's is where each was set up — a position — and which way
+each called north — a heading. Those are exactly what this fits, and it fits
+them from positions alone.
+
+Roll and pitch are deliberately **not** fitted. Between two gravity-levelled
+frames they are not unknown, so fitting them would absorb a real tilt error into
+the alignment and hide it. `first_position_rotation` is there for a reference
+frame that genuinely is not levelled, and it does absorb tilt along with the
+mounting.
+
+No alignment fits a **scale**. A scale is the quantity this whole tool exists to
+estimate; a fitted one would absorb exactly the error being looked for.
+
+The fitted modes turn the reference onto the *first replayed* trajectory, so it
+moves when the configuration does. That is the intent — fit it to what is being
+looked at — and it is why `none` and `first_pose` stay available when a fixed
+yardstick is wanted for comparing several replays against each other.
+
+The replay reports what it did, including the residual after alignment — which
+for a surveyed reference is the error you were after:
+
+```
+reference trajectory: ~/datasets/quebec/2balls/total_station.tum
+    poses: 186
+    aligned: first position + best-fit yaw (-37.00 deg) over 186 paired samples
+    residual after alignment: rms 0.041 m  max 0.118 m
+```
+
+### Matching the clocks
+
+The fitted alignments need correspondences: each reference sample is paired with
+the replay's position **interpolated at that stamp**, which uses every sample
+and needs no matching gate. A reference on its own clock has no correspondences
+at all, and stretching its clock onto the run's to invent some would be assuming
+the thing being measured. So the replay anchors the position, skips the fit, and
+prints the offset that would fix it:
+
+```
+    aligned: first position only -- 0 of 186 samples fall inside the run's span,
+             too few to fit a yaw
+    hint: set reference_trajectory.time_offset_s to 1786388866.070 to line the
+          two starts up
+```
+
+Put that in `time_offset_s` and re-run. It is deliberately not applied
+automatically: an epoch offset guessed from two start times assumes the two logs
+started together, which is the sort of assumption that turns into a heading
+error nobody notices.
+
+A configured path that does not exist is an error rather than a missing curve —
+a reference that silently fails to draw reads as one that agrees.
+
 ## Outputs
 
 Written under `<output_dir or the CSV's directory>/<output_subdir>/`, default
@@ -534,14 +851,18 @@ material for diagnosing why the estimator settled where it did. Both carry the
 cross-track half of the correction alongside the scale (`lateral_*`, all `nan`
 unless `lines_meet_xy` is applying one), and the vector trace also carries
 `meet_x` / `meet_y` — where the lines met on that frame, recorded whenever there
-is a line history to fit through, whatever correction is being applied.
+is a line history to fit through, whatever correction is being applied, and
+`window_rotation_rad` — how far the baseline window turned, which is the axis to
+plot the samples against when checking the estimation frame.
 
 ## GUI viewer
 
 ```bash
-replay-scale-gui                      # opens the newest run under ~/.ros/lili_logs
+replay-scale-gui                      # opens on the last run, read but not replayed
 replay-scale-gui ~/.ros/lili_logs/run_20260805_192954_kdtree_lm
 replay-scale-gui --ros-params-yaml my_replay.yaml
+replay-scale-gui --forget-session      # start as if this were the first launch
+replay-scale-gui --forget-runs         # forget what was applied to each run
 ```
 
 A frame scrubber, not a second way to run a replay: it calls the same
@@ -552,15 +873,77 @@ status bar.
 
 ### Choosing and saving a run
 
-The left panel lists every run under the base directory, newest first. Selecting
-a row does nothing on its own; **Load** replays the selected run, and a
-double-click does both at once. Selection is cheap and reversible, a load is a
-second or so of work, so they are kept separate. **Open other…** takes a run
-directory from anywhere on disk, and adds it to the list once loaded.
+The left panel holds **two lists**, because the two questions are different:
 
-The run being shown is marked `▶` and bold, with its full path under the list —
-every other panel in the window describes that run, and a list where the
-selection has wandered off should not be able to imply otherwise.
+| | |
+| --- | --- |
+| **Replayed before** | Runs this viewer has run the estimator over, last one first. Each keeps the configuration it was given, across launches. |
+| **Not replayed yet** | The rest of what is under the base directory. **Symlinks are bold and listed first** — a link is a run someone stopped to name, and those are the ones worth finding again; the raw `run_<timestamp>` directories behind them are the pile they were picked from. |
+
+The two are **disjoint**, and each run appears **once**: replaying a run moves
+it from the second list to the first, and a run reached through several names —
+`latest`, the label you gave it, its own directory — is one run under the name
+you chose, with the others in its tooltip. A row that could be in either list,
+or a run with three rows, is a list you cannot pick from: marking the run on
+screen marks a row you did not click.
+
+**Picking a run reads it** — see [Previewing without
+replaying](#previewing-without-replaying) — which costs about a fifth of a
+second. **Nothing in this panel replays.** The estimator runs on **Apply &
+replay** in the Configuration dock and on no other gesture, so no click here can
+cost you ten seconds. **Re-read** reads the selected run again, past the cache,
+for when something under it has changed; **Open other…** takes a run directory
+from anywhere on disk.
+
+A run you have already opened this session **comes straight back from memory**,
+replayed or previewed, whichever it was: switching between two runs to compare
+them costs one replay each, not one per switch. Nothing is evicted, so the price
+of a long session is memory, not waiting.
+
+The run being shown is marked `▶`, with its full path under the lists — every
+other panel in the window describes that run, and a list where the selection has
+wandered off should not be able to imply otherwise. (The mark is an arrow rather
+than a bold face because bold already means "symlink" here.)
+
+#### Previewing without replaying
+
+A preview **reads** a run instead of replaying it: what it recorded, its
+odometry integrated on its own, any trajectories an earlier replay wrote into
+`<run>/replay/trajectories/`, and your reference trajectory placed against them.
+That is enough to answer "is this the run I meant, and does my reference line up
+with it" — which is most of what clicking through a list of runs is for.
+
+All of it is a read or a single integration over the recorded twists — nothing
+here runs the estimator, and nothing here is a replay.
+
+What it cannot show is therefore anything the estimator produces: the
+anchor-frame vectors and the scale history stay empty and say so, because no
+estimate was made. **Apply & replay** in the Configuration dock is what produces
+them — including when you have edited nothing, which is how a run you are
+previewing gets replayed. The viewer opens on a preview too, so it comes up at
+once.
+
+#### What each run remembers
+
+The configuration you apply to a run stays **with that run**, in
+`$XDG_STATE_HOME/replay_scale/runs/` — one small file per run, written when a
+run is replayed or configured:
+
+- Switch to another run and it opens with **its own** settings, or the defaults;
+  nothing from the run you just left comes along.
+- Come back and yours are still there — including a reference trajectory set
+  while merely previewing.
+- It survives closing the viewer.
+- It holds **only what differs** from the config files, so a run whose settings
+  you never touched still follows any later change to the base configuration.
+
+Each file records which run it is about, so `latest` and the directory it points
+at are one run and not two. Only the viewer reads any of it: **Save to run**
+(Configuration dock) is how a setting becomes part of the run for the CLI too,
+and doing that clears the viewer's copy, leaving the run's own file in charge.
+**Reset defaults** forgets it for the run on screen, along with the remembered
+session; `replay-scale-gui --forget-runs` forgets every run at once, leaving the
+runs themselves untouched.
 
 **Save trajectories…** is the only thing that writes. It asks for a directory
 and re-runs the replay through the pipeline's writing path with the
@@ -606,13 +989,14 @@ choices, selectable in the toolbar:
 
 | Mark | Meaning |
 | --- | --- |
-| Blue dot at origin | The anchor pose, `scaleBaselineFrameLag` frames back. |
+| Grey arrows through the origin | The view frame's own axes: x up the page, y to the left. |
+| Blue dot at origin (**anchor**) | The anchor pose — the previous position, `scaleBaselineFrameLag` frames back. |
 | Green arrow | Complementary displacement over the lag window (`t_comp_map`), rooted at the anchor. Absent when the window did not close. |
-| Orange dashed line | Degenerate translational direction(s) through the latest position — where LiDAR constrains nothing and the complementary prediction is substituted. |
-| Orange dotted lines | The previous degenerate frames' lines (`history`, default 50, taking every `step`-th, default 4), fading with age. |
-| Dashed green arrow, ending in `×` | The point closest to every line drawn — where they agree the robot is. Absent when they are too parallel to say. |
-| Filled green ellipse | The 1σ uncertainty of that point, from how far the lines miss it. |
-| Small green dots (**meet trail**) | The point the *estimator* fitted on each earlier frame in the overlay — the trail of what the correction has been reading. Off by default. |
+| Orange dashed line | The degeneracy space(s) through the latest position — where LiDAR constrains nothing and the complementary prediction is substituted. |
+| Orange dotted lines | The previous degenerate frames' degeneracy spaces (`history`, default 50, taking every `step`-th, default 4), fading with age. |
+| Dashed purple arrow, ending in `×` | The point closest to every line drawn — where they agree the robot is, labelled `(1+α, β)`: how much longer than the odometry claimed, and how far sideways of it. Absent when they are too parallel to say. |
+| Filled purple ellipse | The 1σ uncertainty of that point, from how far the lines miss it. |
+| Small purple dots (**meet trail**) | The point the *estimator* fitted on each earlier frame in the overlay — the trail of what the correction has been reading. Off by default. |
 
 **meet trail** is a different population from the `×`: one dot per earlier
 frame, each fitted from *that* frame's own line window, where the `×` is one fit
@@ -627,8 +1011,8 @@ somewhere along here", but the direction rotates as the robot turns, so lines
 from different frames cross. The point with the least total squared distance to
 all of them — the current line plus every history line on screen — is what those
 statements agree on, and it is a position estimate LiDAR alone could not give.
-It is drawn as an arrow from the anchor, deliberately in the same green as the
-complementary arrow and dashed rather than solid: same kind of quantity, a
+It is drawn as an arrow from the anchor, in purple against the complementary
+arrow's green and dashed rather than solid: same kind of quantity, a
 displacement from the anchor, but inferred from the lines rather than measured.
 Reading the two against each other is the point — where the dashed arrow lands
 short of the solid one, the odometry claims more motion than the lines support.
@@ -676,9 +1060,12 @@ earlier degenerate frames rather than redrawing almost the same line fifty
 times — with the defaults the overlay spans the last 200 degenerate frames.
 Frames without a usable basis are skipped, so a history of 50 always shows 50
 real lines. **Observable only** applies here too: with it checked, the overlay
-only looks back at frames that passed the gate, so it never mixes a meaningful
-line with a noise-dominated one. It restricts the overlay only — the line for
-the frame you are actually looking at is always drawn. When normalizing, frames
+looks back at exactly the frames the estimator admitted into its own line
+history, so the meeting point drawn is the one the estimate was read from.
+Uncheck it and the overlay shows lines the estimate never used — useful for
+seeing what the gate threw away, but the point it fits is then a diagnostic
+rather than the estimate. It restricts the overlay only — the line for the
+frame you are actually looking at is always drawn. When normalizing, frames
 that had no complementary window have nothing to divide by and are dropped, so
 fewer than *N* may appear; the legend reports how many were actually drawn. Set
 it to 0 to turn the overlay off.
@@ -709,6 +1096,15 @@ and stay in metres, with a note in the title. It is applied at draw time, so
 toggling it is instant and the underlying geometry is untouched. Under
 normalization the *fixed* zoom switches to ±2 in units of |comp|.
 
+**min x** and **max y** crop the view to the part worth showing. The picture is
+centred on the anchor, so half of it is usually empty: `min x` raises the bottom
+edge, `max y` brings in the left-hand one (+y is drawn to the left), and the
+other two edges stay at the zoom's extent. Both read **auto** at the low end of
+their travel, which is the symmetric view; both are capped at ±2, the range the
+normalized view lives in. A crop that would leave nothing is clamped, and where
+it takes the origin off the picture the drawn axis cross is left out rather than
+pinned to an edge.
+
 **Observable only** is on by default: the slider only lands on — and the
 history overlay only looks back at — frames whose scale sample passed the
 estimator's observability gate
@@ -731,9 +1127,10 @@ complementary odometry integrated on its own.
 It is drawn from the replay held in memory, not from the `trajectories/` folder:
 the GUI runs with `write=False`, so there may be no files to read, and reading
 them would show whatever an earlier CLI run left behind rather than the settings
-currently applied. **Apply & re-run** therefore redraws this tab too — which is
+currently applied. **Apply & replay** therefore redraws this tab too — which is
 the quickest way to see what a parameter change did to the *shape* of the run,
-where the anchor-frame view only shows one window of it.
+where the anchor-frame view only shows one window of it. An edit to the
+reference trajectory alone redraws this tab without replaying anything.
 
 A black dot marks the frame the slider is on. The matplotlib toolbar above the
 plot pans and zooms; these runs are long and thin, so the interesting stretch is
@@ -795,11 +1192,46 @@ The **Configuration** dock edits the same `complementaryOdom` parameters and
 `replay_scale_tool` settings the YAML carries — `complementaryCorrection`,
 `translationScale`, `scaleMinNonDegenerateSpeed`, `scaleBaselineFrameLag`,
 `scaleSmoothingWindowSize`, `scaleSmoothingMode`, `scaleLineHistory`,
-`scaleLineHistoryStep`, `scaleLineFitNorm`, `scaleLateralMax`, `scaleMin`,
-`scaleMax`, `scaleEstimationApply`, `ignore_dz`, `correction_mode`, and the
-complementary source path, `match_mode` and match gate. `scaleMax` and
+`scaleLineHistoryStep`, `scaleLineFitNorm`, `scaleLineMaxScaleSigma`,
+`scaleLineMinLegLines`, `scaleLineMinLegSeparationDeg`, `scaleLateralMax`, `scaleMin`,
+`scaleMax`, `scaleEstimationApply`, `ignore_dz`, `correction_mode`,
+`estimationFrame`, `estimationFrameUseExtrinsicRot`, the complementary source
+path, `match_mode`, match gate and extrinsic, and the reference trajectory.
+`scaleLineMaxScaleSigma` shows **any fit** at 0, and `scaleMax` and
 `scaleLateralMax` show **unbounded** at 0, which is how an infinite bound
 round-trips through a spin box.
+
+The **estimation frame** section holds the frame selector and reports which
+odometry was corrected and whose mount placed the frame. The mounts themselves
+live with the odometry each describes — the recorded one in its own
+**recorded odometry** section, an alternative stream's beside the path it
+belongs to — so that neither can be mistaken for the other.
+
+The extrinsic is typed as a translation in metres and roll/pitch/yaw in degrees
+— `Rz(yaw) @ Ry(pitch) @ Rx(roll)`, the convention ROS spells them in — and is
+saved as the `extrinsicTrans` / `extrinsicRot` pair like every other writer of
+it. **override the run's extrinsic** is the checkbox for the state the config
+expresses by leaving the keys out: unticked, the run's own
+`complementary_odom_meta.yaml` is used, which is *not* the same configuration as
+an identity mount, so it cannot be inferred from six zeroed boxes. A matrix
+loaded from a file is handed on unchanged unless one of those boxes is edited,
+rather than being rebuilt from what the spin boxes could round it to.
+
+Unticked, the boxes show **the mount the run itself recorded** — greyed out,
+filled from what the last replay resolved, with a line underneath naming it and
+the lever arm it implies:
+
+```
+not overriding — showing the run's own mount;
+origin -0.310, +0.000, +0.159 m (0.348 m of lever arm)
+```
+
+Only the pipeline reads the run's meta file, so the panel is told the answer
+after each replay rather than working it out. Ticking the box then starts from
+those numbers instead of from whatever was last typed, which is both the useful
+starting point and the honest one: an unticked box left showing stale values
+reads as if they applied. The estimation frame section says which mount actually
+applied, since two can be configured at once and only one is in force.
 
 It is **grouped the way the config file is**, and each group folds. Most of the
 form describes a method that is not running: selecting a correction unfolds the
@@ -807,8 +1239,17 @@ settings it reads and folds away the ones it does not, greying them out. Folding
 never edits — a folded section keeps its values and still contributes them, so
 switching methods and back loses nothing.
 
-- **Apply & re-run** replays with the edited values (on the worker thread, still
-  writing nothing) and redraws.
+- **Apply & replay** runs the estimator over the loaded run with the edited
+  values (on the worker thread, still writing nothing) and redraws. It is the
+  **only** thing in the window that replays — picking a run in the list reads
+  it, and this is where you ask for the rest — so pressing it having changed
+  nothing is not a no-op: it is how the run you are previewing gets replayed.
+  With one exception: if the *only* thing you changed is the reference
+  trajectory, nothing is replayed. The replay never reads it — it is drawn, not
+  measured against — so it is refitted against the trajectory already on screen
+  and the plot is redrawn, which is what a replay would have drawn anyway.
+  Picking a reference, nudging its `time_offset_s` or switching its `align` is
+  therefore instant on a run of any length.
 - **Revert** returns to the configuration the current view was produced with —
   so a failed run does not lose your baseline.
 - **Load YAML…** reads a configuration file in and immediately replays the
@@ -818,12 +1259,58 @@ switching methods and back loses nothing.
 - **Save YAML…** writes those values as a config file, and the status bar shows
   the `replay-scale-trajectory … --ros-params-yaml <file>` command that
   reproduces the same replay headlessly.
+- **Reset defaults** goes back to the bundled configuration *and* forgets the
+  remembered session below, after asking. Revert undoes edits back to what is
+  loaded; this undoes the loading too, which is the way out of a configuration
+  that has been edited into a corner — including one an earlier session left
+  behind. The run you are looking at stays open.
 
 The file the values came from is named at the top of the dock, and both loading
-and saving update it. The viewer starts from the bundled
-[`config/default.yaml`](src/replay_scale/config/default.yaml) unless
-`replay-scale-gui --ros-params-yaml <file>` names another — the same flag the
-CLI takes.
+and saving update it.
+
+### Reopening where you left off
+
+The viewer remembers the configuration that last ran and the run it ran on, and
+opens on both next time — as a *preview*, so it comes up at once; **Apply &
+replay** runs the estimator when you want it. The line at the top of the dock
+says where the values came from.
+
+Two different things are remembered, and the split is the point:
+
+| | |
+| --- | --- |
+| **The session** | One configuration: the *method*, carried to whatever run is opened next, plus which run you were on. |
+| **[Per run](#what-each-run-remembers)** | What you applied to each individual run — its reference trajectory above all. |
+
+So the session deliberately leaves the reference trajectory out: it belongs to
+the run it was recorded with, and carrying it to the next run opened would draw
+a stranger's trajectory beside it — aligned, plausible, and about a different
+drive. A session file still holding one (hand-edited, or written by an older
+version) is rewritten without it.
+
+What is remembered is written to `$XDG_STATE_HOME/replay_scale/last_session.yaml`
+(`~/.local/state/replay_scale/last_session.yaml` by default) as an **ordinary
+config file** — the same one *Save YAML…* writes, with `input_path` and
+`base_dir` filled in. So it is readable, hand-editable, and can be handed
+straight to the CLI with `--ros-params-yaml`; there is no second format. It is
+written after a load *succeeds*, so a configuration that failed to run is not
+one you come back to, and a remembered run that has since been deleted is
+dropped rather than opened on an error.
+
+Three ways out, from softest to hardest:
+
+| | Effect |
+| --- | --- |
+| `replay-scale-gui --ros-params-yaml <file>` | An explicit configuration wins; the remembered one is not consulted (the run is still remembered as usual). |
+| `replay-scale-gui --no-session` | Ignore what was remembered for this launch, without forgetting it. |
+| `replay-scale-gui --forget-session`, or **Reset defaults** in the dock | Delete the file: the viewer comes up as it did the first time. **Reset defaults** also forgets what was applied to the run on screen. |
+
+Explicit arguments always win over what was remembered, one at a time: a run
+given on the command line, `--base-dir`, and `--ros-params-yaml` each override
+their own half of it. Only the viewer reads the file — a CLI replay depends on
+nothing but its arguments and the config it was given, which is what keeps a
+replay reproducible from what is written down rather than from what someone last
+clicked.
 
 The panel produces the very same `ReplayToolSettings` / `ReplayParams` objects
 the YAML loader does, so it cannot express a configuration the CLI could not

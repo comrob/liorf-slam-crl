@@ -38,6 +38,42 @@ COMPLEMENTARY_CORRECTIONS = ("ratio", "line_x_axis", "lines_meet_x", "lines_meet
 # "line_x_axis" reads one frame's own line and needs no history.
 LINES_MEET_CORRECTIONS = ("lines_meet_x", "lines_meet_xy")
 
+# Which body frame the correction is measured and applied in.
+#   lidar         - the node's own: everything happens in the LiDAR frame, so a
+#                   body rotation about any other point translates the LiDAR by
+#                   the lever arm between them, and that translation is measured
+#                   as odometry error and then multiplied by the scale.
+#   complementary - the frame of the odometry being corrected, located by
+#                   T_complementary_to_lidar: base_link for a legged state
+#                   estimator, the camera for visual odometry. An in-place
+#                   rotation about that origin carries no translation there, so
+#                   no sample is taken from one and no scale is applied to one.
+ESTIMATION_FRAMES = ("lidar", "complementary")
+
+# How an external reference trajectory is placed against the replay. All of
+# them are rigid: the reference's own shape is never touched, and no scale is
+# ever fitted -- a scale is the quantity under test.
+#   first_position_yaw - anchor its first matched position on the replay's, then
+#                turn it about the vertical by the angle that best fits the
+#                replayed trajectory. The default, and the one a total station
+#                wants: it uses only positions, which is all such a reference
+#                has, and it fits only the heading, which is all that is
+#                genuinely unknown between two gravity-levelled frames. Roll and
+#                pitch stay unfitted, so a real tilt error still shows.
+#   first_position_rotation - the same, with the full 3D rotation fitted. Use
+#                where the reference's frame is not levelled; it will absorb a
+#                genuine tilt error along with the unknown mounting.
+#   first_pose - anchor its *pose* -- position and orientation -- at the
+#                replay's first. No fit at all, but it trusts the orientation in
+#                the file, which a position-only reference does not have.
+#   none       - draw it in its own coordinates, untouched. For a reference
+#                already in the run's map frame.
+REFERENCE_ALIGNMENTS = ("first_position_yaw", "first_position_rotation",
+                        "first_pose", "none")
+
+#: Alignments that fit a rotation against the replayed trajectory.
+FITTED_ALIGNMENTS = ("first_position_yaw", "first_position_rotation")
+
 # How the accepted samples in the smoothing window become the applied scale.
 # "mean" mirrors the node; "median" is robust to the ratio's heavy tail;
 # "trimmed" drops the tail by quartile fence and averages what is left.
@@ -61,6 +97,18 @@ class ReplayParams:
     # What the complementary displacement is corrected by; see
     # COMPLEMENTARY_CORRECTIONS. "ratio" is the node's.
     complementary_correction: str = "ratio"
+    # Which body frame that correction is measured and applied in; see
+    # ESTIMATION_FRAMES. "lidar" is the node's, so it is the default.
+    estimation_frame: str = "lidar"
+    # Whether the complementary frame adopts the extrinsic's rotation as well as
+    # its origin. Off keeps the LiDAR's axes and moves only the origin, which is
+    # what removes the lever arm; the axes decide something else entirely -- the
+    # plane the lines are fitted in, what ignore_dz drops, and which way a
+    # simulated drift points. Turn it on for an odometry frame that shares the
+    # robot's convention (a base_link), leave it off for one that does not (a
+    # camera optical frame is z-forward, and adopting it would fit the lines in
+    # the vertical plane).
+    estimation_frame_use_extrinsic_rot: bool = False
 
     # -- lines_meet_x / lines_meet_xy ---------------------------------------
     # How many earlier frames' degenerate lines the meeting point is fitted
@@ -78,6 +126,17 @@ class ReplayParams:
     # |comp|, before it enters the smoothing filter. Only "lines_meet_xy" has
     # one to clamp.
     scale_lateral_max: float = float("inf")
+    # Largest uncertainty along the scale axis, in units of |comp|, that still
+    # yields a sample: "only answer when the lines pin the scale to better than
+    # this". inf takes whatever the fit returns, which is what the node does.
+    scale_line_max_scale_sigma: float = 0.05
+    # How many of the fitted lines must come from the *other* group of
+    # directions -- the opposite leg of a zig-zag -- and how far apart the two
+    # groups must be. Geometry the sigma above cannot see: near-parallel lines
+    # that agree closely with each other report a small spread while crossing at
+    # a glancing angle. 0 lines turns the test off.
+    scale_line_min_leg_lines: int = 3
+    scale_line_min_leg_separation_deg: float = 10.0
 
     # -- smoothing, all methods ---------------------------------------------
     scale_smoothing_window_size: int = 20
@@ -89,6 +148,11 @@ class ReplayParams:
     # bounding is opt-in.
     scale_min: float = 0.0
     scale_max: float = float("inf")
+
+    @property
+    def estimates_in_complementary_frame(self):
+        """True when the correction is measured where the odometry actually is."""
+        return self.estimation_frame == "complementary"
 
     @property
     def uses_lines(self):
@@ -140,12 +204,23 @@ class ScaleVectorFrame:
     # is, since the viewer draws its trail as a diagnostic either way.
     __slots__ = (
         "frame_idx", "time", "degeneracy_detected", "gate_observable",
+        # The observability speed gate on its own. Under a lines-meet
+        # correction gate_observable is additionally narrowed by whether the
+        # fit was accepted, so it stops answering "did this frame contribute a
+        # line"; this one still does, and it is what the estimator admits into
+        # its line history.
+        "speed_gate_observable",
         "anchor_frame_idx",
         "anchor_pos", "latest_pos",
         "t_lidar_map", "t_comp_map",
         "t_lidar_nondeg_map", "t_comp_nondeg_map",
         "t_lidar_nondeg_proj_map", "nondeg_axis_map",
         "meet_point",
+        # How far the lag window turned, in radians. Frame-independent, and the
+        # axis to plot scale_instant_raw against: under "lidar" the two are
+        # correlated through the lever arm, which is the artefact the
+        # "complementary" frame removes.
+        "window_rotation_rad",
         "scale_instant_raw", "scale_smooth", "scale_applied",
         "lateral_instant_raw", "lateral_smooth", "lateral_applied",
     )

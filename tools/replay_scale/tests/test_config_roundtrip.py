@@ -42,7 +42,8 @@ def _edited():
         scale_smoothing_window_size=33, ignore_dz=True,
         complementary_correction="lines_meet_xy", scale_line_history=40,
         scale_line_history_step=4, scale_line_fit_norm="l1",
-        scale_lateral_max=0.3)
+        scale_lateral_max=0.3, scale_line_max_scale_sigma=0.02,
+        scale_line_min_leg_lines=5, scale_line_min_leg_separation_deg=25.0)
     return settings, params
 
 
@@ -143,6 +144,32 @@ def test_a_negative_lateral_bound_is_rejected():
     with pytest.raises(ValueError, match="scaleLateralMax"):
         replay_params_from_mapping(
             {"complementaryOdom": {"scaleLateralMax": -0.5}})
+
+
+def test_an_infinite_scale_sigma_survives_a_round_trip():
+    """.inf is the gate's off switch, so it has to come back as one."""
+    params = replay_params_from_mapping(config_to_mapping(
+        ReplayToolSettings(),
+        ReplayParams(scale_line_max_scale_sigma=float("inf")))["/**"]["ros__parameters"])
+    assert params.scale_line_max_scale_sigma == float("inf")
+
+
+def test_a_negative_scale_sigma_is_rejected():
+    with pytest.raises(ValueError, match="scaleLineMaxScaleSigma"):
+        replay_params_from_mapping(
+            {"complementaryOdom": {"scaleLineMaxScaleSigma": -0.1}})
+
+
+def test_a_negative_leg_count_is_rejected():
+    with pytest.raises(ValueError, match="scaleLineMinLegLines"):
+        replay_params_from_mapping({"complementaryOdom": {"scaleLineMinLegLines": -1}})
+
+
+def test_a_leg_separation_of_half_a_turn_is_rejected():
+    """Orientations are undirected, so 180 degrees apart is the same line."""
+    with pytest.raises(ValueError, match="scaleLineMinLegSeparationDeg"):
+        replay_params_from_mapping(
+            {"complementaryOdom": {"scaleLineMinLegSeparationDeg": 180.0}})
 
 
 def test_unknown_match_mode_is_rejected():

@@ -11,7 +11,7 @@ from collections import deque
 
 import numpy as np
 
-from .lines import fit_lines
+from .lines import fit_lines, leg_split
 from .model import (
     LINES_MEET_CORRECTIONS,
     SMOOTHING_MODES,
@@ -19,11 +19,13 @@ from .model import (
     ScaleVectorFrame,
 )
 from .se3 import (
+    BodyFrame,
     exp_map,
     orthonormal_translation_basis,
     project_degenerate_correction,
     project_degenerate_correction_translation,
     project_onto_basis_translation,
+    rotation_angle,
 )
 
 #: Below this an in-plane degenerate direction is numerically meaningless.
@@ -139,16 +141,83 @@ def line_meet_point(lines, *, norm="l2"):
     behind the anchor: a negative along-track coordinate is not a scale, it is
     the fit telling you the lines disagree with the direction of travel.
     """
+    fit = line_meet_fit(lines, norm=norm)
+    return None if fit is None else fit.point
+
+
+def line_meet_fit(lines, *, norm="l2"):
+    """The fit behind :func:`line_meet_point`: the point and how well it is held.
+
+    Same answer and same None cases; this keeps the covariance and the line
+    count, which is what :func:`line_meet_accepted` judges the point on.
+    """
     fit = fit_lines([o for o, _ in lines], [d for _, d in lines], norm=norm)
     if fit is None or fit.point[0] <= 0.0:
         return None
-    return fit.point
+    return fit
 
 
 def line_meet_scale(lines, *, norm="l2"):
     """The along-complementary coordinate of :func:`line_meet_point`, or nan."""
     point = line_meet_point(lines, norm=norm)
     return np.nan if point is None else float(point[0])
+
+
+def meet_scale_sigma(fit):
+    """The fit's own uncertainty in the scale coordinate, or nan.
+
+    The along-complementary axis is the one a scale lives on, so the standard
+    deviation of the meeting point along it says, in units of |comp|, how
+    tightly the lines actually pinned the scale down. nan when there is no
+    covariance to read it from -- fewer than three lines, or residuals that
+    vanished.
+    """
+    if fit is None or fit.covariance is None:
+        return np.nan
+    variance = float(fit.covariance[0, 0])
+    return float(np.sqrt(variance)) if variance >= 0.0 else np.nan
+
+
+def line_meet_accepted(fit, lines, *, max_scale_sigma=float("inf"), min_leg_lines=0,
+                       min_leg_separation_rad=0.0):
+    """Whether a meeting point is held firmly enough to be taken as a sample.
+
+    Two independent criteria, both off by default so the bare fit is unchanged:
+
+    ``max_scale_sigma``
+        The fit's own uncertainty along the scale axis, in units of |comp|.
+        Read it as "only answer when the lines pin the scale to better than
+        this". It is the criterion that generalises: it needs no notion of what
+        the trajectory was doing, and lines that turned relative to each other
+        are exactly what makes it small.
+
+    ``min_leg_lines`` / ``min_leg_separation_rad``
+        How many lines must come from the *other* group of directions, and how
+        far apart the two groups must be; see :func:`~.lines.leg_split`. This is
+        geometry rather than statistics, and it is worth having alongside the
+        sigma because the L1 fit's sigma is built on a median absolute
+        deviation: a bundle of near-parallel lines that happen to agree closely
+        with each other reports a small spread while crossing at a glancing
+        angle, and only counting the directions catches that.
+
+    A rejected point is not a wrong point -- it is one the lines did not
+    determine. The caller drops the sample rather than substituting anything,
+    which leaves the smoothing window applying what the last frames that did
+    answer said.
+    """
+    if fit is None:
+        return False
+    if np.isfinite(max_scale_sigma):
+        sigma = meet_scale_sigma(fit)
+        # No sigma at all is not evidence of a good fit: two lines always meet
+        # exactly, and exactness there says nothing about where.
+        if not np.isfinite(sigma) or sigma > max_scale_sigma:
+            return False
+    if min_leg_lines > 0:
+        split = leg_split([d for _, d in lines], min_separation=min_leg_separation_rad)
+        if split.weaker < min_leg_lines:
+            return False
+    return True
 
 
 def apply_scale_correction(t_comp, scale):
@@ -189,6 +258,27 @@ def apply_similarity_correction(t_comp, scale, lateral):
     e_y = np.array([-e_x[1], e_x[0]])       # +90 degrees, i.e. to the left
     t[:2] = d * (float(scale) * e_x + float(lateral) * e_y)
     return t
+
+
+def corrected_comp_step(T_comp_rel, body_frame, scale, lateral=None):
+    """One complementary step with the correction applied in ``body_frame``.
+
+    The step arrives as a motion of the LiDAR and leaves as one, because that is
+    what the trajectory is chained from and what the degeneracy projection
+    substitutes into; only the correction happens elsewhere. Re-expressed at the
+    odometry sensor's own origin, an in-place rotation about that origin has no
+    translation, so the scale multiplies zero and the step comes back exactly as
+    it arrived -- the lever arm that carries the LiDAR around the turn is
+    geometry, not odometry error, and nothing here may stretch it.
+
+    ``lateral`` of None applies the scale alone; a number applies the whole
+    meeting point. With an identity ``body_frame`` this is the LiDAR-frame
+    correction the node performs, unchanged.
+    """
+    step = body_frame.rebase(T_comp_rel)
+    step[:3, 3] = (apply_scale_correction(step[:3, 3], scale) if lateral is None
+                   else apply_similarity_correction(step[:3, 3], scale, lateral))
+    return body_frame.unbase(step)
 
 
 def _clamped(value, low, high):
@@ -268,11 +358,18 @@ def _pin_logged_orientation(T_optimized, frame):
 
 
 def reconstruct_fixed(frames, scale_of_frame, apply_correction=True, translation_scale_multiplier=1.0,
-                      correction_mode="twist6"):
-    """Chain a trajectory from LiDAR increments using fixed/recorded scales."""
+                      correction_mode="twist6", body_frame=None):
+    """Chain a trajectory from LiDAR increments using fixed/recorded scales.
+
+    ``body_frame`` is where the scale is applied; see :func:`corrected_comp_step`.
+    It defaults to the LiDAR frame, so a caller that does not care is unaffected
+    -- but a fixed replay and an estimated one must be given the same frame or
+    "scale 1.2" stops meaning the same thing in the two.
+    """
     if not frames:
         return []
 
+    body_frame = body_frame if body_frame is not None else BodyFrame()
     correct = _correction_fn(correction_mode)
     T_prev = frames[0].pose_prev.copy()
     out = []
@@ -289,10 +386,13 @@ def reconstruct_fixed(frames, scale_of_frame, apply_correction=True, translation
         if do_correction:
             scale = scale_of_frame(f)
             dt = f.dt_complementary if f.dt_complementary > 1e-5 else f.dt_scan
-            xi_comp = f.complementary_twist.copy()
-            xi_comp[:3] *= translation_scale_multiplier
-            T_comp_rel = exp_map(xi_comp, dt)
-            T_comp_rel[:3, 3] *= scale
+            # translationScale multiplies the odometry's own coordinates, so it
+            # goes through the same frame the estimated scale does -- otherwise
+            # the two multipliers in one expression would mean different things.
+            T_comp_rel = corrected_comp_step(
+                corrected_comp_step(exp_map(f.complementary_twist, dt), body_frame,
+                                    translation_scale_multiplier),
+                body_frame, scale)
             T_comp_abs = T_prev @ T_comp_rel
             T_corrected = correct(T_optimized, T_comp_abs, f.basis)
         else:
@@ -303,24 +403,30 @@ def reconstruct_fixed(frames, scale_of_frame, apply_correction=True, translation
     return out
 
 
-def reconstruct_complementary_only(frames, translation_scale_multiplier=1.0):
+def reconstruct_complementary_only(frames, translation_scale_multiplier=1.0, body_frame=None):
     """Chain a trajectory purely from complementary (additional) odometry twists.
 
     No LiDAR fusion or estimated-scale correction is applied; only the
     replay-time translationScale multiplier is used, so this shows the raw
     additional-odometry sensor's own drift/shape for comparison.
+
+    That multiplier goes through ``body_frame`` like every other scale, so the
+    curve stays comparable with the replays drawn beside it: what is stretched
+    is the sensor's own displacement, never the lever arm carrying the LiDAR
+    around a turn. The curve itself remains the LiDAR's path.
     """
     if not frames:
         return []
 
+    body_frame = body_frame if body_frame is not None else BodyFrame()
     T_prev = frames[0].pose_prev.copy()
     out = []
     for f in frames:
         if f.has_complementary and np.all(np.isfinite(f.complementary_twist)):
             dt = f.dt_complementary if f.dt_complementary > 1e-5 else f.dt_scan
-            xi_comp = f.complementary_twist.copy()
-            xi_comp[:3] *= translation_scale_multiplier
-            T_next = T_prev @ exp_map(xi_comp, dt)
+            T_next = T_prev @ corrected_comp_step(
+                exp_map(f.complementary_twist, dt), body_frame,
+                translation_scale_multiplier)
         else:
             T_next = T_prev.copy()
         out.append((f.time, T_next))
@@ -455,7 +561,8 @@ def build_additional_odom_scale_sample(
     return result
 
 
-def reconstruct_with_estimator(frames, params, collect_vectors=False, correction_mode="twist6"):
+def reconstruct_with_estimator(frames, params, collect_vectors=False, correction_mode="twist6",
+                               body_frame=None):
     """Replay with online-style lagged scale estimation and application.
 
     Notes about parity with C++:
@@ -473,10 +580,18 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
     same gate, the same clamp and the same smoothing window, and all three fall
     back to the last value that window agreed on when a frame produces no
     sample.
+
+    ``body_frame`` is where all of that is measured and applied -- the caller
+    builds it from ``params.estimation_frame`` and the run's extrinsic; see
+    :func:`replay_scale.settings.estimation_body_frame`. It defaults to the
+    LiDAR frame, which is the node's own behaviour. Everything entering and
+    leaving is still a LiDAR pose either way: the frame changes what the scale
+    is a scale *of*, not what the trajectory is a trajectory of.
     """
     if not frames:
         return [], [], []
 
+    body_frame = body_frame if body_frame is not None else BodyFrame()
     correct = _correction_fn(correction_mode)
     T_prev = frames[0].pose_prev.copy()
     out = []
@@ -539,13 +654,13 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
         if has_comp:
             dt_pred = f.dt_complementary if f.dt_complementary > 1e-5 else f.dt_scan
             dt_pred = max(1e-5, float(dt_pred))
-            xi_comp = f.complementary_twist.copy()
             # Recorded twists already include the original run's translationScale.
-            # This multiplier is interpreted as an additional replay-time factor.
-            xi_comp[:3] *= float(params.translation_scale)
-
-            T_comp_rel_unscaled = exp_map(xi_comp, dt_pred)
-            T_comp_rel_scaled = T_comp_rel_unscaled.copy()
+            # This multiplier is interpreted as an additional replay-time factor,
+            # and is applied in the estimation frame like every other one, so
+            # that a single frame decides what all of them are multipliers of.
+            T_comp_rel_unscaled = corrected_comp_step(
+                exp_map(f.complementary_twist, dt_pred), body_frame,
+                float(params.translation_scale))
             # Applied to this one frame's step in its own frame, not to the
             # window the pair was measured over. That is what the overlay the
             # pair comes from already assumes: every frame is normalized by its
@@ -554,12 +669,9 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
             # fixed multiple of |comp| in a fixed direction relative to the
             # odometry -- i.e. a per-step, body-frame quantity. It is also the
             # form apply_complementary_drift injects an error in.
-            if corrects_laterally:
-                T_comp_rel_scaled[:3, 3] = apply_similarity_correction(
-                    T_comp_rel_unscaled[:3, 3], scale_applied, lateral_applied)
-            else:
-                T_comp_rel_scaled[:3, 3] = apply_scale_correction(
-                    T_comp_rel_unscaled[:3, 3], scale_applied)
+            T_comp_rel_scaled = corrected_comp_step(
+                T_comp_rel_unscaled, body_frame, scale_applied,
+                lateral_applied if corrects_laterally else None)
 
             T_comp_scaled_abs = T_prev @ T_comp_rel_scaled
 
@@ -583,12 +695,15 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
             lidar_pose_buffer.popleft()
 
         gate_observable = False
+        speed_gate_observable = False
         scale_instant_raw = np.nan
         scale_filtered = np.nan
         lateral_instant_raw = np.nan
         lateral_filtered = np.nan
         meet_point = None
+        meet_accepted = False
         debug_vecs = None
+        window_rotation_rad = np.nan
 
         # Port of lagged scale update path: if buffer has anchor/current pair,
         # estimate lagged scale sample and append to filtered history when observable.
@@ -611,13 +726,27 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                 dt_comp_window += float(comp_step_dt[j])
 
             if have_full_window and dt_comp_window > 1e-5:
-                T_lidar_rel = np.linalg.inv(T_anchor) @ T_latest
+                # Everything the sample is built from moves to the estimation
+                # frame together -- the two window poses, both displacements and
+                # the degenerate directions -- because a ratio between vectors
+                # read in different frames means nothing. The sample builder
+                # itself never learns which frame it was handed; it is written
+                # in whatever frame its inputs are in.
+                T_anchor_f = body_frame.pose(T_anchor)
+                T_latest_f = body_frame.pose(T_latest)
+                T_lidar_rel = np.linalg.inv(T_anchor_f) @ T_latest_f
+                window_rotation_rad = rotation_angle(T_lidar_rel)
                 sample = build_additional_odom_scale_sample(
-                    T_anchor,
-                    T_latest,
+                    T_anchor_f,
+                    T_latest_f,
                     T_lidar_rel,
-                    T_comp_rel_window,
-                    basis,
+                    body_frame.rebase(T_comp_rel_window),
+                    # A twist's linear part is read at the frame's origin, so
+                    # the degenerate directions need the adjoint, not just a
+                    # rotation. It is an identity for a basis with no angular
+                    # content -- which is the usual case, so a visible change
+                    # here means the basis carried rotation worth knowing about.
+                    [body_frame.twist(b) for b in basis],
                     bool(params.ignore_dz),
                     dt_comp_window,
                     float(params.scale_min_nondegenerate_speed),
@@ -627,6 +756,14 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                     debug=collect_vectors,
                 )
                 gate_observable = sample["gate_observable"]
+                # The speed gate on its own, taken before the lines-meet path
+                # below narrows gate_observable by whether the fit was accepted.
+                # It is what admits a line into the history, and it has to be
+                # this half rather than the final answer: the acceptance test
+                # reads the fit that the history feeds, so gating the history on
+                # it would be circular. Empty history -> fewer than two lines ->
+                # no fit -> not accepted -> nothing appended, forever.
+                speed_gate_observable = bool(sample["gate_observable"])
                 scale_instant_raw = sample["scale_instant_raw"]
                 scale_filtered = sample["scale_filtered"]
 
@@ -640,8 +777,18 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                     past = strided_lines(line_history, line_history_size,
                                          line_history_step)
                     lines = ([own_line] if own_line else []) + past
-                    meet_point = line_meet_point(
-                        lines, norm=params.scale_line_fit_norm)
+                    meet_fit = line_meet_fit(lines, norm=params.scale_line_fit_norm)
+                    meet_point = None if meet_fit is None else meet_fit.point
+                    # Judged separately from being found, and only the sample is
+                    # judged: the viewer keeps drawing every point the lines
+                    # produced, so a rejected one stays visible as the geometry
+                    # it is, while the coverage strip shows it was not used.
+                    meet_accepted = line_meet_accepted(
+                        meet_fit, lines,
+                        max_scale_sigma=float(params.scale_line_max_scale_sigma),
+                        min_leg_lines=int(params.scale_line_min_leg_lines),
+                        min_leg_separation_rad=np.radians(
+                            float(params.scale_line_min_leg_separation_deg)))
 
                 if uses_lines or uses_own_line:
                     # The ratio computed above is replaced, not blended: they
@@ -656,7 +803,8 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                     # no sample at all; saying it was observable would make the
                     # coverage strip lie. Nothing is appended, so the filter
                     # keeps applying what the last frames that did answer said.
-                    gate_observable = gate_observable and np.isfinite(scale_instant_raw)
+                    gate_observable = (gate_observable and np.isfinite(scale_instant_raw)
+                                       and (uses_own_line or meet_accepted))
                     scale_filtered = (_clamped(scale_instant_raw, scale_min, scale_max)
                                       if gate_observable else np.nan)
                     if corrects_laterally and meet_point is not None:
@@ -665,7 +813,14 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                             lateral_filtered = _clamped(
                                 lateral_instant_raw, -lateral_max, lateral_max)
 
-                if own_line is not None and line_history_size:
+                # Only frames that passed the speed gate contribute a line.
+                # Below it the LiDAR displacement is short enough that its
+                # direction is noise, so the line's angle is arbitrary -- and an
+                # arbitrary line is not a weak vote in the fit, it is a wrong
+                # one. This is also the set the viewer's "Observable only"
+                # overlay draws, so the meeting point on the anchor frame is
+                # fitted through the same lines as the estimate.
+                if own_line is not None and line_history_size and speed_gate_observable:
                     line_history.append(own_line)
                     # Deep enough that the stride can reach back the full span.
                     while len(line_history) > line_history_size * line_history_step:
@@ -711,6 +866,10 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
             vf.time = float(f.time)
             vf.degeneracy_detected = bool(estimator_mode_active)
             vf.gate_observable = bool(gate_observable)
+            # Recorded separately because gate_observable no longer answers
+            # "did this frame feed the line fit" once a lines-meet correction
+            # has narrowed it; the overlay needs the half that did.
+            vf.speed_gate_observable = bool(speed_gate_observable)
             # Mirrors the trimming of lidar_pose_buffer above, which holds
             # frames max(0, k - baseline_lag)..k. Recorded unconditionally: the
             # anchor *pose* is well defined even on frames where the
@@ -732,6 +891,7 @@ def reconstruct_with_estimator(frames, params, collect_vectors=False, correction
                     setattr(vf, _attr, _nan3.copy())
             vf.meet_point = (np.array(meet_point, dtype=float)
                              if meet_point is not None else np.full(2, np.nan))
+            vf.window_rotation_rad = float(window_rotation_rad)
             vf.scale_instant_raw = float(scale_instant_raw)
             vf.scale_smooth = float(scale_smooth)
             vf.scale_applied = float(scale_applied)

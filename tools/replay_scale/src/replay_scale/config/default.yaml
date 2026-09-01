@@ -43,6 +43,42 @@
       #                   exactly when the lines say cy = 0.
       complementaryCorrection: lines_meet_xy
 
+      # ===================================================================
+      # Which body frame that correction is measured and applied in
+      # ===================================================================
+
+      # The odometry being corrected does not sit on the LiDAR. Between the two
+      # origins is a lever arm -- 0.35 m on the ANYmal mount -- and a body
+      # rotation about anything other than the LiDAR carries the LiDAR around
+      # it. That is real motion of the LiDAR, and both displacements the
+      # estimate is a ratio of contain it, but it is not motion of the odometry
+      # sensor: on the bundled run a tenth of the accepted samples come from
+      # windows that turned more than 5 degrees, and the samples correlate with
+      # how much the window turned (r = +0.35) rather than with any odometry
+      # error. The correction then multiplies that lever arm by a scale, which
+      # no fixed mount can obey.
+      #
+      #   lidar         - the node's own. Everything happens in the LiDAR frame.
+      #   complementary - measure and apply at the odometry sensor's own origin,
+      #                   placed by the extrinsic below: base_link for a legged
+      #                   state estimator, the camera for visual odometry. An
+      #                   in-place rotation about that origin has no translation
+      #                   there, so it produces no sample and takes no
+      #                   correction. The trajectory is still the LiDAR's -- the
+      #                   frame changes what the scale is a scale *of*, not what
+      #                   is being tracked.
+      estimationFrame: lidar
+
+      # Whether that frame adopts the extrinsic's rotation as well as its
+      # origin. The origin is what removes the lever arm; the axes decide
+      # something else entirely -- the plane the degenerate lines are fitted in,
+      # what ignore_dz drops, and which way a simulated drift points. Right for
+      # an odometry frame that shares the robot's convention (a base_link),
+      # wrong for one that does not: a camera optical frame is z-forward, and
+      # adopting it would fit the lines in the vertical plane and return
+      # plausible nonsense.
+      estimationFrameUseExtrinsicRot: false
+
       # Whether to apply the correction at all. If false it is still estimated
       # and logged, just not applied.
       scaleEstimationApply: true
@@ -81,6 +117,11 @@
       # span they cover -- history * step frames -- rather than their count:
       # more span means more turn, which is what makes the lines meet at all.
       # 50 x 4 is the viewer's own overlay, and a reasonable starting point.
+      # Only frames that passed scaleMinNonDegenerateSpeed contribute a line:
+      # below it the LiDAR displacement is too short for its direction to mean
+      # anything, so the line's angle is noise. The acceptance tests below are
+      # deliberately not part of that -- they read the fit this history feeds,
+      # so gating it on them would be circular.
       # 0 fits nothing, which also turns off the meeting point the viewer draws
       # its trail from — that is what makes "ratio" cost nothing extra.
       scaleLineHistory: 50
@@ -93,6 +134,30 @@
       #        its error, which suits lines whose direction came from a poor
       #        degeneracy basis. Also decides how the viewer draws the point.
       scaleLineFitNorm: l1
+
+      # When the fitted point counts as an answer. A point the lines did not
+      # really determine is not a wrong scale, it is no scale, and taking it as
+      # one is what puts the wild samples in the trace. A frame that fails
+      # either test contributes nothing, so the smoothing window keeps applying
+      # what the last frames that did answer said.
+      #
+      # The fit's own uncertainty along the scale axis, in units of |comp|:
+      # "only answer when the lines pin the scale to better than 5 percent".
+      # This is the test that generalises -- it needs no notion of what the
+      # trajectory was doing, and lines that turned relative to each other are
+      # exactly what makes it small. .inf takes whatever the fit returns.
+      scaleLineMaxScaleSigma: 0.05
+
+      # How many of the fitted lines must come from the other group of
+      # directions -- the opposite leg of a zig-zag -- and how far apart the two
+      # groups must be. Geometry the sigma above cannot see: under l1 the sigma
+      # is built on a median absolute deviation, so a bundle of near-parallel
+      # lines that agree closely with each other reports a small spread while
+      # crossing at a glancing angle. The separation enters as a deadband of
+      # half of it either side of the lines' mean orientation, so a line nearer
+      # the middle than that belongs to neither group. 0 lines turns it off.
+      scaleLineMinLegLines: 3
+      scaleLineMinLegSeparationDeg: 10.0
 
       # Symmetric bound on the cross-track coordinate cy, in units of |comp|,
       # before it enters the smoothing filter — the counterpart of scaleMin /
@@ -139,6 +204,13 @@
       scaleMin: 0.0
       scaleMax: .inf
 
+# Every key below can also be written into a run's own replay_scale.yaml, beside
+# its scale_replay_frames.csv. That file is merged over this one whenever the run
+# is replayed, and holds only what differs -- the mounts, the reference
+# trajectory, its clock offset -- so this file stays the method settings you
+# sweep across runs. The viewer's "Save to run" writes one; the replay prints
+# which files it merged; --no-run-config ignores them.
+#
 # Settings for the replay_scale tool itself (not a ROS
 # parameter tree; this key is ignored by any ROS node loading this file as
 # a parameters YAML since it does not match a node/wildcard name).
@@ -153,7 +225,7 @@ replay_scale_tool:
   # under base_dir — the "latest" symlink if there is one, otherwise the most
   # recently modified run_* folder. A path passed on the command line wins, and
   # --latest ignores this.
-  input_path: "/home/seva/.ros/lili_logs/run_20260805_161710_kdtree_lm"
+  # input_path: "/home/seva/.ros/lili_logs/run_20260805_161710_kdtree_lm"
 
   # Where run_* folders live. Empty string means ~/.ros/lili_logs.
   base_dir: ""
@@ -216,6 +288,22 @@ replay_scale_tool:
     alpha: 0.0
     axis: y
 
+  # The odometry the node recorded into scale_replay_frames.csv -- the one
+  # being corrected unless complementary_source below replaces it. Its mount is
+  # a property of the run, so it normally comes from the run's own
+  # complementary_odom_meta.yaml and this block stays empty; set it for a run
+  # whose meta file is missing or wrong. Same spelling as the node's
+  # complementaryOdom.extrinsicTrans / .extrinsicRot.
+  #
+  # This is what places the estimation frame for a replay of the recorded twist.
+  # A mount configured for complementary_source is never read here, and this is
+  # never read for that stream: they are different sensors.
+  recorded_odometry:
+    # extrinsicTrans: [-0.310, 0.0, 0.159]
+    # extrinsicRot:   [-1.0, 0.0, 0.0,
+    #                   0.0, -1.0, 0.0,
+    #                   0.0, 0.0, 1.0]
+
   # Replay against a complementary odometry source other than the one used
   # online. The replay re-synchronizes it against the same LiDAR frame stamps.
   # Comment the whole block out to keep the twist the online run baked into
@@ -225,7 +313,7 @@ replay_scale_tool:
     # TUM file of absolute odometry poses ("stamp tx ty tz qx qy qz qw").
     # Empty keeps the recorded twist. The node logs its own raw stream to
     # complementary_odom_stream.tum, which can be passed here directly.
-    path: "/home/seva/repos/deg-tunnel-tools/data/output/20degtrick_20260804_172149/20-aligned/vo.tum"
+    # path: "/home/seva/repos/deg-tunnel-tools/data/output/20degtrick_20260804_172149/20-aligned/vo.tum"
 
     # How the source pose at a LiDAR stamp is obtained:
     #   nearest     - the closest sample, as the node itself does. The twist is
@@ -248,26 +336,87 @@ replay_scale_tool:
     #              sparse source needs this raised.
     max_match_dt_s: 0.25
 
-    # T_complementary_to_lidar override (odometry frame -> LiDAR frame). Omit
-    # to reuse the extrinsic the run recorded in complementary_odom_meta.yaml;
-    # set it when the alternative source sits on a different mounting point.
-    # Same spelling as the node's complementaryOdom.extrinsicTrans / .extrinsicRot:
-    # a 3-vector and a row-major 3x3. Either may be left out, defaulting to zero
-    # translation and identity rotation as the node's parameters do.
+    # The mount of THIS stream, T_source_to_lidar, and of nothing else. It is
+    # never inherited from the recorded odometry: that is a different sensor,
+    # and a mount taken from the wrong one does not fail, it comes back out as
+    # a scale. A path with no mount is refused. Write one of:
     #
-    # REQUIRED here — the VO -> LiDAR mount.
-    extrinsicTrans: [0.0, 0.0, 0.0]
-    extrinsicRot:   [0.0, 1.0, 0.0,
-                     -1.0, 0.0, 0.0,
-                     0.0, 0.0, 1.0]
-    # extrinsicRot: #[-1.0, -0.005344, -0.0,
-                  #  -0.0, 0.263597, 0.035874,
-                  #   0.263205, 0.964618, 1.0]
+    #   extrinsic: run       - this stream is the sensor the run recorded, so it
+    #                          shares that mount. complementary_odom_stream.tum,
+    #                          the node's own raw log, is exactly that.
+    #   extrinsic: identity  - the stream is already in the LiDAR frame.
+    #   extrinsicTrans / extrinsicRot - the mount itself, spelled as the node's
+    #                          complementaryOdom parameters are: a 3-vector and a
+    #                          row-major 3x3 (nested rows also accepted). Either
+    #                          may be left out, defaulting to zero translation
+    #                          and identity rotation as the node's do.
     #
     # The quaternion form the run's meta file records is also accepted:
-    # extrinsic:
-    #   translation: [0.0, 0.0, 0.0]
-    #   rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+    #   extrinsic:
+    #     translation: [0.0, 0.0, 0.0]
+    #     rotation_quat_xyzw: [0.0, 0.0, 0.0, 1.0]
+    #
+    # This mount also places the estimation frame while the stream is the
+    # odometry being corrected -- see complementaryOdom.estimationFrame.
+    # extrinsicTrans: [0.0, 0.0, 0.0]
+    # extrinsicRot:   [0.0, 1.0, 0.0,
+    #                  -1.0, 0.0, 0.0,
+    #                  0.0, 0.0, 1.0]
+
+  # =====================================================================
+  # What to draw it against
+  # =====================================================================
+
+  # An external trajectory drawn alongside the replayed ones: ground truth, a
+  # survey, another system's output -- anything in TUM form
+  # ("stamp tx ty tz qx qy qz qw"). The replay never reads it. It is drawn, not
+  # measured against, so a reference in the wrong frame can mislead the eye but
+  # cannot move an estimate.
+  reference_trajectory:
+
+    # Empty draws nothing.
+    # path: "~/datasets/quebec/2balls/ground_truth.tum"
+    path: ""
+
+    # Legend name. Empty derives one from the filename.
+    label: ""
+
+    # How it is placed against the replay. All of these are rigid, and none
+    # fits a scale: a scale is the quantity under test, and a fitted one would
+    # absorb exactly the error being looked for.
+    #
+    #   first_position_yaw
+    #       Anchor its first matched position on the replay's, then turn it
+    #       about the vertical by the angle that best fits the replayed
+    #       trajectory. The default, and what a total station wants: it reads
+    #       only positions -- all such a reference has, its file's quaternions
+    #       being placeholders -- and it fits only the heading, which is all
+    #       that is genuinely unknown between two gravity-levelled frames. Roll
+    #       and pitch are left unfitted, so a real tilt error still shows.
+    #   first_position_rotation
+    #       The same with the full 3D rotation fitted. For a reference frame
+    #       that is not levelled; it will absorb a genuine tilt error along with
+    #       the unknown mounting.
+    #   first_pose
+    #       Anchor its *pose* -- position and orientation -- at the replay's
+    #       first. No fit at all, but it trusts the orientation in the file,
+    #       which a position-only reference does not have.
+    #   none
+    #       Draw it in its own coordinates, for a reference already in the run's
+    #       map frame.
+    #
+    # The fitted alignments turn the reference onto the *first replayed*
+    # trajectory, so it moves when the configuration does. That is the point --
+    # fit it to what is being looked at -- and it is why "none" and "first_pose"
+    # stay available when a fixed yardstick is wanted instead.
+    align: first_position_yaw
+
+    # Seconds added to the reference's stamps before it is matched against the
+    # replay. A reference logged on its own clock shares no epoch with the run,
+    # and a fitted alignment needs correspondences: without an offset bringing
+    # the two spans together there are none. Run once with this at 0 -- the
+    # replay prints the offset that would line the two starts up.
+    time_offset_s: 0.0
 
   # =====================================================================
   # Where the output goes

@@ -50,6 +50,15 @@ class ScaleView(MarkerPlotView):
     def _draw(self):
         geometries = self._geometries
         if not geometries:
+            # A previewed run has none: it never ran the estimator, which is
+            # the only thing that produces a scale. Say so rather than leaving
+            # the previous run's history under this run's name.
+            ax = self.set_rows(1)[0]
+            ax.set_axis_off()
+            ax.text(0.5, 0.5, "preview — \"Apply & replay\" to see the scale history",
+                    ha="center", va="center", fontsize=11, color="#666666",
+                    transform=ax.transAxes)
+            self.request_draw()
             return
         split = has_lateral(geometries)
         axes = self.set_rows(2, height_ratios=(2, 1)) if split else self.set_rows(1)
